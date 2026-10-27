@@ -3,6 +3,13 @@
 from graph import CommitResult, GraphStore, GraphUpdateAPI, Node, Edge
 from processing import ChangeEvent, detect_new_items, investigation_triggers
 from sources.base import MarketEvent
+from sources.kalshi import (
+    Candle,
+    KalshiSource,
+    MarketContract,
+    OrderBookSnapshot,
+    best_bid,
+)
 from squad import Orchestrator, Proposal, Skeptic
 from workspace import MAX_VISIBLE_NODES, feedback_to_task, to_cytoscape
 
@@ -59,6 +66,48 @@ def test_graph_update_api_idempotent_and_validating():
     assert bad.committed is False
     api.record(Edge(src="kalshi:E1", dst="gdelt:a1", rel="relates-to", at="t"))
     assert len(api.store.edges) == 1
+
+
+def test_kalshi_market_normalize():
+    src = KalshiSource()
+    m = src.normalize_market(
+        {"ticker": "T1", "event_ticker": "E1", "title": "Yes?",
+         "yes_bid": 55, "yes_ask": 60, "last_price": 57}
+    )
+    assert isinstance(m, MarketContract)
+    assert (m.ticker, m.event_ticker, m.yes_bid) == ("T1", "E1", 55)
+
+
+def test_kalshi_market_normalize_dollars_strings():
+    src = KalshiSource()
+    m = src.normalize_market(
+        {"ticker": "T1", "event_ticker": "E1", "title": "Yes?",
+         "yes_bid_dollars": "0.5500", "yes_ask_dollars": "0.6000",
+         "last_price_dollars": "0.5700", "volume_24h_fp": "263.00"}
+    )
+    assert (m.yes_bid, m.yes_ask, m.last_price, m.volume_24h) == (55, 60, 57, 263)
+
+
+def test_kalshi_orderbook_normalize_and_best_bid():
+    src = KalshiSource()
+    snap = src.normalize_orderbook(
+        "T1", {"yes": [[55, 10], [54, 5]], "no": [[44, 7]]}
+    )
+    assert isinstance(snap, OrderBookSnapshot)
+    assert best_bid(snap.yes_bids).price_cents == 55
+    assert best_bid(snap.no_bids).contracts == 7
+    assert best_bid([]) is None
+
+
+def test_kalshi_candle_normalize():
+    src = KalshiSource()
+    c = src.normalize_candle(
+        "T1",
+        {"end_period_ts": 123, "price": {"open": 50, "high": 60, "low": 48, "close": 57},
+         "volume": 11},
+    )
+    assert isinstance(c, Candle)
+    assert (c.end_ts, c.open, c.close, c.volume) == (123, 50, 57, 11)
 
 
 def test_workspace_contracts():
