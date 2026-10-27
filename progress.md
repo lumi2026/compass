@@ -24,9 +24,12 @@
 - `scripts/smoke_kalshi.py`, `scripts/smoke_gdelt.py` — per-source live checks.
 
 ### Verified
-- 24/24 tests green (`uv run python -m pytest tests/ -q`), all offline fixtures
+- 25/25 tests green (`uv run python -m pytest tests/ -q`), all offline fixtures
   except live smoke scripts.
 - Live REST: events, markets, order books, candles return real data.
+- Live socket on production: signed handshake OK with user keys (inline PEM in
+  `.env`), subscription acknowledged by the exchange. Demo endpoint 401s with
+  the same keys, so the keys are production keys.
 - Live service (poll mode): health, snapshot, history, SSE stream (real pushed
   updates), subscriptions — all probed on a running instance.
 - Socket path: subscribe wire format + ticker delivery proven over a real
@@ -34,8 +37,13 @@
 - Seeded service: frozen 7-ticker seed served correctly with merge intact.
 
 ### Pending (needs user)
-- Live Kalshi socket handshake — requires `KALSHI_KEY_ID` + private key.
-- Commit — all service work uncommitted, awaiting word.
+- Commit the progress log (`a841517` is the last push).
 - Demo topic freeze — recommended: Mamdani market (highest 24h volume seen).
 - GDELT side of the original plan (source plugin + smoke exist; graph
   integration untouched).
+
+### Resolved this session
+- Keys moved inline into `.env` (`KALSHI_PRIVATE_KEY`); `kalshi.key` deleted.
+  python-dotenv added as a dependency; repo env ignores `.env`.
+- Market price parsing fixed to Kalshi `*_dollars` strings; seed recaptured
+  with real prices.
