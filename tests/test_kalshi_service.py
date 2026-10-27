@@ -68,9 +68,24 @@ def test_sign_rsa_roundtrip():
     )
 
 
-def test_auth_headers_shape_and_no_creds_without_env(monkeypatch):
+def test_dotenv_fills_gaps_only(tmp_path, monkeypatch):
+    from services.auth import load_credentials
+
+    dotenv = tmp_path / ".env"
+    dotenv.write_text('KALSHI_KEY_ID=fromfile\nKALSHI_PRIVATE_KEY="k=1"\n# comment\nBLANK=\n')
     monkeypatch.delenv("KALSHI_KEY_ID", raising=False)
-    assert load_credentials() is None
+    monkeypatch.delenv("KALSHI_PRIVATE_KEY", raising=False)
+    monkeypatch.setenv("KALSHI_PRIVATE_KEY_PATH", "")
+    creds = load_credentials(dotenv_path=str(dotenv))
+    assert creds is not None and creds.key_id == "fromfile"
+    assert creds.private_key_pem == "k=1"
+    monkeypatch.setenv("KALSHI_KEY_ID", "realenv")
+    assert load_credentials(dotenv_path=str(dotenv)).key_id == "realenv"
+
+
+def test_auth_headers_shape_and_no_creds_without_env(monkeypatch, tmp_path):
+    monkeypatch.delenv("KALSHI_KEY_ID", raising=False)
+    assert load_credentials(dotenv_path=str(tmp_path / "none")) is None
     headers = auth_headers("GET", "/trade-api/ws/v2", type("C", (), {"key_id": "k", "private_key_pem": _ed_key()[1]})())
     assert set(headers) == {"KALSHI-ACCESS-KEY", "KALSHI-ACCESS-TIMESTAMP", "KALSHI-ACCESS-SIGNATURE"}
 

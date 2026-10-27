@@ -18,8 +18,21 @@ class Credentials:
     env: str = "demo"  # demo | prod
 
 
-def load_credentials(env: str = "demo") -> Credentials | None:
-    """Contract: creds come only from env, never from code. None = poll mode."""
+def load_dotenv(path: str = ".env") -> dict[str, str]:
+    """Contract: .env fills gaps only; real env always wins."""
+    from dotenv import dotenv_values
+
+    loaded: dict[str, str] = {}
+    for key, value in (dotenv_values(path) or {}).items():
+        if key and value is not None and key not in os.environ:
+            os.environ[key] = value
+            loaded[key] = value
+    return loaded
+
+
+def load_credentials(env: str = "demo", dotenv_path: str = ".env") -> Credentials | None:
+    """Contract: creds come from env/.env, never from code. None = poll mode."""
+    load_dotenv(dotenv_path)
     key_id = os.environ.get("KALSHI_KEY_ID", "")
     pem = os.environ.get("KALSHI_PRIVATE_KEY", "")
     pem_path = os.environ.get("KALSHI_PRIVATE_KEY_PATH", "")
