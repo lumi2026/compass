@@ -162,7 +162,7 @@
   git-ignored) that agents query: snapshots log, mentions (term/ts/url/
   pre/post/pos), articles (url/text/summary/engine).
 
-## Day 3 — Oct 29 (tomorrow)
+## Day 3 — Oct 28 (hackathon day 3)
 
 ### Plan
 - Fan-out accumulator: `squad/store.py` (SQLite: snapshots/mentions/articles),
@@ -170,3 +170,58 @@
   per-snapshot article cap, snapshot cleanup), tests, short live backfill.
 - Relevance scoring (pos decile + term density) before article fetch.
 - Wire digest/accumulator output into Investigator context for Kalshi moves.
+- Later / non-essential: extra LLM providers (GPT/DeepSeek presets exist in
+  `squad/models.py`; Claude/Anthropic support deferred — needs
+  `langchain-anthropic` re-added). Stay on Muse Spark for the demo.
+- Live key smoke OK: `muse-spark-1.3` via api.meta.ai/v1 replied `OK`.
+- Full agent run OK (snapshot 20261028224600, 404 on newest as usual):
+  Warsh 3/3 kept, all `[llm]`, on-topic (Fed holds 3.75–4%, Warsh majority,
+  Dec hike priced); SpaceX 3/3 kept but off-question (xAI revenue, Skydance,
+  Starlink vessels — nothing on Mars landing); AI topic 0 markets (known gap),
+  filter dropped 3/3, conf 0.4.
+- Fix: `llm_relevant` now takes the lead market title (`question`) and
+  judges against the QUESTION — YES also covers substantive news about
+  central actors; 16/16 tests green (incl. prompt-carries-question).
+- Validated live (subject-level prompt, --max-articles 3): Warsh 3/3 kept
+  (`engine=llm:muse-spark-1.3`); SpaceX 2/3 kept with contributor
+  (`engine=llm:muse-spark-1.3-contributor`, maritime-vessel piece dropped);
+  AI 0 markets, dropped 3/3.
+- Default model now `muse-spark-1.3-contributor` for all roles (role table
+  kept for later split); role env (`MODEL_FOR_<ROLE>`) + `COMPASS_MODEL`
+  overrides unchanged. Tests updated; run pending approval.
+- Model switch: `COMPASS_MODEL=muse-spark-1.3-contributor` smoke OK live
+  (`OK` via api.meta.ai/v1). Swap = one env line, no code change.
+- Per-agent models: `make_chat_model(provider, model)` + new
+  `resolve_model(spec)` (auto|None|model-id|{provider,model}|instance);
+  `NewsAgent.run` resolves `task["model"]` over agent default; engine line
+  now tags the model id (`engine=llm:<id>`). 18/18 tests green.
+- Subject-level relevance: filter keeps articles substantively about a key
+  subject without requiring they answer the question (SpaceX news counts
+  for a Mars question); live re-run pending.
+
+### Start-of-day review (plan vs progress)
+- Original plan (`docs/plan.md`): situation-aware consultant, Living Event
+  Graph + Squad (Scout/Investigator/Connector fan-out, Skeptic gate, Graph
+  Update API), Kalshi + GDELT DOC 2.0 sources, service-ready backend, seeded
+  offline demo, Cytoscape workspace + human feedback.
+- Day 1 fit: Kalshi source + service + seed — on-plan (backend + offline demo).
+- Day 2 fit: GDELT baseline + NGrams 3.0 pivot (DOC v2 throttled, static host
+  fast — justified extension, not drift), single news-agent prototype with
+  Muse Spark via LangChain — on-plan toward Squad/Investigator.
+- Gaps to close for demo: Event Graph + Graph Update API, full
+  Scout/Investigator/Connector/Skeptic split, Cytoscape workspace + feedback
+  loop. Accumulator DB today is the bridge (shared space agents query).
+
+### Meta API wiring (Muse Spark via LangChain)
+- `squad/news_agent.py`: new `llm_relevant` tool (YES/NO + reason,
+  fail-open) + wired into `NewsAgent.run` before summarization;
+  detail gains `relevant_filter=dropped N of M`.
+- `tests/test_news_agent.py`: +3 tests (NO filters, unparseable keeps,
+  agent drops irrelevant); 11/11 green.
+- Live run blocked: no `MODEL_API_KEY` in `.env` (only Kalshi keys present).
+  Next: user adds `MODEL_API_KEY=...` then
+  `uv run python scripts/run_news_agent.py --max-articles 3`.
+- Provider-swap review: `squad/models.py` factory generalized —
+  `MODEL_PROVIDER` (meta|openai|deepseek|custom) + presets, generic or
+  provider keys, `COMPASS_MODEL`/`MODEL_BASE_URL` overrides; agent tools
+  already provider-agnostic (`model.invoke` only). 15/15 tests green.

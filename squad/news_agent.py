@@ -20,7 +20,7 @@ from typing import Any
 from sources.gdelt import GdeltSource  # noqa: F401  (doc reference)
 from sources.kalshi import KalshiSource
 from squad import Proposal
-from squad.models import make_chat_model
+from squad.models import resolve_model
 
 SNAP_BASE = "https://data.gdeltproject.org/gdeltv3/webngrams"
 SNAP_MARKS = ("01", "16", "31", "46")
@@ -178,6 +178,41 @@ def llm_summarize(text: str, terms: list[str], model) -> str:
     return str(msg.content).strip()
 
 
+def llm_relevant(text: str, terms: list[str], model,
+                 question: str | None = None) -> tuple[bool, str]:
+    """Tool: LLM relevance filter. Returns (keep, reason).
+
+    Fail-open: any reply that is not an explicit NO keeps the article,
+    so unparseable model output never blanks the pipeline. Relevance is
+    subject-level: an article substantively about a key subject counts,
+    even when it does not directly answer the market question."""
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    scope = (f"The analyst's question is: {question}. "
+             f"Key subjects: {', '.join(terms)}. "
+             if question else
+             f"Key subjects: {', '.join(terms)}. ")
+    msg = model.invoke(
+        [
+            SystemMessage(
+                "You filter news for a prediction-market analyst. " + scope +
+                "Reply with YES or NO first, then a one-line reason. "
+                "YES = the article is substantively about one or more of "
+                "the key subjects; it need not answer the question "
+                "directly. "
+                "NO = no key subject covered in substance, passing "
+                "mention only, gossip, or boilerplate."
+            ),
+            HumanMessage(text[:4000]),
+        ]
+    )
+    raw = str(msg.content).strip()
+    first = raw.split(None, 1)[0].upper().rstrip(":,.") if raw.split() else ""
+    if first == "NO":
+        return False, raw
+    return True, raw
+
+
 # -- agent -----------------------------------------------------------------
 
 @dataclass
@@ -187,12 +222,17 @@ class NewsAgent:
     name: str = "news-agent"
     snapshot_gz: str | None = None
     max_articles: int = 3
-    model: Any = "auto"  # "auto" -> make_chat_model(); None -> extractive only
+    # Model spec, resolved per task via squad.models.resolve_model:
+    # "auto" (env), None (extractive only), a model-id str, a
+    # {"provider", "model"} dict, or a LangChain chat instance.
+    # A task may override with task["model"].
+    model: Any = "auto"
 
     def run(self, task: dict, context: dict | None = None) -> list[Proposal]:
         ticker = task["event_ticker"]
         terms = task["terms"]
-        model = make_chat_model() if self.model == "auto" else self.model
+        model = resolve_model(task.get("model", self.model),
+                              role=self.name)
         markets = kalshi_markets(ticker)
         lead = markets[0] if markets else None
         price = f"{lead.last_price}c" if lead and lead.last_price is not None else "?"
@@ -215,11 +255,22 @@ class NewsAgent:
         ]
         ok = 0
         llm_ok = 0
+        dropped = 0
+        question = lead.title if lead and lead.title else None
         for url in cand:
             try:
                 text = fetch_article(url)
             except Exception:
                 continue
+            if model is not None:
+                try:
+                    keep, _reason = llm_relevant(text, terms, model,
+                                                 question=question)
+                    if not keep:
+                        dropped += 1
+                        continue
+                except Exception:
+                    pass  # relevance failure is fail-open
             summ, via = "", "extractive"
             if model is not None:
                 try:
@@ -236,7 +287,10 @@ class NewsAgent:
             lines.append(f"- [{via}] {summ} [{url}]")
         if not ok:
             lines.append("(no articles fetchable; n-gram counts only)")
-        lines.append(f"engine={'llm' if llm_ok else 'extractive'}")
+        if model is not None:
+            lines.append(f"relevant_filter=dropped {dropped} of {len(cand)}")
+        mid = getattr(model, "model_name", None) or "?"
+        lines.append(f"engine={'llm:' + mid if llm_ok else 'extractive'}")
         conf = min(0.9, 0.3 + 0.15 * ok + (0.1 if total > 5 else 0.0))
         return [
             Proposal(

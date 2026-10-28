@@ -81,7 +81,7 @@ def test_agent_proposal_shape(monkeypatch, tmp_path):
     gz = tmp_path / "s.json.gz"
     _fixture_gz(gz)
     monkeypatch.setattr(na, "kalshi_markets", lambda *a, **k: [])
-    monkeypatch.setattr(na, "make_chat_model", lambda: None)
+    monkeypatch.setattr(na, "resolve_model", lambda spec: None)
     monkeypatch.setattr(na, "fetch_article",
                         lambda url, **k: "SpaceX news body here. " * 10)
     ag = na.NewsAgent(snapshot_gz=str(gz), max_articles=1)
@@ -96,6 +96,89 @@ def test_factory_none_without_key(monkeypatch):
 
     monkeypatch.delenv("MODEL_API_KEY", raising=False)
     assert make_chat_model() is None
+
+
+def _clear_model_env(monkeypatch):
+    for k in ("MODEL_PROVIDER", "COMPASS_PROVIDER", "MODEL_API_KEY",
+              "OPENAI_API_KEY", "DEEPSEEK_API_KEY", "COMPASS_MODEL",
+              "MODEL_NAME", "MODEL_BASE_URL", "MODEL_FOR_NEWS_AGENT",
+              "MODEL_FOR_GRAPH_AGENT"):
+        monkeypatch.delenv(k, raising=False)
+
+
+def test_role_model_defaults_and_overrides(monkeypatch):
+    from squad.models import resolve_model
+
+    _clear_model_env(monkeypatch)
+    monkeypatch.setenv("MODEL_API_KEY", "k")
+    assert resolve_model("auto",
+                         role="news-agent").model_name == \
+        "muse-spark-1.3-contributor"
+    assert resolve_model("auto",
+                         role="graph-agent").model_name == \
+        "muse-spark-1.3-contributor"
+    assert resolve_model("auto", role="unknown-role").model_name == \
+        "muse-spark-1.3-contributor"  # env default
+    monkeypatch.setenv("MODEL_FOR_NEWS_AGENT", "custom-fast")
+    assert resolve_model("auto", role="news-agent").model_name == \
+        "custom-fast"
+    monkeypatch.delenv("MODEL_FOR_NEWS_AGENT")
+    monkeypatch.setenv("COMPASS_MODEL", "global-pick")
+    assert resolve_model("auto", role="news-agent").model_name == \
+        "global-pick"  # global env beats role table
+
+
+def test_factory_openai_preset(monkeypatch):
+    from squad.models import make_chat_model
+
+    _clear_model_env(monkeypatch)
+    monkeypatch.setenv("MODEL_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    m = make_chat_model()
+    assert m.openai_api_base == "https://api.openai.com/v1"
+    assert m.model_name == "gpt-4o-mini"
+
+
+def test_factory_deepseek_generic_key_and_model_override(monkeypatch):
+    from squad.models import make_chat_model
+
+    _clear_model_env(monkeypatch)
+    monkeypatch.setenv("MODEL_PROVIDER", "deepseek")
+    monkeypatch.setenv("MODEL_API_KEY", "ds-test")
+    monkeypatch.setenv("COMPASS_MODEL", "deepseek-reasoner")
+    m = make_chat_model()
+    assert m.openai_api_base == "https://api.deepseek.com/v1"
+    assert m.model_name == "deepseek-reasoner"
+
+
+def test_factory_meta_default_and_unknown_rejected(monkeypatch):
+    import pytest
+
+    from squad.models import make_chat_model
+
+    _clear_model_env(monkeypatch)
+    monkeypatch.setenv("MODEL_API_KEY", "meta-test")
+    m = make_chat_model()
+    assert m.openai_api_base == "https://api.meta.ai/v1"
+    assert m.model_name == "muse-spark-1.3-contributor"
+    monkeypatch.setenv("MODEL_PROVIDER", "Muse")
+    with pytest.raises(ValueError):
+        make_chat_model()
+
+
+def test_factory_custom_needs_base_url(monkeypatch):
+    import pytest
+
+    from squad.models import make_chat_model
+
+    _clear_model_env(monkeypatch)
+    monkeypatch.setenv("MODEL_PROVIDER", "custom")
+    monkeypatch.setenv("MODEL_API_KEY", "k")
+    with pytest.raises(ValueError):
+        make_chat_model()
+    monkeypatch.setenv("MODEL_BASE_URL", "https://my-host/v1")
+    m = make_chat_model()
+    assert m.openai_api_base == "https://my-host/v1"
 
 
 class _FakeMsg:
@@ -126,6 +209,78 @@ def test_agent_uses_llm_when_available(monkeypatch, tmp_path):
     (p,) = ag.run({"event_ticker": "X", "terms": ["spacex"]})
     assert "[llm] LLM summary here." in p.detail
     assert "engine=llm" in p.detail
+
+
+def test_llm_relevant_no_filters_out():
+    keep, reason = na.llm_relevant("some body", ["spacex"],
+                                   _FakeModel("NO - passing mention only"))
+    assert keep is False and "passing mention" in reason
+
+
+def test_llm_relevant_fail_open_on_unparseable():
+    keep, _ = na.llm_relevant("some body", ["spacex"],
+                              _FakeModel("LLM summary here."))
+    assert keep is True
+
+
+class _ScriptedModel:
+    def __init__(self, contents):
+        self.contents = list(contents)
+        self.calls = 0
+
+    def invoke(self, messages):
+        content = self.contents[min(self.calls, len(self.contents) - 1)]
+        self.calls += 1
+        return _FakeMsg(content)
+
+
+def test_llm_relevant_prompt_carries_question():
+    fake = _FakeModel("YES - on point")
+    na.llm_relevant("some body", ["spacex"], fake,
+                    question="Will SpaceX land on Mars?")
+    system_text = str(fake.seen[0].content)
+    assert "Will SpaceX land on Mars?" in system_text
+    assert "Key subjects: spacex" in system_text
+    assert "need not answer the question directly" in system_text
+
+
+def test_resolve_model_specs(monkeypatch):
+    from squad.models import resolve_model
+
+    _clear_model_env(monkeypatch)
+    monkeypatch.setenv("MODEL_API_KEY", "k")
+    assert resolve_model(None) is None
+    assert resolve_model("auto").model_name == "muse-spark-1.3-contributor"
+    assert resolve_model("muse-spark-1.3").model_name == "muse-spark-1.3"
+    assert resolve_model({"provider": "deepseek"}) \
+        .openai_api_base == "https://api.deepseek.com/v1"
+    fake = _FakeModel()
+    assert resolve_model(fake) is fake
+
+
+def test_task_model_overrides_agent_model(monkeypatch, tmp_path):
+    gz = tmp_path / "s.json.gz"
+    _fixture_gz(gz)
+    monkeypatch.setattr(na, "kalshi_markets", lambda *a, **k: [])
+    monkeypatch.setattr(na, "fetch_article",
+                        lambda url, **k: "SpaceX news body here. " * 10)
+    ag = na.NewsAgent(snapshot_gz=str(gz), max_articles=1, model=None)
+    (p,) = ag.run({"event_ticker": "X", "terms": ["spacex"],
+                   "model": _FakeModel("LLM summary here.")})
+    assert "[llm] LLM summary here." in p.detail
+
+
+def test_agent_drops_irrelevant_article(monkeypatch, tmp_path):
+    gz = tmp_path / "s.json.gz"
+    _fixture_gz(gz)
+    monkeypatch.setattr(na, "kalshi_markets", lambda *a, **k: [])
+    monkeypatch.setattr(na, "fetch_article",
+                        lambda url, **k: "SpaceX news body here. " * 10)
+    ag = na.NewsAgent(snapshot_gz=str(gz), max_articles=1,
+                      model=_ScriptedModel(["NO - off topic"]))
+    (p,) = ag.run({"event_ticker": "X", "terms": ["spacex"]})
+    assert "relevant_filter=dropped 1 of 1" in p.detail
+    assert "no articles fetchable" in p.detail
 
 
 def test_agent_falls_back_when_llm_fails(monkeypatch, tmp_path):
