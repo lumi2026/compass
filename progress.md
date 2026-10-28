@@ -104,3 +104,69 @@
   burst counts (`data/ngram_counts.json`) + provenance snippets into the
   digest. Raw snapshots discarded.
 - Next: build the plugin + wire into `collect_news.py` loop.
+
+### Single-agent prototype (news summary for Kalshi topics)
+- Topics picked live: `KXWARSHOUT-26JUL` (Warsh/Fed chair, lead 75c),
+  `KXSPACEXMARS-30` (SpaceX Mars, 20c), `KXTOPLLMGENERAL-30` (top AI model).
+- `squad/news_agent.py`: tools `kalshi_markets`, `snapshot_candidates`,
+  `download_snapshot`, `ngram_mentions` (streaming, unthrottled static host),
+  `fetch_article` (HTML→text), `summarize` (extractive) + `NewsAgent.run`
+  returning squad `Proposal(action=news_summary)`. Snapshot used:
+  `20261028014600` (1.03M en records scanned in seconds).
+- Ran 3/3 topics end to end, conf 0.7–0.75. `tests/test_news_agent.py`
+  added; 32/32 green.
+- Known gaps (next): unigram noise (`federal` → Australian politics) needs
+  pre/post relevancy filtering; article boilerplate in summaries;
+  `KXTOPLLMGENERAL-30` returned 0 markets — check markets query.
+
+### LangChain wiring (Muse as the agent's model)
+- Deps: `langchain-core` + `langchain-anthropic` via uv (project `.venv`).
+- `squad/models.py`: `make_chat_model()` — `ChatAnthropic` from
+  `ANTHROPIC_API_KEY` + `COMPASS_MODEL` (default claude-sonnet-4-5), else None.
+- `NewsAgent` gains `model="auto"`: per-article `llm_summarize` with
+  analyst prompt; any failure falls back to extractive; bullets tagged
+  `[llm]`/`[extractive]`, `engine=` line in detail. No key → fully offline.
+- Tests: factory-None, llm-used, llm-failure-fallback added; 35/35 green.
+- Switched to Muse Spark: `langchain-openai`'s `ChatOpenAI` against
+  `https://api.meta.ai/v1` (model `muse-spark-1.3`), key `MODEL_API_KEY`;
+  `langchain-anthropic` removed. Suite still 35/35 (no key in env →
+  extractive path).
+- To activate: user adds `MODEL_API_KEY=...` to `.env` (untracked).
+
+### Pre-LLM smoke (`scripts/smoke_news_pipeline.py`)
+- Kalshi event → snapshot resolve → n-gram hits → fetch articles → dump
+  text to `/tmp/smoke_articles/`. Run on `KXSPACEXMARS-30` + spacex/mars:
+  lead 20c, 4 hits / 3 urls, 3/3 articles ~1000 words each. SMOKE OK.
+- Notes: newest snapshot marks 404 (latest usable ~01:46 UTC, ~1h lag);
+  `mars` unigram had 0 hits in-snapshot. Fixed `--term` append-default bug.
+
+### Multi-gram matching (doc re-check)
+- `match_record` implements the NGrams 3.0 phrase rules: ngram is the
+  lower-middle word (bigram: FIRST word per doc), neighbors verified in
+  pre-tail/post-head; type-2 (chars) excluded for now.
+- Live proof on `20261028014600`: "white house" 37 hits/11 urls, "new york"
+  104/51, "interest rates" 12/7, trigram "artificial intelligence" 17/12 —
+  vs unigram `federal` 210 noisy. `test_multi_gram_matching` added; 36/36.
+
+### Phrase-based agent re-run (`scripts/run_news_agent.py`)
+- Tasks use phrases: Warsh→(kevin warsh, federal reserve, rate cut) 7 hits;
+  SpaceX→(spacex, starlink, elon musk) 13 hits; AI→(artificial
+  intelligence, openai, anthropic) 20 hits. All conf 0.85, extractive.
+- Better (Fed data, Starlink spyware) but still mixed: "elon musk" pulls
+  Texas-politics pieces; crime blotter via `openai` unigram. Next lever:
+  per-article relevance score (pos decile + term density) before fetching.
+
+### Fan-out accumulator (plan)
+- Agent fans out n-gram search over a past period in the background,
+  accumulates + parses news into a shared SQLite store (`data/news.db`,
+  git-ignored) that agents query: snapshots log, mentions (term/ts/url/
+  pre/post/pos), articles (url/text/summary/engine).
+
+## Day 3 — Oct 29 (tomorrow)
+
+### Plan
+- Fan-out accumulator: `squad/store.py` (SQLite: snapshots/mentions/articles),
+  `scripts/accumulate_news.py` (`--hours-back` backfill + `--loop`,
+  per-snapshot article cap, snapshot cleanup), tests, short live backfill.
+- Relevance scoring (pos decile + term density) before article fetch.
+- Wire digest/accumulator output into Investigator context for Kalshi moves.

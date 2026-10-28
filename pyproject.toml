@@ -3,7 +3,13 @@ name = "compass"
 version = "0.1.0"
 description = "Compass: situation-aware AI consultant (Meta hackathon)"
 requires-python = ">=3.11"
-dependencies = ["websockets>=15", "cryptography>=44", "python-dotenv>=1"]
+dependencies = [
+    "websockets>=15",
+    "cryptography>=44",
+    "python-dotenv>=1",
+    "langchain-core>=1.7.0",
+    "langchain-openai>=1.7.3",
+]
 
 [dependency-groups]
 dev = ["pytest>=8"]

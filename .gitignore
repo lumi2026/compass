@@ -221,3 +221,7 @@ __marimo__/
 
 # Local agent plans and scratch
 .agents/
+
+# Local news accumulator state (large, machine-local)
+data/news.db*
+/tmp/
