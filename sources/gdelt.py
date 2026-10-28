@@ -27,7 +27,8 @@ def _get_json(url: str, retries: int = 3) -> dict:
             last = e
             if e.code != 429 or attempt == retries - 1:
                 raise
-            time.sleep(2 * (attempt + 1))
+            # GDELT asks for max 1 req / 5s; back off well above that.
+            time.sleep(7 * (attempt + 1))
     raise last  # pragma: no cover
 
 
@@ -36,20 +37,24 @@ class GdeltSource:
 
     name = "gdelt"
 
-    def __init__(self, query: str = "climate", timespan: str = "1week") -> None:
+    def __init__(
+        self, query: str = "climate", timespan: str = "1week", sort: str | None = None
+    ) -> None:
         self.query = query
         self.timespan = timespan
+        self.sort = sort
 
     def fetch_raw(self, limit: int = 5) -> list[dict]:
-        params = urllib.parse.urlencode(
-            {
-                "query": self.query,
-                "mode": "artlist",
-                "maxrecords": limit,
-                "timespan": self.timespan,
-                "format": "json",
-            }
-        )
+        q = {
+            "query": self.query,
+            "mode": "artlist",
+            "maxrecords": limit,
+            "timespan": self.timespan,
+            "format": "json",
+        }
+        if self.sort:
+            q["sort"] = self.sort
+        params = urllib.parse.urlencode(q)
         data = _get_json(f"{API_URL}?{params}")
         articles = data.get("articles", data if isinstance(data, list) else [])
         return articles[:limit]

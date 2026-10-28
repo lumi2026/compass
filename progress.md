@@ -1,6 +1,6 @@
 # Compass Progress
 
-## Kalshi service (goal: historical + live/websocket, topics, agent subscriptions)
+## Day 1 — Oct 27: Kalshi service (goal: historical + live/websocket, topics, agent subscriptions)
 
 ### Built
 - `sources/kalshi.py` — events, per-event markets, single + batch order books,
@@ -47,3 +47,60 @@
   python-dotenv added as a dependency; repo env ignores `.env`.
 - Market price parsing fixed to Kalshi `*_dollars` strings; seed recaptured
   with real prices.
+
+## Day 2 — Oct 28 (today)
+
+### Plan
+- News service baseline: behavior, latency, today's USA sample, how we use it later.
+
+### Built
+- `sources/gdelt.py`: 429 backoff 2s-steps → 7s-steps (GDELT asks max 1 req / 5s).
+- `docs/gdelt-doc-api.md`: clean DOC 2.0 reference (params, operators, modes, compass usage).
+- `scripts/collect_news.py`: background topic watcher (Kalshi-linked defaults:
+  Mamdani/NYC mayor, Fed rates, Trump White House, US economy). Polls DOC
+  artlist with `--gap-sec` spacing, writes `data/news_digest.json` atomically
+  (articles + summary: counts, seendate lag, top domains, title keywords).
+  `--once` or `--loop --interval-min 15`. `tests/test_news_digest.py` added.
+  28/28 tests green.
+
+### GDELT v1 full-text search notes (from
+  https://blog.gdeltproject.org/announcing-the-gdelt-full-text-search-api/)
+- Endpoint: `api/v1/search_ftxtsearch/search_ftxtsearch`. Searches English
+  translations of 65 languages, last-24h window by default.
+- Query commands: `sourcecountry:`, `domain:`, `sourcelang:`,
+  `lastminutes:` (multiples of 15), `sortby:date/rel/tone`, `"exact phrases"`,
+  ALL-CAPS = theme search. 15–30 min rolling delay stated — not realtime.
+- Machine outputs: `output=urllist` (CSV: timestamp, lang, URL),
+  `output=timelinecsv` (volume/tone per 15-min bucket). Article lists are HTML.
+- Live probe: alive, no 429 (unlike DOC v2), but latency 10–17s/req and index
+  looks ~19h stale (newest `sourcecountry:unitedstates` rows stamped
+  20261027051500; `lastminutes:360` empty). Treat as legacy/fallback only.
+- USA sample (v1, 10 rows, all eng): Trump/White House upkeep story, HSBC Q3,
+  Asian markets, NHL, local outlets. Timestamp+URL only, no titles.
+
+### Verified
+- DOC v2 artlist probe: `sourcecountry:US`, `timespan=1days`, `sort=datedesc` → 10/10 rows with titles + `seendate`, 33s wall (≥1 retry). Same 10 rows as v1.
+- v1 + v2 agree newest US content is `20261027T051500Z` (~19.5h stale at fetch) — pipeline stall or frozen shard; `timelinevolraw` blocked by 429s, recheck later.
+- Rate-limit behavior: 429 ("max 1 req / 5s") on most DOC v2 attempts from this network; successes need minutes of spacing. 10–17s latency even on errors.
+
+### Baseline (how we use it later)
+- Primary: DOC v2 `artlist` + `format=json`, `sort=datedesc`, 15-min poll via `startdatetime`/`enddatetime` windows, background thread + cache, dedupe by URL hash. Track max `seendate` lag as the freshness metric.
+- Intensity signal (when limits allow): `timelinevolraw` on the same query (raw counts + `norm` per 15-min bucket).
+- Feed quality: `sourcecountry:US` alone too noisy — add `theme:`/`repeat:`/tone/domain filters.
+- v1 full-text API: fallback only (stale index observed).
+- Live validation: stubbed end-to-end digest run OK (rc=0, keywords/domains/lag
+  correct; lag math independently matches ~20h stale index). Real live
+  single-topic runs 429'd through all retries twice (egress throttled) —
+  failure path verified instead (error recorded in digest, exit 1).
+
+### Pending
+- (carry over from Day 1 unless done)
+
+### NGrams 3.0 (goal: integrate as second news source)
+- `docs/gdelt-ngrams.md`: announcement read + live assessment + design.
+- Measured: snapshots ~every 15 min (:01/:16/:31/:46), ~23–51 MB / ~1.25M
+  records each, static host fast + unthrottled; history back to 2020.
+- Design: `sources/ngrams.py` streams snapshots, matches watch-terms, emits
+  burst counts (`data/ngram_counts.json`) + provenance snippets into the
+  digest. Raw snapshots discarded.
+- Next: build the plugin + wire into `collect_news.py` loop.

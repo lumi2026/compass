@@ -1,0 +1,151 @@
+"""Background news watcher: poll GDELT topics, save theme digest for agents.
+
+Run:  python3 scripts/collect_news.py --once [--topic Q ...] [--limit 10]
+      python3 scripts/collect_news.py --loop [--interval-min 15]
+
+Writes data/news_digest.json (atomic): per-topic articles + extractive
+summary (counts, freshness lag, top domains, title keywords, headlines).
+Agents investigating Kalshi price moves read the digest as background info.
+
+Stdlib only. Requests are spaced by --gap-sec (GDELT throttles hard).
+"""
+
+import argparse
+import collections
+import datetime
+import json
+import os
+import sys
+import tempfile
+import time
+
+sys.path.insert(0, ".")
+
+from sources.gdelt import GdeltSource  # noqa: E402
+
+DEFAULT_TOPICS = {
+    "mamdani-nyc-mayor": '(Mamdani OR "New York mayor") sourcecountry:US',
+    "fed-rates": '("Federal Reserve" OR "interest rates" OR "rate cut")',
+    "trump-white-house": '(Trump OR "White House") sourcecountry:US',
+    "us-economy": '(inflation OR "jobs report" OR unemployment) sourcecountry:US',
+}
+
+STOPWORDS = frozenset(
+    """a an and are as at be but by for from has have how in is it its of on or
+    says say said says new over under with will would could after before amid
+    among into out than then there their they them this that these those what
+    when where which while who why vs via per amid among""".split()
+)
+
+
+def summarize_topic(name, query, articles, now=None):
+    """Pure extractive summary over normalized NewsArticles. No network."""
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    arts = [
+        {
+            "title": a.title,
+            "url": a.url,
+            "seendate": a.published_at,
+            "domain": (a.raw or {}).get("domain", ""),
+        }
+        for a in articles
+    ]
+    words = collections.Counter()
+    for a in arts:
+        for w in a["title"].lower().split():
+            w = "".join(c for c in w if c.isalnum())
+            if len(w) >= 4 and w not in STOPWORDS:
+                words[w] += 1
+    stamps = sorted(a["seendate"] for a in arts if a["seendate"])
+    lag_min = None
+    if stamps:
+        try:
+            newest = datetime.datetime.strptime(
+                stamps[-1], "%Y%m%dT%H%M%SZ"
+            ).replace(tzinfo=datetime.timezone.utc)
+            lag_min = round((now - newest).total_seconds() / 60)
+        except ValueError:
+            lag_min = None
+    return {
+        "name": name,
+        "query": query,
+        "count": len(arts),
+        "oldest_seendate": stamps[0] if stamps else None,
+        "newest_seendate": stamps[-1] if stamps else None,
+        "lag_minutes": lag_min,
+        "top_domains": collections.Counter(
+            a["domain"] for a in arts if a["domain"]
+        ).most_common(5),
+        "keywords": [w for w, _ in words.most_common(10)],
+        "headlines": arts[:5],
+        "articles": arts,
+    }
+
+
+def collect_once(topics, timespan, limit, gap_sec, out):
+    now = datetime.datetime.now(datetime.timezone.utc)
+    digest = {
+        "collected_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timespan": timespan,
+        "topics": {},
+        "errors": {},
+    }
+    names = list(topics)
+    for i, name in enumerate(names):
+        if i and gap_sec > 0:
+            time.sleep(gap_sec)
+        query = topics[name]
+        print(f"[news] {name}: {query} ...", flush=True)
+        try:
+            arts = GdeltSource(
+                query=query, timespan=timespan, sort="datedesc"
+            ).fetch_normalized(limit=limit)
+            digest["topics"][name] = summarize_topic(name, query, arts, now=now)
+            print(f"[news] {name}: {len(arts)} articles", flush=True)
+        except Exception as e:  # keep other topics alive; record failure
+            digest["errors"][name] = f"{type(e).__name__}: {e}"
+            print(f"[news] {name}: FAIL {e}", flush=True)
+    with tempfile.NamedTemporaryFile(
+        "w", dir=os.path.dirname(out) or ".", delete=False
+    ) as f:
+        json.dump(digest, f, indent=1)
+        tmp = f.name
+    os.replace(tmp, out)
+    print(f"[news] wrote {out}")
+    return 0 if digest["topics"] else 1
+
+
+def main() -> int:
+    p = argparse.ArgumentParser()
+    p.add_argument("--topic", action="append", default=[],
+                   help="query string; repeatable (default: built-in set)")
+    p.add_argument("--name", action="append", default=[],
+                   help="names for --topic values, in order")
+    p.add_argument("--timespan", default="1days")
+    p.add_argument("--limit", type=int, default=10)
+    p.add_argument("--gap-sec", type=float, default=240,
+                   help="spacing between topic requests")
+    p.add_argument("--out", default="data/news_digest.json")
+    p.add_argument("--once", action="store_true",
+                   help="single round (default; --loop repeats)")
+    p.add_argument("--loop", action="store_true")
+    p.add_argument("--interval-min", type=float, default=15)
+    args = p.parse_args()
+
+    if args.topic:
+        names = args.name or [f"topic-{i}" for i in range(len(args.topic))]
+        topics = dict(zip(names, args.topic))
+    else:
+        topics = dict(DEFAULT_TOPICS)
+
+    if not args.loop:
+        return collect_once(topics, args.timespan, args.limit,
+                            args.gap_sec, args.out)
+    while True:
+        collect_once(topics, args.timespan, args.limit, args.gap_sec, args.out)
+        print(f"[news] sleeping {args.interval_min} min ...", flush=True)
+        time.sleep(args.interval_min * 60)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
