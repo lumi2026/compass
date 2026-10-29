@@ -281,6 +281,33 @@ def test_task_model_overrides_agent_model(monkeypatch, tmp_path):
     assert "[llm] LLM summary here." in p.detail
 
 
+def test_graph_proposals_link_events_through_subject():
+    from graph import (
+        GraphStore, GraphUpdateAPI, Node, derive_shared_subject_links,
+        proposals_to_commit,
+    )
+    from squad import Skeptic
+
+    ag = na.NewsAgent(snapshot_gz=None, max_articles=1, model=None)
+    tasks = [
+        {"event_ticker": "KXELONMARS-99", "terms": ["spacex", "mars"]},
+        {"event_ticker": "KXNATO-99", "terms": ["spacex", "nato"]},
+    ]
+    kept = [[{"url": "http://x.test/mars", "title": "Starship slips"}],
+            [{"url": "http://x.test/nato", "title": "NATO cites SpaceX"}]]
+    api = GraphUpdateAPI(GraphStore())
+    for task, arts in zip(tasks, kept):
+        api.commit(Node(id=f"kalshi:{task['event_ticker']}", kind="Event",
+                        title=task["event_ticker"]))
+        for p in Skeptic().review(ag.graph_proposals(task, arts))[0]:
+            r = proposals_to_commit(api, p.agent, p.action, p.entity_id,
+                                    p.detail)
+            assert r.committed, r.reason
+    links = derive_shared_subject_links(api.store, "t")
+    assert ("kalshi:KXELONMARS-99", "kalshi:KXNATO-99") in {
+        (e.src, e.dst) for e in links}
+
+
 def test_agent_drops_irrelevant_article(monkeypatch, tmp_path):
     gz = tmp_path / "s.json.gz"
     _fixture_gz(gz)

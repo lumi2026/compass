@@ -8,6 +8,7 @@ snapshot -> fetch original articles -> LLM relevance filter + summary
 from dataclasses import dataclass
 from typing import Any
 
+from graph import article_id, subject_id
 from sources.kalshi import KalshiSource
 from sources.ngrams import ngram_mentions
 from squad import Proposal
@@ -106,3 +107,43 @@ class NewsAgent:
                 confidence=round(conf, 2),
             )
         ]
+
+    def graph_proposals(self, task: dict,
+                        kept: list[dict]) -> list[Proposal]:
+        """Lane-ready graph proposals for relevance-kept articles.
+
+        `kept`: [{url, title?, subjects?}]; subjects default to the task
+        terms (LLM entity extraction replaces this later). Pure offline:
+        the Orchestrator gates these through the Skeptic and commits them
+        with `graph.proposals_to_commit`, so a news summary flows straight
+        into shared graph structure.
+        """
+        import json
+
+        ticker = task["event_ticker"]
+        terms = task.get("terms", [])
+        eid = f"kalshi:{ticker}"
+        props: list[Proposal] = []
+        for a in kept:
+            aid = article_id(a["url"])
+            props.append(Proposal(
+                agent=self.name, action="add-node", entity_id=aid,
+                detail=json.dumps({"kind": "Article",
+                                   "title": a.get("title", a["url"])}),
+                confidence=0.8))
+            for term in a.get("subjects") or terms:
+                sid = subject_id(term)
+                props.append(Proposal(
+                    agent=self.name, action="add-node", entity_id=sid,
+                    detail=json.dumps({"kind": "Subject", "title": term}),
+                    confidence=0.7))
+                props.append(Proposal(
+                    agent=self.name, action="add-edge", entity_id=aid,
+                    detail=json.dumps({"src": aid, "dst": sid,
+                                       "rel": "mentions"}),
+                    confidence=0.75))
+            props.append(Proposal(
+                agent=self.name, action="add-edge", entity_id=aid,
+                detail=json.dumps({"src": aid, "dst": eid, "rel": "about"}),
+                confidence=0.75))
+        return props

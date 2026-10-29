@@ -206,6 +206,29 @@
   mark hasn't landed), new shared `sources/ngrams.py::resolve_snapshot`
   used by both scripts; verified live — first candidate hit, no miss lines.
   52/52 green.
+
+### Event graph design + POC (new goal)
+- Schema (`graph/__init__.py`): stable URI ids
+  (`kalshi:`, `market:`, `article:{sha1}`, `subject:`, `hypothesis:`),
+  `Subject` node kind, edge vocab (`mentions`, `about`,
+  `shares-subject-with` derived-only, `supports`, `challenges`,
+  `relates-to`); endpoint + kind validation in the gate; JSON save/load.
+- Collective authorship: `ROLE_ACTIONS` lanes (scout/investigator/
+  news-agent/connector), `proposals_to_commit` translator (JSON detail),
+  `derive_shared_subject_links` (article-mediated event pairing).
+- POC (`scripts/graph_poc.py`, offline): 7 seed markets in 3 families + 3
+  fixture articles → 17 nodes / 17 edges; Elon↔NATO linked via
+  `subject:spacex`, pope control isolated; `to_cytoscape` OK (34 elements).
+  55/55 green.
+- Interplay spec (specified, live watcher later): digest articles + Kalshi
+  price shifts → `detect_new_items` (`new_article` / `price_shift`) →
+  `investigation_triggers` → `Orchestrator.investigate({event_ticker,
+  terms})` → gated proposals → commit. Live price-shift watcher deferred.
+- Interplay wired (offline): `NewsAgent.graph_proposals` turns kept
+  articles into lane-ready add-node/add-edge proposals (canonical
+  `article_id`/`subject_id` now in graph layer, POC reuses them);
+  interplay test gates them through Skeptic → commits → Connector derives
+  the cross-event link. 56/56 green, POC still OK.
 - Model switch: `COMPASS_MODEL=muse-spark-1.3-contributor` smoke OK live
   (`OK` via api.meta.ai/v1). Swap = one env line, no code change.
 - Per-agent models: `make_chat_model(provider, model)` + new

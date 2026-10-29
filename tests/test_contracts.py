@@ -64,8 +64,61 @@ def test_graph_update_api_idempotent_and_validating():
     assert second.reason.startswith("duplicate")
     bad = api.commit(Node(id="", kind="", title=""))
     assert bad.committed is False
-    api.record(Edge(src="kalshi:E1", dst="gdelt:a1", rel="relates-to", at="t"))
-    assert len(api.store.edges) == 1
+    assert api.commit(Node(id="x", kind="Nope", title="t")).committed is False
+    api.commit(Node(id="gdelt:a1", kind="Article", title="a"))
+    ok = api.record(Edge(src="kalshi:E1", dst="gdelt:a1", rel="relates-to", at="t"))
+    assert ok.committed and len(api.store.edges) == 1
+    assert api.record(Edge(src="kalshi:E1", dst="missing",
+                           rel="relates-to", at="t")).committed is False
+    assert api.record(Edge(src="kalshi:E1", dst="gdelt:a1",
+                           rel="vibes", at="t")).committed is False
+
+
+def test_graph_translator_role_lanes():
+    import json
+
+    from graph import proposals_to_commit
+
+    api = GraphUpdateAPI(GraphStore())
+    good = proposals_to_commit(api, "scout", "add-node", "kalshi:E1",
+                               json.dumps({"kind": "Event", "title": "E1"}))
+    assert good.committed
+    assert proposals_to_commit(api, "scout", "add-edge", "x",
+                               json.dumps({"src": "a", "dst": "b",
+                                           "rel": "relates-to"})).committed is False
+    edge = proposals_to_commit(api, "news-agent", "add-edge", "",
+                               json.dumps({"src": "kalshi:E1",
+                                           "dst": "kalshi:E1",
+                                           "rel": "relates-to"}))
+    assert edge.committed  # self-loop passes endpoint validation
+    assert proposals_to_commit(api, "news-agent", "add-edge", "",
+                               "not-json").committed is False
+
+
+def test_connector_derives_shared_subject_links():
+    from graph import derive_shared_subject_links
+
+    api = GraphUpdateAPI(GraphStore())
+    for n in [Node(id="kalshi:E1", kind="Event", title="E1"),
+              Node(id="kalshi:E2", kind="Event", title="E2"),
+              Node(id="article:abc", kind="Article", title="A"),
+              Node(id="subject:spacex", kind="Subject", title="spacex")]:
+        api.commit(n)
+    for e in [Edge(src="article:abc", dst="subject:spacex", rel="mentions", at="t"),
+              Edge(src="article:abc", dst="kalshi:E1", rel="about", at="t"),
+              Edge(src="article:abc", dst="kalshi:E2", rel="about", at="t")]:
+        assert api.record(e).committed
+    links = derive_shared_subject_links(api.store, "t")
+    assert {(e.src, e.dst) for e in links} == {("kalshi:E1", "kalshi:E2"),
+                                               ("kalshi:E2", "kalshi:E1")}
+    assert all(e.rel == "shares-subject-with" for e in links)
+
+
+def test_graph_store_json_roundtrip(tmp_path):
+    api = GraphUpdateAPI(GraphStore())
+    api.commit(Node(id="kalshi:E1", kind="Event", title="E1"))
+    back = GraphStore.from_json(api.store.to_json())
+    assert back.nodes["kalshi:E1"].title == "E1"
 
 
 def test_kalshi_market_normalize():
