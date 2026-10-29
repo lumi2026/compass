@@ -17,6 +17,15 @@ Known gaps: `KXTOPLLMGENERAL-30` has zero markets (expect conf floor, no crash).
 ## Suite
 - `uv run python -m pytest tests/ -q` (offline fixtures; live scripts excluded).
 
+## MVP (multi-event + viewer)
+- Seed across categories:
+  `uv run python scripts/seed_kalshi.py --event KXWARSHOUT-26JUL --event KXSPACEXMARS-30 --event KXTOPLLMGENERAL-30 --out data/seed_mvp.json`
+- Live run (news scan + graph + page):
+  `uv run python scripts/run_mvp.py --seed data/seed_mvp.json`
+  (defaults write `demo/mvp_graph.json` + `demo/mvp_graph.html`)
+- Open `demo/mvp_graph.html` in a browser (standalone Cytoscape page, no server).
+- Offline check: `uv run python scripts/graph_poc.py --out /tmp/graph_poc.json` then render the HTML the same way `run_mvp.py` does.
+
 ## LangSmith
 - Key lives in `.env` as `LANGSMITH_API_KEY`. Tracing is opt-in: set `LANGSMITH_TRACING=true`. Runners print `langsmith=on project=...` (key never printed).
 - Override: `LANGSMITH_PROJECT=demo-1 uv run python scripts/run_squad.py ...` or `--langsmith-project demo-1`.

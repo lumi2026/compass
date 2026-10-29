@@ -311,3 +311,24 @@ Done: squad split + LangSmith.
 Not done: Cytoscape workspace + feedback demo; accumulator + `--loop`
 (deferred); heuristic pre-filter; mamdani widening;
 `KXTOPLLMGENERAL-30` zero-market gap.
+
+## Day 5 — Oct 29: real-data MVP
+
+### Built
+- Cross-category seed: `seed_kalshi.py --event` (repeatable) captures
+  explicit events instead of whatever tops the live list.
+- `run_mvp.py`: multi-event runner over one shared graph (Scout → news
+  scan → Investigator per event, Connector derive once).
+- `workspace/viewer.py`: standalone Cytoscape page (no server) showing
+  the graph as shaped; output lives in `demo/`.
+
+### Verified
+- Live: 4 tickers seeded (Fed, space; AI event has zero markets —
+  known gap), 27 articles kept, 48 nodes / 137 edges, page renders
+  (3 clusters, no cross-links — term sets are disjoint).
+- Suite: 80/80 green (incl. new `test_mvp.py`).
+
+### Not done
+- Human feedback loop on the workspace; accumulator + `--loop`
+  (deferred); heuristic pre-filter; `KXTOPLLMGENERAL-30` zero-market gap.
+- Changes uncommitted (MVP scripts, viewer, demo page, seed, docs).
