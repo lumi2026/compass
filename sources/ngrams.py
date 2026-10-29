@@ -199,3 +199,48 @@ def ngram_mentions(
         t: {"count": counts[t], "urls": sorted(urls[t]), "samples": samples[t]}
         for t in want
     }
+
+
+def mentions_with_lookback(terms: list[str], dest_dir: str = "/tmp",
+                           max_snapshots: int = 8, per_term_cap: int = 20,
+                           start_ts: float | None = None,
+                           candidates: list[str] | None = None) -> tuple[dict, list]:
+    """Newest-first walk over snapshots until quotas fill or budget spent.
+
+    Thin/empty recent snapshots contribute nothing; the walk keeps going
+    back. `candidates` overrides the time-derived list (tests). Returns
+    (mentions, used) with used as [(ts, path)] newest-first. Raises
+    RuntimeError when no snapshot could be read at all.
+    """
+    cands = (candidates if candidates is not None
+             else snapshot_candidates(time.time() if start_ts is None
+                                      else start_ts))
+    counts: dict[str, int] = {}
+    urls: dict[str, set] = {}
+    samples: dict[str, list] = {}
+    used: list[tuple[str, str]] = []
+    for ts in cands:
+        if len(used) >= max_snapshots:
+            break
+        dest = os.path.join(dest_dir, f"ngram_{ts}.json.gz")
+        if not os.path.exists(dest):
+            try:
+                download_snapshot(ts, dest)
+            except Exception:
+                continue
+        try:
+            m = ngram_mentions(terms, dest, per_term_cap=per_term_cap)
+        except Exception:
+            continue
+        used.append((ts, dest))
+        for t, mm in m.items():
+            counts[t] = counts.get(t, 0) + mm["count"]
+            urls.setdefault(t, set()).update(mm["urls"])
+            have = samples.setdefault(t, [])
+            have.extend(mm["samples"][: max(0, per_term_cap - len(have))])
+        if samples and all(len(samples[t]) >= per_term_cap for t in samples):
+            break
+    if not used:
+        raise RuntimeError("no readable webngrams snapshot")
+    return ({t: {"count": counts.get(t, 0), "urls": sorted(urls.get(t, set())),
+                 "samples": samples.get(t, [])} for t in counts}, used)

@@ -372,3 +372,55 @@ def test_agent_falls_back_when_llm_fails(monkeypatch, tmp_path):
                       model=_FakeModel(fail=True))
     (p,) = ag.run({"event_ticker": "X", "terms": ["spacex"]})
     assert "[extractive]" in p.detail and "engine=extractive" in p.detail
+
+
+def _lookback_gz(path, rows):
+    import gzip
+    import json
+
+    with gzip.open(str(path), "wt") as f:
+        for r in rows:
+            f.write(json.dumps(r) + "\n")
+
+
+def test_lookback_skips_empty_snapshot(tmp_path):
+    from sources.ngrams import mentions_with_lookback
+
+    empty = tmp_path / "ngram_20261028010000.json.gz"
+    _lookback_gz(empty, [{"ngram": "zzz", "type": 1, "lang": "en", "pos": 5,
+                          "pre": "a", "post": "b", "url": "http://e.test/0"}])
+    full = tmp_path / "ngram_20261028020000.json.gz"
+    _lookback_gz(full, [{"ngram": "SpaceX", "type": 1, "lang": "en", "pos": 10,
+                         "pre": "a", "post": "b", "url": "http://e.test/1"}])
+    m, used = mentions_with_lookback(
+        ["spacex"], dest_dir=str(tmp_path), max_snapshots=4,
+        candidates=["20261028010000", "20261028020000"])
+    assert [ts for ts, _ in used] == ["20261028010000", "20261028020000"]
+    assert m["spacex"]["count"] == 1
+    assert m["spacex"]["urls"] == ["http://e.test/1"]
+
+
+def test_lookback_stops_at_quota(tmp_path):
+    from sources.ngrams import mentions_with_lookback
+
+    full = tmp_path / "ngram_20261028010000.json.gz"
+    _lookback_gz(full, [{"ngram": "SpaceX", "type": 1, "lang": "en", "pos": 10,
+                         "pre": "a", "post": "b", "url": "http://e.test/1"}])
+    other = tmp_path / "ngram_20261028020000.json.gz"
+    _lookback_gz(other, [{"ngram": "SpaceX", "type": 1, "lang": "en", "pos": 9,
+                          "pre": "c", "post": "d", "url": "http://e.test/2"}])
+    _, used = mentions_with_lookback(
+        ["spacex"], dest_dir=str(tmp_path), max_snapshots=4,
+        per_term_cap=1,
+        candidates=["20261028010000", "20261028020000"])
+    assert [ts for ts, _ in used] == ["20261028010000"]
+
+
+def test_lookback_raises_when_nothing_readable(tmp_path):
+    import pytest
+
+    from sources.ngrams import mentions_with_lookback
+
+    with pytest.raises(RuntimeError):
+        mentions_with_lookback(["spacex"], dest_dir=str(tmp_path),
+                               candidates=[])

@@ -44,6 +44,38 @@ def test_explicit_opt_out_respected(monkeypatch, tmp_path):
     assert out["enabled"] is False
 
 
+def test_span_noop_when_disabled(monkeypatch, tmp_path):
+    _clean(monkeypatch)
+    from squad.tracing import squad_span
+    with squad_span("x", {"a": 1}) as run:
+        run.outputs = {"ok": True}
+
+
+def test_span_enabled_path_flushes(monkeypatch, tmp_path):
+    _clean(monkeypatch)
+    monkeypatch.setenv("LANGSMITH_API_KEY", "k-test")
+    monkeypatch.setenv("LANGSMITH_TRACING", "true")
+    calls: dict = {}
+
+    class FakeClient:
+        def create_run(self, **kw):
+            calls["create"] = kw
+
+        def update_run(self, **kw):
+            calls["update"] = kw
+
+        def flush(self):
+            calls["flush"] = True
+
+    monkeypatch.setattr("langsmith.Client", FakeClient)
+    from squad.tracing import squad_span
+    with squad_span("squad-run", {"event": "E1"}) as run:
+        run.outputs = {"nodes": 9}
+    assert calls["create"]["name"] == "squad-run"
+    assert calls["update"]["outputs"] == {"nodes": 9}
+    assert calls["flush"] is True
+
+
 def test_custom_project_respected(monkeypatch, tmp_path):
     _clean(monkeypatch)
     monkeypatch.setenv("LANGSMITH_API_KEY", "k-test")

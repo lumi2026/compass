@@ -18,7 +18,7 @@ import sys
 sys.path.insert(0, ".")
 
 from graph import GraphStore, GraphUpdateAPI, proposals_to_commit  # noqa: E402
-from sources.ngrams import resolve_snapshot  # noqa: E402
+from sources.ngrams import mentions_with_lookback  # noqa: E402
 from squad import Orchestrator, Skeptic  # noqa: E402
 from squad.connector import Connector  # noqa: E402
 from squad.investigator import Investigator  # noqa: E402
@@ -58,27 +58,29 @@ def main() -> int:
     p.add_argument("--event", default="KXSPACEXMARS-30")
     p.add_argument("--terms", nargs="*", default=["spacex", "starlink", "elon musk"])
     p.add_argument("--snapshot", default=None)
+    p.add_argument("--lookback", type=int, default=8)
     p.add_argument("--seed", default="data/seed.json")
     p.add_argument("--out", default="/tmp/squad_graph.json")
     p.add_argument("--max-articles", type=int, default=3)
     p.add_argument("--langsmith-project", default=None)
     args = p.parse_args()
 
-    from squad.tracing import setup_langsmith  # noqa: E402
+    from squad.tracing import setup_langsmith, squad_span  # noqa: E402
 
     ls = setup_langsmith(project=args.langsmith_project)
     print(f"[squad] langsmith={'on' if ls['enabled'] else 'off'} "
           f"project={ls['project']}")
 
+    with squad_span("squad-run", {"event": args.event,
+                                  "terms": args.terms}) as span:
+        result = _run(args)
+        span.outputs = result
+    return 0
+
+
+def _run(args) -> dict:
     task = {"event_ticker": args.event, "terms": args.terms}
-    snap = args.snapshot
-    if not snap:
-        try:
-            _, snap = resolve_snapshot()
-        except RuntimeError:
-            print("[squad] FAIL: no snapshot (pass --snapshot fixture offline)")
-            return 1
-    print(f"[squad] snapshot {snap}")
+    snap = args.snapshot  # explicit fixture only; otherwise lookback below
 
     scout = Scout()
     markets = scout.markets_fn(args.event) if scout.markets_fn else None
@@ -111,8 +113,19 @@ def main() -> int:
                 for a in articles_from_mentions(mentions, snap)][: args.max_articles * 3]
         print(f"[squad] snapshot kept {len(kept)} urls")
     else:
-        kept = agent.dig(task)
-        print(f"[squad] dig kept {len(kept)} urls")
+        from sources.ngrams import articles_from_mentions  # noqa: E402
+
+        try:
+            mentions, used = mentions_with_lookback(
+                task["terms"], max_snapshots=args.lookback, per_term_cap=20)
+        except RuntimeError:
+            print("[squad] FAIL: no snapshot (pass --snapshot fixture offline)")
+            return 1
+        print(f"[squad] snapshots scanned: {[ts for ts, _ in used]}")
+        kept = [{"url": a.url, "title": a.title, "subjects": list(task["terms"]),
+                 "snapshot": used[0][0], "seendate": a.published_at}
+                for a in articles_from_mentions(mentions, used[0][0])][: args.max_articles * 3]
+        print(f"[squad] lookback kept {len(kept)} urls")
     for prop in Skeptic().review(agent.graph_proposals(task, kept))[0]:
         print(proposals_to_commit(api, prop.agent, prop.action,
                                   prop.entity_id, prop.detail).reason)
@@ -133,7 +146,8 @@ def main() -> int:
     print(f"nodes={len(api.store.nodes)} edges={len(api.store.edges)} "
           f"elements={len(payload['elements'])} -> {args.out}")
     print("[squad] OK")
-    return 0
+    return {"nodes": len(api.store.nodes), "edges": len(api.store.edges),
+            "out": args.out}
 
 
 if __name__ == "__main__":

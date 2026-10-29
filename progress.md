@@ -292,3 +292,22 @@ split, workspace + feedback demo.
 - Optional / deferred: SQLite accumulator + `--loop` service (graph JSON
   suffices for now); heuristic relevance pre-score (saves LLM calls);
   mamdani term widening; `KXTOPLLMGENERAL-30` zero-market gap.
+
+## Day 4 — Oct 29: squad split + LangSmith
+
+### Built
+- Squad split: real Scout / Investigator / Connector agents behind the
+  existing role lanes, with Investigator context wiring and a
+  `run_squad.py` end-to-end demo (live with seed/snapshot fallback).
+- LangSmith: opt-in tracing on SDK env names, default project
+  `compass-dev`, wired into both runners.
+
+### Verified
+- Full suite green, graph POC OK, live squad run OK, tracing live
+  probes ingested. Pushed (`b8d836a`).
+
+### Day 4 close-out
+Done: squad split + LangSmith.
+Not done: Cytoscape workspace + feedback demo; accumulator + `--loop`
+(deferred); heuristic pre-filter; mamdani widening;
+`KXTOPLLMGENERAL-30` zero-market gap.
