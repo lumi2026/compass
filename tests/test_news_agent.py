@@ -3,7 +3,9 @@
 import gzip
 import json
 
+from sources import ngrams as ng
 from squad import news_agent as na
+from squad import tools as t
 
 
 def _fixture_gz(path):
@@ -25,7 +27,7 @@ def _fixture_gz(path):
 def test_ngram_mentions_counts_and_filters(tmp_path):
     gz = tmp_path / "s.json.gz"
     _fixture_gz(gz)
-    m = na.ngram_mentions(["spacex", "mars"], str(gz))
+    m = ng.ngram_mentions(["spacex", "mars"], str(gz))
     assert m["spacex"]["count"] == 2  # punctuation variant + casefolded
     assert m["spacex"]["urls"] == ["http://e.test/1", "http://e.test/2"]
     assert m["mars"]["count"] == 1  # fr record excluded by lang
@@ -54,11 +56,11 @@ def _phrase_gz(path):
 def test_multi_gram_matching(tmp_path):
     gz = tmp_path / "p.json.gz"
     _phrase_gz(gz)
-    m = na.ngram_mentions(["rate cut", "kevin warsh"], str(gz))
+    m = ng.ngram_mentions(["rate cut", "kevin warsh"], str(gz))
     assert m["rate cut"]["urls"] == ["http://e.test/rate"]  # not the tax cut
     assert m["kevin warsh"]["urls"] == ["http://e.test/warsh"]  # type 2 out
-    assert na.match_record({"ngram": "x", "type": 1}, ["a", "b", "c"]) is False
-    assert na.match_record({"ngram": "b", "type": 1, "pre": "a",
+    assert ng.match_record({"ngram": "x", "type": 1}, ["a", "b", "c"]) is False
+    assert ng.match_record({"ngram": "b", "type": 1, "pre": "a",
                             "post": "c"}, ["a", "b", "c"]) is True
 
 
@@ -66,22 +68,31 @@ def test_summarize_picks_term_sentences():
     text = ("The sky is blue today. SpaceX launched another Starlink batch "
             "from Florida. Markets were calm and quiet overall. "
             "Analysts say SpaceX dominates launch cadence.")
-    s = na.summarize(text, ["spacex"], max_sentences=2)
+    s = t.summarize(text, ["spacex"], max_sentences=2)
     assert "SpaceX" in s and "sky is blue" not in s
 
 
 def test_snapshot_candidates_format():
-    cands = na.snapshot_candidates(1793000000.0)
+    cands = ng.snapshot_candidates(1793000000.0)
     assert len(cands) > 3
     assert all(len(c) == 14 and c.endswith(("0100", "1600", "3100", "4600"))
                for c in cands)
+
+
+def test_snapshot_candidates_skip_unlanded_mark():
+    import datetime
+
+    now = datetime.datetime(2026, 10, 28, 0, 5,
+                            tzinfo=datetime.timezone.utc).timestamp()
+    assert ng.snapshot_candidates(now, delay_min=0)[0] == "20261028000100"
+    assert ng.snapshot_candidates(now)[0] == "20261027234600"  # 10m back
 
 
 def test_agent_proposal_shape(monkeypatch, tmp_path):
     gz = tmp_path / "s.json.gz"
     _fixture_gz(gz)
     monkeypatch.setattr(na, "kalshi_markets", lambda *a, **k: [])
-    monkeypatch.setattr(na, "resolve_model", lambda spec: None)
+    monkeypatch.setattr(na, "resolve_model", lambda spec, role=None: None)
     monkeypatch.setattr(na, "fetch_article",
                         lambda url, **k: "SpaceX news body here. " * 10)
     ag = na.NewsAgent(snapshot_gz=str(gz), max_articles=1)
@@ -212,13 +223,13 @@ def test_agent_uses_llm_when_available(monkeypatch, tmp_path):
 
 
 def test_llm_relevant_no_filters_out():
-    keep, reason = na.llm_relevant("some body", ["spacex"],
+    keep, reason = t.llm_relevant("some body", ["spacex"],
                                    _FakeModel("NO - passing mention only"))
     assert keep is False and "passing mention" in reason
 
 
 def test_llm_relevant_fail_open_on_unparseable():
-    keep, _ = na.llm_relevant("some body", ["spacex"],
+    keep, _ = t.llm_relevant("some body", ["spacex"],
                               _FakeModel("LLM summary here."))
     assert keep is True
 
@@ -236,7 +247,7 @@ class _ScriptedModel:
 
 def test_llm_relevant_prompt_carries_question():
     fake = _FakeModel("YES - on point")
-    na.llm_relevant("some body", ["spacex"], fake,
+    t.llm_relevant("some body", ["spacex"], fake,
                     question="Will SpaceX land on Mars?")
     system_text = str(fake.seen[0].content)
     assert "Will SpaceX land on Mars?" in system_text

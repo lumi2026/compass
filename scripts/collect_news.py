@@ -7,7 +7,11 @@ Writes data/news_digest.json (atomic): per-topic articles + extractive
 summary (counts, freshness lag, top domains, title keywords, headlines).
 Agents investigating Kalshi price moves read the digest as background info.
 
-Stdlib only. Requests are spaced by --gap-sec (GDELT throttles hard).
+Default source is NGrams 3.0 snapshots (fresh 15-min static host,
+unthrottled). DOC 2.0 (`--source doc`) is the fallback; its index was
+observed ~19h stale and it throttles to ~1 req / 5s.
+
+Stdlib only. DOC requests are spaced by --gap-sec (GDELT throttles hard).
 """
 
 import argparse
@@ -18,16 +22,26 @@ import os
 import sys
 import tempfile
 import time
+from urllib.parse import urlsplit
 
 sys.path.insert(0, ".")
 
+from sources.base import NewsArticle  # noqa: E402
 from sources.gdelt import GdeltSource  # noqa: E402
+from sources.ngrams import ngram_mentions, resolve_snapshot  # noqa: E402
 
 DEFAULT_TOPICS = {
     "mamdani-nyc-mayor": '(Mamdani OR "New York mayor") sourcecountry:US',
     "fed-rates": '("Federal Reserve" OR "interest rates" OR "rate cut")',
     "trump-white-house": '(Trump OR "White House") sourcecountry:US',
     "us-economy": '(inflation OR "jobs report" OR unemployment) sourcecountry:US',
+}
+
+DEFAULT_NGRAM_TERMS = {
+    "mamdani-nyc-mayor": ["zohran mamdani", "new york mayor", "mamdani"],
+    "fed-rates": ["federal reserve", "interest rates", "rate cut"],
+    "trump-white-house": ["donald trump", "white house"],
+    "us-economy": ["inflation", "jobs report", "unemployment"],
 }
 
 STOPWORDS = frozenset(
@@ -82,10 +96,99 @@ def summarize_topic(name, query, articles, now=None):
     }
 
 
+def _to_seendate(value, fallback=""):
+    """Normalize a record/snapshot stamp to digest seendate format."""
+    for fmt in ("%Y%m%dT%H%M%SZ", "%Y%m%d%H%M%S"):
+        try:
+            return datetime.datetime.strptime(value, fmt).strftime(
+                "%Y%m%dT%H%M%SZ")
+        except (ValueError, TypeError):
+            continue
+    return fallback
+
+
+def articles_from_mentions(mentions, snapshot_ts):
+    """Pure: ngram mention samples -> NewsArticles (lead hits first).
+
+    Snippet text stands in for the title; the record date (or snapshot
+    stamp) for seendate; domain parsed from the URL. Deduped by URL.
+    """
+    snap_seendate = _to_seendate(snapshot_ts)
+    arts, seen = [], set()
+    for term, m in mentions.items():
+        for s in sorted(m["samples"], key=lambda r: r.get("pos", 99)):
+            url = s.get("url", "")
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            snippet = f"...{s.get('pre', '')} [{s.get('ngram', '')}] " \
+                f"{s.get('post', '')}...".strip()
+            arts.append(NewsArticle(
+                source="ngrams",
+                external_id=url,
+                title=snippet,
+                url=url,
+                published_at=_to_seendate(s.get("date"), snap_seendate),
+                raw={"domain": urlsplit(url).netloc, "term": term,
+                     "pos": s.get("pos")},
+            ))
+    return arts
+
+
+def _write_digest(digest, out):
+    with tempfile.NamedTemporaryFile(
+        "w", dir=os.path.dirname(out) or ".", delete=False
+    ) as f:
+        json.dump(digest, f, indent=1)
+        tmp = f.name
+    os.replace(tmp, out)
+    print(f"[news] wrote {out}")
+
+
+def collect_once_ngrams(topics_terms, limit, out, snapshot=None):
+    now = datetime.datetime.now(datetime.timezone.utc)
+    digest = {
+        "collected_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "source": "ngrams",
+        "topics": {},
+        "errors": {},
+    }
+    try:
+        if snapshot:
+            ts = os.path.basename(snapshot).removeprefix(
+                "ngram_").removesuffix(".json.gz")
+            snap = snapshot
+        else:
+            ts, snap = resolve_snapshot()
+        print(f"[news] snapshot {ts}", flush=True)
+    except Exception as e:
+        digest["errors"]["snapshot"] = f"{type(e).__name__}: {e}"
+        _write_digest(digest, out)
+        return 1
+    for name, terms in topics_terms.items():
+        print(f"[news] {name}: {terms} ...", flush=True)
+        try:
+            mentions = ngram_mentions(terms, snap, per_term_cap=limit)
+            total = sum(m["count"] for m in mentions.values())
+            arts = articles_from_mentions(mentions, ts)
+            digest["topics"][name] = summarize_topic(
+                name, ",".join(terms), arts, now=now)
+            digest["topics"][name]["ngram_hits"] = total
+            digest["topics"][name]["snapshot"] = ts
+            print(f"[news] {name}: {total} hits, {len(arts)} urls",
+                  flush=True)
+        except Exception as e:  # keep other topics alive; record failure
+            digest["errors"][name] = f"{type(e).__name__}: {e}"
+            print(f"[news] {name}: FAIL {e}", flush=True)
+    _write_digest(digest, out)
+    return 0 if digest["topics"] else 1
+
+
 def collect_once(topics, timespan, limit, gap_sec, out):
     now = datetime.datetime.now(datetime.timezone.utc)
     digest = {
         "collected_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "source": "doc",
         "timespan": timespan,
         "topics": {},
         "errors": {},
@@ -105,26 +208,26 @@ def collect_once(topics, timespan, limit, gap_sec, out):
         except Exception as e:  # keep other topics alive; record failure
             digest["errors"][name] = f"{type(e).__name__}: {e}"
             print(f"[news] {name}: FAIL {e}", flush=True)
-    with tempfile.NamedTemporaryFile(
-        "w", dir=os.path.dirname(out) or ".", delete=False
-    ) as f:
-        json.dump(digest, f, indent=1)
-        tmp = f.name
-    os.replace(tmp, out)
-    print(f"[news] wrote {out}")
+    _write_digest(digest, out)
     return 0 if digest["topics"] else 1
 
 
 def main() -> int:
     p = argparse.ArgumentParser()
+    p.add_argument("--source", choices=["ngrams", "doc"], default="ngrams",
+                   help="news source (default: ngrams)")
     p.add_argument("--topic", action="append", default=[],
-                   help="query string; repeatable (default: built-in set)")
+                   help="doc query string (or comma-separated ngram terms "
+                   "with --source ngrams); repeatable")
     p.add_argument("--name", action="append", default=[],
                    help="names for --topic values, in order")
-    p.add_argument("--timespan", default="1days")
+    p.add_argument("--timespan", default="1days",
+                   help="doc only: GDELT timespan window")
     p.add_argument("--limit", type=int, default=10)
     p.add_argument("--gap-sec", type=float, default=240,
-                   help="spacing between topic requests")
+                   help="doc only: spacing between topic requests")
+    p.add_argument("--snapshot", default=None,
+                   help="ngrams only: pin a snapshot .json.gz path")
     p.add_argument("--out", default="data/news_digest.json")
     p.add_argument("--once", action="store_true",
                    help="single round (default; --loop repeats)")
@@ -132,17 +235,30 @@ def main() -> int:
     p.add_argument("--interval-min", type=float, default=15)
     args = p.parse_args()
 
-    if args.topic:
-        names = args.name or [f"topic-{i}" for i in range(len(args.topic))]
-        topics = dict(zip(names, args.topic))
+    if args.source == "ngrams":
+        if args.topic:
+            names = args.name or [f"topic-{i}"
+                                  for i in range(len(args.topic))]
+            topics_terms = {n: [w.strip() for w in q.split(",") if w.strip()]
+                            for n, q in zip(names, args.topic)}
+        else:
+            topics_terms = dict(DEFAULT_NGRAM_TERMS)
+        run = lambda: collect_once_ngrams(topics_terms, args.limit,
+                                          args.out, args.snapshot)
     else:
-        topics = dict(DEFAULT_TOPICS)
+        if args.topic:
+            names = args.name or [f"topic-{i}"
+                                  for i in range(len(args.topic))]
+            topics = dict(zip(names, args.topic))
+        else:
+            topics = dict(DEFAULT_TOPICS)
+        run = lambda: collect_once(topics, args.timespan, args.limit,
+                                   args.gap_sec, args.out)
 
     if not args.loop:
-        return collect_once(topics, args.timespan, args.limit,
-                            args.gap_sec, args.out)
+        return run()
     while True:
-        collect_once(topics, args.timespan, args.limit, args.gap_sec, args.out)
+        run()
         print(f"[news] sleeping {args.interval_min} min ...", flush=True)
         time.sleep(args.interval_min * 60)
 

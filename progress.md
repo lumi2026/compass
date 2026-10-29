@@ -189,6 +189,23 @@
 - Default model now `muse-spark-1.3-contributor` for all roles (role table
   kept for later split); role env (`MODEL_FOR_<ROLE>`) + `COMPASS_MODEL`
   overrides unchanged. Tests updated; run pending approval.
+- Code restructure (reviewed + applied): `squad/tools.py` (fetch/summarize/
+  llm_* — shared by all agents), `sources/ngrams.py` (snapshot/match/count),
+  `squad/news_agent.py` slimmed to `NewsAgent` + kalshi adapter, `Agent`
+  protocol task type fixed to `dict | str`. Scripts + tests re-imported.
+  Full suite: 47/47 green.
+- NGrams now the default news source (`--source ngrams`, DOC kept as
+  `--source doc` fallback): `collect_news.py` resolves the newest snapshot
+  once per round, maps topics to phrase terms (`DEFAULT_NGRAM_TERMS`),
+  converts samples to `NewsArticle`s (snippet title, record-date seendate,
+  domain from URL) and reuses `summarize_topic`. 6 new tests; 51/51 green.
+- Live digest proof (snapshot 20261028233100): fed 13 hits/6 urls, trump
+  17/6, economy 26/5, all lag ~43 min (vs ~19h DOC staleness); mamdani 0
+  hits in this 15-min window — watch whether the terms need widening.
+- Snapshot 404s avoided: `snapshot_candidates` starts 10 min back (freshest
+  mark hasn't landed), new shared `sources/ngrams.py::resolve_snapshot`
+  used by both scripts; verified live — first candidate hit, no miss lines.
+  52/52 green.
 - Model switch: `COMPASS_MODEL=muse-spark-1.3-contributor` smoke OK live
   (`OK` via api.meta.ai/v1). Swap = one env line, no code change.
 - Per-agent models: `make_chat_model(provider, model)` + new

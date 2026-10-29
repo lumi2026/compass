@@ -18,13 +18,13 @@ import time
 
 sys.path.insert(0, ".")
 
-from squad.news_agent import (  # noqa: E402
+from sources.ngrams import (  # noqa: E402
     download_snapshot,
-    fetch_article,
-    kalshi_markets,
     ngram_mentions,
     snapshot_candidates,
 )
+from squad.news_agent import kalshi_markets  # noqa: E402
+from squad.tools import fetch_article  # noqa: E402
 
 
 def main() -> int:

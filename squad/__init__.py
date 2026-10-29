@@ -29,7 +29,7 @@ class Agent(Protocol):
 
     name: str
 
-    def run(self, task: str, context: dict) -> list[Proposal]:
+    def run(self, task: dict | str, context: dict) -> list[Proposal]:
         ...
 
 
@@ -61,7 +61,7 @@ class Orchestrator:
         self.agents = agents
         self.skeptic = skeptic or Skeptic()
 
-    def investigate(self, task: str, context: dict | None = None) -> list[Proposal]:
+    def investigate(self, task: dict | str, context: dict | None = None) -> list[Proposal]:
         ctx = context or {}
         proposals: list[Proposal] = []
         for agent in self.agents:
