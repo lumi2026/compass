@@ -179,12 +179,17 @@ def proposals_to_commit(api: GraphUpdateAPI, agent: str, action: str,
 
     `add-node`: entity_id is the node id, detail is JSON {kind, title}.
     `add-edge`: detail is JSON {src, dst, rel}.
+    `derive-links`: connector-only, recomputes derived edges.
     Anything outside the role lane (or malformed JSON) is refused.
+    `news_summary` is never committable: only graph_proposals() commits.
     """
     import json
 
     if action not in ROLE_ACTIONS.get(agent, ()):
         return CommitResult(False, f"role {agent!r} may not {action!r}")
+    if action == "derive-links":
+        fresh = refresh_derived_links(api)
+        return CommitResult(True, f"derived {fresh}")
     try:
         payload = json.loads(detail) if detail else {}
     except ValueError:

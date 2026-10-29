@@ -9,6 +9,7 @@ dependencies = [
     "python-dotenv>=1",
     "langchain-core>=1.7.0",
     "langchain-openai>=1.7.3",
+    "langsmith>=0.14",
 ]
 
 [dependency-groups]

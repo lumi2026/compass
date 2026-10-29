@@ -16,6 +16,10 @@ Env:
   COMPASS_MODEL (or MODEL_NAME) — model id, overrides the preset default.
   MODEL_BASE_URL — overrides the preset base_url (or sets it for custom).
 
+Tracing (see squad.tracing.setup_langsmith, called by scripts/run_*):
+  opt-in via LANGSMITH_TRACING=true plus LANGSMITH_API_KEY.
+  LANGSMITH_PROJECT (default "compass-dev"), LANGSMITH_ENDPOINT.
+
 Examples:
   meta:     MODEL_PROVIDER=meta MODEL_API_KEY=... (default muse-spark-1.3-contributor)
   gpt:      MODEL_PROVIDER=openai OPENAI_API_KEY=... [COMPASS_MODEL=gpt-4o-mini]
@@ -36,6 +40,9 @@ DEFAULT_MODEL = "muse-spark-1.3-contributor"  # demo default: reasoning model
 AGENT_MODEL_DEFAULTS = {
     "news-agent": "muse-spark-1.3-contributor",
     "graph-agent": "muse-spark-1.3-contributor",
+    "scout": "muse-spark-1.3",
+    "investigator": "muse-spark-1.3-contributor",
+    "connector": "muse-spark-1.3-contributor",
 }
 
 

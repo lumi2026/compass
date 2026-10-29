@@ -29,7 +29,14 @@ def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--snapshot", default=None)
     p.add_argument("--max-articles", type=int, default=3)
+    p.add_argument("--langsmith-project", default=None)
     args = p.parse_args()
+
+    from squad.tracing import setup_langsmith  # noqa: E402
+
+    ls = setup_langsmith(project=args.langsmith_project)
+    print(f"[agent] langsmith={'on' if ls['enabled'] else 'off'} "
+          f"project={ls['project']}")
 
     snap = args.snapshot
     if not snap:
