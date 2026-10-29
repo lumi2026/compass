@@ -188,7 +188,7 @@
   AI 0 markets, dropped 3/3.
 - Default model now `muse-spark-1.3-contributor` for all roles (role table
   kept for later split); role env (`MODEL_FOR_<ROLE>`) + `COMPASS_MODEL`
-  overrides unchanged. Tests updated; run pending approval.
+  overrides unchanged. Suite has run green repeatedly since (62/62).
 - Code restructure (reviewed + applied): `squad/tools.py` (fetch/summarize/
   llm_* — shared by all agents), `sources/ngrams.py` (snapshot/match/count),
   `squad/news_agent.py` slimmed to `NewsAgent` + kalshi adapter, `Agent`
@@ -244,7 +244,7 @@
   now tags the model id (`engine=llm:<id>`). 18/18 tests green.
 - Subject-level relevance: filter keeps articles substantively about a key
   subject without requiring they answer the question (SpaceX news counts
-  for a Mars question); live re-run pending.
+  for a Mars question); validated live (see above).
 
 ### Start-of-day review (plan vs progress)
 - Original plan (`docs/plan.md`): situation-aware consultant, Living Event
@@ -255,9 +255,11 @@
 - Day 2 fit: GDELT baseline + NGrams 3.0 pivot (DOC v2 throttled, static host
   fast — justified extension, not drift), single news-agent prototype with
   Muse Spark via LangChain — on-plan toward Squad/Investigator.
-- Gaps to close for demo: Event Graph + Graph Update API, full
-  Scout/Investigator/Connector/Skeptic split, Cytoscape workspace + feedback
-  loop. Accumulator DB is the bridge (shared space agents query).
+- Gaps to close for demo (updated at Day 3 close): Event Graph + Graph
+  Update API done (schema, lanes, translator, POC). Remaining: full
+  Scout/Investigator/Connector agent split (roles exist, classes don't),
+  Investigator context wiring, Cytoscape workspace + feedback loop demo.
+  Accumulator DB deferred — graph JSON covers shared state for now.
 
 ### Meta API wiring (Muse Spark via LangChain)
 - `squad/news_agent.py`: new `llm_relevant` tool (YES/NO + reason,
@@ -265,10 +267,28 @@
   detail gains `relevant_filter=dropped N of M`.
 - `tests/test_news_agent.py`: +3 tests (NO filters, unparseable keeps,
   agent drops irrelevant); 11/11 green.
-- Live run blocked: no `MODEL_API_KEY` in `.env` (only Kalshi keys present).
-  Next: user adds `MODEL_API_KEY=...` then
-  `uv run python scripts/run_news_agent.py --max-articles 3`.
+- Key setup (resolved): `MODEL_API_KEY` added to `.env`; smoke + full
+  agent runs done (see Day 3 entries above).
 - Provider-swap review: `squad/models.py` factory generalized —
   `MODEL_PROVIDER` (meta|openai|deepseek|custom) + presets, generic or
   provider keys, `COMPASS_MODEL`/`MODEL_BASE_URL` overrides; agent tools
   already provider-agnostic (`model.invoke` only). 15/15 tests green.
+
+### Day 3 close-out
+Done: Meta/LLM wiring + live validation, per-agent + role-based models
+(contributor default), subject-level relevance, squad/tools + ngrams split,
+ngrams-as-default digest, 404 avoidance, graph schema + POC + use-case
+fixes (dedupe, backfill/dig, dispatch, persistence). 62/62 green.
+Not done (moved to Next step): SQLite accumulator + loop service,
+Investigator agent + digest wiring, heuristic pre-filter, full squad agent
+split, workspace + feedback demo.
+
+### Next step
+- Investigator agent: consumes digest/graph context for Kalshi moves;
+  wire `graph_proposals` output into its context.
+- Squad split: real Scout / Investigator / Connector classes behind the
+  existing `ROLE_ACTIONS` lanes + `Orchestrator` fan-out demo.
+- Workspace demo: live Cytoscape view + human feedback → task loop.
+- Optional / deferred: SQLite accumulator + `--loop` service (graph JSON
+  suffices for now); heuristic relevance pre-score (saves LLM calls);
+  mamdani term widening; `KXTOPLLMGENERAL-30` zero-market gap.
