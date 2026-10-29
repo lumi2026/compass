@@ -48,10 +48,10 @@
 - Market price parsing fixed to Kalshi `*_dollars` strings; seed recaptured
   with real prices.
 
-## Day 2 — Oct 28 (today)
+## Day 2 — Oct 28
 
 ### Plan
-- News service baseline: behavior, latency, today's USA sample, how we use it later.
+- News service baseline: behavior, latency, Oct-28 USA sample, how we use it later.
 
 ### Built
 - `sources/gdelt.py`: 429 backoff 2s-steps → 7s-steps (GDELT asks max 1 req / 5s).
@@ -162,7 +162,7 @@
   git-ignored) that agents query: snapshots log, mentions (term/ts/url/
   pre/post/pos), articles (url/text/summary/engine).
 
-## Day 3 — Oct 28 (hackathon day 3)
+## Day 3 — Oct 28
 
 ### Plan
 - Fan-out accumulator: `squad/store.py` (SQLite: snapshots/mentions/articles),
@@ -257,7 +257,7 @@
   Muse Spark via LangChain — on-plan toward Squad/Investigator.
 - Gaps to close for demo: Event Graph + Graph Update API, full
   Scout/Investigator/Connector/Skeptic split, Cytoscape workspace + feedback
-  loop. Accumulator DB today is the bridge (shared space agents query).
+  loop. Accumulator DB is the bridge (shared space agents query).
 
 ### Meta API wiring (Muse Spark via LangChain)
 - `squad/news_agent.py`: new `llm_relevant` tool (YES/NO + reason,
