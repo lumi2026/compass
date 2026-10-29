@@ -50,10 +50,64 @@ def test_mvp_two_events_share_subject_link():
     payload = to_cytoscape(list(api.store.nodes.values()), api.store.edges)
     assert len(payload["elements"]) > 0
     page = render_page(payload, title="MVP test")
-    assert "cytoscape" in page
+    assert "3d-force-graph" in page
     assert "kalshi:KXEVA-1" in page and "kalshi:KXEVB-2" in page
 
 
 def test_viewer_empty_graph():
     page = render_page({"elements": []}, title="empty")
-    assert 'id="counts"' in page and "cytoscape" in page
+    assert 'id="counts"' in page and "3d-force-graph" in page
+
+
+def _linked_pair():
+    return [
+        {"data": {"id": "kalshi:X",
+                  "label": "Will Kevin Warsh be out as chairman of the "
+                           "Board of Governors?",
+                  "kind": "Event"}},
+        {"data": {"id": "m:Y", "label": "why", "kind": "Market"}},
+        {"data": {"source": "kalshi:X", "target": "m:Y",
+                  "label": "relates-to"}},
+    ]
+
+
+def test_viewer_interactive_labels():
+    from workspace.viewer import render_page, _short
+    els = _linked_pair()
+    page = render_page({"elements": els})
+    long_title = els[0]["data"]["label"]
+    assert _short(long_title) in page  # truncated sprite label
+    assert long_title in page  # full title present for hover/click pop-out
+    assert 'id="zin"' in page and 'id="zout"' in page and 'id="zreset"' in page
+    assert 'id="info"' in page and 'id="allLabels"' in page
+    assert "3d-force-graph" in page
+    assert "three@0.186.1" in page and "3d-force-graph@1.80.1" in page
+
+
+def test_viewer_embeds_sized_colored_nodes():
+    import json
+    import re
+
+    from workspace.viewer import render_page
+    page = render_page({"elements": _linked_pair()})
+    m = re.search(r"const graphData = (\{.*?\});\n", page, re.S)
+    data = json.loads(m.group(1))
+    assert {n["id"] for n in data["nodes"]} == {"kalshi:X", "m:Y"}
+    assert all(n["val"] > 0 and n["color"].startswith("#")
+               for n in data["nodes"])
+    assert data["nodes"][0]["neighbors"] == ["m:Y"]
+    assert data["links"] == [{"source": "kalshi:X", "target": "m:Y",
+                              "rel": "relates-to", "color": "#999999",
+                              "w": 1}]
+
+
+def test_viewer_drops_unlinked_nodes():
+    from workspace.viewer import render_page
+    page = render_page({"elements": [
+        {"data": {"id": "a:1", "label": "linked one", "kind": "Article"}},
+        {"data": {"id": "a:2", "label": "linked two", "kind": "Article"}},
+        {"data": {"id": "a:3", "label": "lonely node", "kind": "Article"}},
+        {"data": {"source": "a:1", "target": "a:2", "label": "relates-to"}},
+    ]})
+    assert "linked one" in page and "linked two" in page
+    assert "lonely node" not in page

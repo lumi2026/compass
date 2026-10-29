@@ -102,6 +102,31 @@ def test_agent_proposal_shape(monkeypatch, tmp_path):
     assert "engine=extractive" in p.detail
 
 
+def test_summary_carries_run_date_and_article_dates(monkeypatch, tmp_path):
+    import gzip
+    import json
+    import re
+
+    gz = tmp_path / "ngram_20261028014600.json.gz"
+    rows = [
+        {"ngram": "SpaceX", "type": 1, "lang": "en", "pos": 10,
+         "pre": "a", "post": "b", "url": "http://e.test/1",
+         "date": "20261028014600"},
+    ]
+    with gzip.open(str(gz), "wt") as f:
+        for r in rows:
+            f.write(json.dumps(r) + "\n")
+    monkeypatch.setattr(na, "kalshi_markets", lambda *a, **k: [])
+    monkeypatch.setattr(na, "resolve_model", lambda spec, role=None: None)
+    monkeypatch.setattr(na, "fetch_article",
+                        lambda url, **k: "SpaceX launched another Starlink "
+                        "batch from Florida this morning. " * 6)
+    ag = na.NewsAgent(snapshot_gz=str(gz), max_articles=1)
+    (p,) = ag.run({"event_ticker": "X", "terms": ["spacex"]})
+    assert re.search(r"(?m)^date=\d{8}T\d{6}Z$", p.detail)
+    assert "(20261028T014600Z)" in p.detail
+
+
 def test_factory_none_without_key(monkeypatch):
     from squad.models import make_chat_model
 

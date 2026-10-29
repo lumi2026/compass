@@ -6,7 +6,9 @@ snapshot -> fetch original articles -> LLM relevance filter + summary
 """
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
+import re
 
 from graph import article_id, subject_id
 from sources.kalshi import KalshiSource
@@ -48,6 +50,13 @@ class NewsAgent:
         mentions = ngram_mentions(terms, self.snapshot_gz or "", per_term_cap=5)
         total = sum(m["count"] for m in mentions.values())
 
+        # Per-article dates: record date, else the snapshot stamp parsed
+        # from the snapshot path ("" when neither is known).
+        snap_m = re.search(r"(\d{14})", self.snapshot_gz or "")
+        snap_ts = snap_m.group(1) if snap_m else ""
+        dates = {a.url: a.published_at
+                 for a in articles_from_mentions(mentions, snap_ts)}
+
         # Prefer lead-paragraph hits (pos <= 20), dedupe urls.
         cand: list[str] = []
         for m in mentions.values():
@@ -56,7 +65,9 @@ class NewsAgent:
                     cand.append(s["url"])
         cand = cand[: self.max_articles]
 
+        run_date = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         lines = [
+            f"date={run_date}",
             f"markets={len(markets)}",
             f"ngram_hits_15min={total}",
             f"lead={lead.title if lead else '?'} @ {price}",
@@ -92,7 +103,9 @@ class NewsAgent:
             if not summ:
                 continue
             ok += 1
-            lines.append(f"- [{via}] {summ} [{url}]")
+            stamp = dates.get(url, "")
+            lines.append(f"- [{via}] {summ} [{url}]"
+                         + (f" ({stamp})" if stamp else ""))
         if not ok:
             lines.append("(no articles fetchable; n-gram counts only)")
         if model is not None:

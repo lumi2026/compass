@@ -332,3 +332,22 @@ Not done: Cytoscape workspace + feedback demo; accumulator + `--loop`
 - Human feedback loop on the workspace; accumulator + `--loop`
   (deferred); heuristic pre-filter; `KXTOPLLMGENERAL-30` zero-market gap.
 - Changes uncommitted (MVP scripts, viewer, demo page, seed, docs).
+
+## Day 6 — Oct 29: dates + 3D graph
+
+### Built
+- News summaries carry dates: run-date line plus per-article stamps.
+- Graph page is now 3D (pinned three.js + 3d-force-graph): drag to
+  rotate, scroll to zoom, hover for full title, click for details,
+  labels toggle. Output still in `demo/`.
+
+### Verified
+- Suite green (84 tests, incl. date + 3D viewer coverage).
+- Headless browser run clean: canvas renders, zoom/rotate confirmed
+  in screenshots, no console errors.
+- Hover/click probing inconclusive in automation (synthetic events);
+  needs a human pass in a real browser.
+
+### Not done
+- Display refinement (layout, label density, mobile) — later step.
+- Changes uncommitted.
