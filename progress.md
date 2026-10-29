@@ -229,6 +229,13 @@
   `article_id`/`subject_id` now in graph layer, POC reuses them);
   interplay test gates them through Skeptic → commits → Connector derives
   the cross-event link. 56/56 green, POC still OK.
+- Use-case fixes built (all four): edge dedupe in `record()` (re-runs
+  keep first-seen `at`); bounded backfill (`select_snapshots` stride +
+  `backfill_snapshots` ≈13 files/48h, `NewsAgent.dig` deduped by URL,
+  `scripts/backfill_news.py` digest + proposals); Connector dispatch
+  (`followup_tasks` — POC prints NATO→Elon/spacex follow-up);
+  `refresh_derived_links` (idempotent) + `save`/`load` wired through POC
+  roundtrip. 62/62 green.
 - Model switch: `COMPASS_MODEL=muse-spark-1.3-contributor` smoke OK live
   (`OK` via api.meta.ai/v1). Swap = one env line, no code change.
 - Per-agent models: `make_chat_model(provider, model)` + new

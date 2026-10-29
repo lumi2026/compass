@@ -74,6 +74,18 @@ def test_graph_update_api_idempotent_and_validating():
                            rel="vibes", at="t")).committed is False
 
 
+def test_graph_record_dedupes_reruns():
+    api = GraphUpdateAPI(GraphStore())
+    api.commit(Node(id="kalshi:E1", kind="Event", title="E1"))
+    api.commit(Node(id="gdelt:a1", kind="Article", title="a"))
+    e = Edge(src="gdelt:a1", dst="kalshi:E1", rel="about", at="t1")
+    assert api.record(e).reason == "recorded"
+    dup = api.record(Edge(src="gdelt:a1", dst="kalshi:E1", rel="about",
+                          at="t2"))
+    assert dup.committed and dup.reason.startswith("duplicate")
+    assert len(api.store.edges) == 1
+
+
 def test_graph_translator_role_lanes():
     import json
 
@@ -119,6 +131,45 @@ def test_graph_store_json_roundtrip(tmp_path):
     api.commit(Node(id="kalshi:E1", kind="Event", title="E1"))
     back = GraphStore.from_json(api.store.to_json())
     assert back.nodes["kalshi:E1"].title == "E1"
+
+
+def _linked_pair():
+    api = GraphUpdateAPI(GraphStore())
+    for n in [Node(id="kalshi:E1", kind="Event", title="E1"),
+              Node(id="kalshi:E2", kind="Event", title="E2"),
+              Node(id="article:a", kind="Article", title="A"),
+              Node(id="subject:s", kind="Subject", title="spacex")]:
+        api.commit(n)
+    for e in [Edge(src="article:a", dst="subject:s", rel="mentions", at="t"),
+              Edge(src="article:a", dst="kalshi:E1", rel="about", at="t"),
+              Edge(src="article:a", dst="kalshi:E2", rel="about", at="t")]:
+        api.record(e)
+    return api
+
+
+def test_followup_tasks_dispatch():
+    from graph import followup_tasks
+
+    tasks = followup_tasks(_linked_pair().store, "kalshi:E2")
+    assert tasks == [{"event_ticker": "E1", "terms": ["spacex"]}]
+
+
+def test_refresh_derived_links_idempotent():
+    from graph import refresh_derived_links
+
+    api = _linked_pair()
+    assert refresh_derived_links(api) == 2
+    assert refresh_derived_links(api) == 0
+    assert len(api.store.edges) == 3 + 2
+
+
+def test_api_save_load_roundtrip(tmp_path):
+    out = str(tmp_path / "g.json")
+    api = _linked_pair()
+    api.save(out)
+    back = GraphUpdateAPI.load(out)
+    assert len(back.store.nodes) == len(api.store.nodes)
+    assert GraphUpdateAPI.load(str(tmp_path / "nope.json")).store.nodes == {}
 
 
 def test_kalshi_market_normalize():

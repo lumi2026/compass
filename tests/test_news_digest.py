@@ -4,10 +4,10 @@ import datetime
 import json
 
 from scripts.collect_news import (
-    DEFAULT_NGRAM_TERMS, _to_seendate, articles_from_mentions,
-    collect_once_ngrams, summarize_topic,
+    DEFAULT_NGRAM_TERMS, collect_once_ngrams, summarize_topic,
 )
 from sources.base import NewsArticle
+from sources.ngrams import _to_seendate, articles_from_mentions
 
 
 def _art(title, url="http://x.test/a", seendate="20261027T051500Z",

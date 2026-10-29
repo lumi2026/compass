@@ -13,6 +13,9 @@ import os
 import string
 import time
 import urllib.request
+from urllib.parse import urlsplit
+
+from sources.base import NewsArticle
 
 SNAP_BASE = "https://data.gdeltproject.org/gdeltv3/webngrams"
 UA = {"User-Agent": "compass-hackathon/0.1"}
@@ -66,6 +69,83 @@ def resolve_snapshot(dest_dir: str = "/tmp") -> tuple[str, str]:
         except Exception:
             continue
     raise RuntimeError("no downloadable webngrams snapshot")
+
+
+def select_snapshots(candidates: list[str], every_nth: int = 16) -> list[str]:
+    """Oldest-first stride sample across candidate timestamps.
+
+    `every_nth=16` over 15-min marks samples ~every 4h; the newest mark
+    is always included so the tail stays fresh. Pure (testable).
+    """
+    ordered = sorted(set(candidates))
+    if not ordered or every_nth <= 1:
+        return ordered
+    sampled = ordered[::every_nth]
+    if sampled[-1] != ordered[-1]:
+        sampled.append(ordered[-1])
+    return sampled
+
+
+def backfill_snapshots(hours_back: float = 48, every_nth: int = 16,
+                       dest_dir: str = "/tmp",
+                       now_ts: float | None = None) -> list[tuple[str, str]]:
+    """Sampled (ts, path) pairs across history, oldest first.
+
+    Bounded cost by construction: 48h at every-16th mark ≈ 13 files.
+    Misses and unlanded marks are skipped; cached files reused.
+    """
+    cands = snapshot_candidates(time.time() if now_ts is None else now_ts,
+                                lookback_min=int(hours_back * 60))
+    out: list[tuple[str, str]] = []
+    for ts in select_snapshots(cands, every_nth):
+        dest = os.path.join(dest_dir, f"ngram_{ts}.json.gz")
+        if os.path.exists(dest):
+            out.append((ts, dest))
+            continue
+        try:
+            out.append((ts, download_snapshot(ts, dest)))
+        except Exception:
+            continue
+    return out
+
+
+def _to_seendate(value, fallback=""):
+    """Normalize a record/snapshot stamp to digest seendate format."""
+    for fmt in ("%Y%m%dT%H%M%SZ", "%Y%m%d%H%M%S"):
+        try:
+            return datetime.datetime.strptime(value, fmt).strftime(
+                "%Y%m%dT%H%M%SZ")
+        except (ValueError, TypeError):
+            continue
+    return fallback
+
+
+def articles_from_mentions(mentions, snapshot_ts):
+    """Mention samples -> NewsArticles (lead hits first).
+
+    Snippet text stands in for the title; the record date (or snapshot
+    stamp) for seendate; domain parsed from the URL. Deduped by URL.
+    """
+    snap_seendate = _to_seendate(snapshot_ts)
+    arts, seen = [], set()
+    for term, m in mentions.items():
+        for s in sorted(m["samples"], key=lambda r: r.get("pos", 99)):
+            url = s.get("url", "")
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            snippet = f"...{s.get('pre', '')} [{s.get('ngram', '')}] " \
+                f"{s.get('post', '')}...".strip()
+            arts.append(NewsArticle(
+                source="ngrams",
+                external_id=url,
+                title=snippet,
+                url=url,
+                published_at=_to_seendate(s.get("date"), snap_seendate),
+                raw={"domain": urlsplit(url).netloc, "term": term,
+                     "pos": s.get("pos")},
+            ))
+    return arts
 
 
 def _words(s: str) -> list[str]:

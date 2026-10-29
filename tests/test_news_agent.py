@@ -308,6 +308,44 @@ def test_graph_proposals_link_events_through_subject():
         (e.src, e.dst) for e in links}
 
 
+def test_select_snapshots_strides_and_keeps_newest():
+    from sources.ngrams import select_snapshots
+
+    cands = [f"20261028{h:02d}4600" for h in range(6)]  # 00..05
+    assert select_snapshots(cands, every_nth=2) == [
+        "20261028004600", "20261028024600", "20261028044600",
+        "20261028054600"]
+    assert select_snapshots(cands, every_nth=1) == sorted(cands)
+    assert select_snapshots([], every_nth=4) == []
+
+
+def test_dig_dedupes_urls_across_snapshots(monkeypatch, tmp_path):
+    import gzip
+    import json
+
+    gz = tmp_path / "s.json.gz"
+    rows = [
+        {"ngram": "zohran", "type": 1, "lang": "en", "pos": 10,
+         "pre": "polls show", "post": "mamdani leads",
+         "url": "http://x.test/1", "date": "20261028014600"},
+        {"ngram": "zohran", "type": 1, "lang": "en", "pos": 80,
+         "pre": "polls show", "post": "mamdani leads",
+         "url": "http://x.test/1", "date": "20261028014600"},
+    ]
+    with gzip.open(str(gz), "wt") as f:
+        for r in rows:
+            f.write(json.dumps(r) + "\n")
+    monkeypatch.setattr(na, "backfill_snapshots",
+                        lambda *a, **k: [("20261028014600", str(gz)),
+                                         ("20261028014600", str(gz))])
+    ag = na.NewsAgent(snapshot_gz=None, max_articles=3, model=None)
+    kept = ag.dig({"event_ticker": "X", "terms": ["zohran mamdani"]},
+                  max_urls=5)
+    assert [k["url"] for k in kept] == ["http://x.test/1"]
+    assert kept[0]["snapshot"] == "20261028014600"
+    assert kept[0]["subjects"] == ["zohran mamdani"]
+
+
 def test_agent_drops_irrelevant_article(monkeypatch, tmp_path):
     gz = tmp_path / "s.json.gz"
     _fixture_gz(gz)

@@ -10,7 +10,9 @@ from typing import Any
 
 from graph import article_id, subject_id
 from sources.kalshi import KalshiSource
-from sources.ngrams import ngram_mentions
+from sources.ngrams import (
+    articles_from_mentions, backfill_snapshots, ngram_mentions,
+)
 from squad import Proposal
 from squad.models import resolve_model
 from squad.tools import fetch_article, llm_relevant, llm_summarize, summarize
@@ -107,6 +109,35 @@ class NewsAgent:
                 confidence=round(conf, 2),
             )
         ]
+
+    def dig(self, task: dict, hours_back: float = 48,
+            every_nth: int = 16, max_urls: int = 20,
+            dest_dir: str = "/tmp") -> list[dict]:
+        """Dig past news: stride-sampled snapshots, deduped by URL.
+
+        Returns [{url, title, subjects, snapshot, seendate}] ready for
+        `graph_proposals`. Bounded cost: 48h at every-16th mark ≈ 13
+        files. LLM relevance filtering stays a later per-article pass.
+        """
+        terms = task["terms"]
+        seen, kept = set(), []
+        snaps = backfill_snapshots(hours_back, every_nth, dest_dir)
+        for ts, snap in snaps:
+            try:
+                mentions = ngram_mentions(terms, snap,
+                                          per_term_cap=max_urls)
+            except Exception:
+                continue
+            for a in articles_from_mentions(mentions, ts):
+                if a.url in seen:
+                    continue
+                seen.add(a.url)
+                kept.append({"url": a.url, "title": a.title,
+                             "subjects": list(terms), "snapshot": ts,
+                             "seendate": a.published_at})
+                if len(kept) >= max_urls:
+                    return kept
+        return kept
 
     def graph_proposals(self, task: dict,
                         kept: list[dict]) -> list[Proposal]:

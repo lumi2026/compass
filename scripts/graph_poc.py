@@ -16,8 +16,8 @@ import sys
 sys.path.insert(0, ".")
 
 from graph import (  # noqa: E402
-    GraphStore, GraphUpdateAPI, article_id, derive_shared_subject_links,
-    proposals_to_commit,
+    GraphStore, GraphUpdateAPI, article_id, followup_tasks,
+    refresh_derived_links, proposals_to_commit,
 )
 from workspace import to_cytoscape  # noqa: E402
 
@@ -89,10 +89,14 @@ def main() -> int:
                                 json.dumps({"src": aid, "dst": f"kalshi:{ev}",
                                             "rel": "about"}))
 
-    # Connector lane: derive + record event links.
-    links = derive_shared_subject_links(api.store, api.store.now())
-    for e in links:
-        print(api.record(e).reason, e.src, e.rel, e.dst)
+    # Connector lane: refresh derived links (idempotent re-runs OK).
+    fresh = refresh_derived_links(api)
+    print(f"[connector] fresh links: {fresh}")
+    assert refresh_derived_links(api) == 0, "recompute must be idempotent"
+
+    # Connector dispatch: the NATO race is "new" — who else should we dig?
+    followups = followup_tasks(api.store, "kalshi:KXNEXTNATOSECGEN-99")
+    print("followups:", followups)
 
     pairs = sorted({(e.src, e.dst) for e in api.store.edges
                     if e.rel == "shares-subject-with"})
@@ -100,9 +104,12 @@ def main() -> int:
     print("event links:", pairs)
     payload = to_cytoscape(list(api.store.nodes.values()), api.store.edges)
     print(f"workspace elements={len(payload['elements'])}")
-    with open(args.out, "w") as f:
-        json.dump(api.store.to_json(), f, indent=1)
+    api.save(args.out)
     print(f"[poc] wrote {args.out}")
+    reloaded = GraphUpdateAPI.load(args.out)
+    assert len(reloaded.store.nodes) == len(api.store.nodes)
+    assert len(reloaded.store.edges) == len(api.store.edges)
+    print("[poc] save/load roundtrip OK")
 
     want = ("kalshi:KXELONMARS-99", "kalshi:KXNEXTNATOSECGEN-99")
     if want not in pairs:

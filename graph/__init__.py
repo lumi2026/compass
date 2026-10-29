@@ -20,6 +20,7 @@ Edge vocabulary:
   relates-to           fallback for anything unclassified
 """
 
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -134,11 +135,30 @@ class GraphUpdateAPI:
         return CommitResult(True)
 
     def record(self, edge: Edge) -> CommitResult:
+        """Idempotent on (src, dst, rel): re-records keep first-seen `at`."""
         verdict = self.validate_edge(edge)
         if not verdict.committed:
             return verdict
+        for e in self.store.edges:
+            if (e.src, e.dst, e.rel) == (edge.src, edge.dst, edge.rel):
+                return CommitResult(True, "duplicate: kept existing")
         self.store.add_edge(edge)
         return CommitResult(True, "recorded")
+
+    def save(self, path: str) -> str:
+        """Persist the store to JSON. Services load on start."""
+        with open(path, "w") as f:
+            json.dump(self.store.to_json(), f, indent=1)
+        return path
+
+    @classmethod
+    def load(cls, path: str) -> "GraphUpdateAPI":
+        """Load a persisted store (missing file -> empty store)."""
+        try:
+            with open(path) as f:
+                return cls(GraphStore.from_json(json.load(f)))
+        except (OSError, ValueError):
+            return cls()
 
 
 # -- collective authorship ----------------------------------------------
@@ -184,13 +204,8 @@ def proposals_to_commit(api: GraphUpdateAPI, agent: str, action: str,
     return CommitResult(False, f"unsupported action: {action!r}")
 
 
-def derive_shared_subject_links(store: GraphStore, at: str) -> list[Edge]:
-    """Connector derivation: events sharing a Subject get linked.
-
-    An event counts for a subject when an article that mentions the
-    subject is also `about` that event. Emits both directions so the
-    workspace renders the link either way. Pure: caller records them.
-    """
+def _subject_events(store: GraphStore) -> dict[str, set[str]]:
+    """subject node id -> events, via article-mediated mentions + about."""
     mentions: dict[str, set[str]] = {}  # subject -> articles
     about: dict[str, set[str]] = {}  # article -> events
     for e in store.edges:
@@ -202,7 +217,18 @@ def derive_shared_subject_links(store: GraphStore, at: str) -> list[Edge]:
     for subj, arts in mentions.items():
         for a in arts:
             subj_events.setdefault(subj, set()).update(about.get(a, set()))
+    return subj_events
+
+
+def derive_shared_subject_links(store: GraphStore, at: str) -> list[Edge]:
+    """Connector derivation: events sharing a Subject get linked.
+
+    An event counts for a subject when an article that mentions the
+    subject is also `about` that event. Emits both directions so the
+    workspace renders the link either way. Pure: caller records them.
+    """
     out = []
+    subj_events = _subject_events(store)
     for subj in sorted(subj_events):
         evts = sorted(subj_events[subj])
         for i, e1 in enumerate(evts):
@@ -210,3 +236,37 @@ def derive_shared_subject_links(store: GraphStore, at: str) -> list[Edge]:
                 out.append(Edge(src=e1, dst=e2, rel="shares-subject-with", at=at))
                 out.append(Edge(src=e2, dst=e1, rel="shares-subject-with", at=at))
     return out
+
+
+def followup_tasks(store: GraphStore, event_id: str) -> list[dict]:
+    """Connector dispatch: investigate tasks for events related to event_id.
+
+    For every subject of the new event, every *other* event sharing it
+    becomes a follow-up task ({event_ticker, terms}) so the news agent
+    digs their past too — this closes the topic -> news -> topics loop.
+    Terms come from Subject node titles. Pure: caller dispatches.
+    """
+    subj_events = _subject_events(store)
+    mine = {s for s, evts in subj_events.items() if event_id in evts}
+    tasks: dict[str, set[str]] = {}
+    for subj in mine:
+        title = store.nodes[subj].title
+        for other in sorted(subj_events[subj]):
+            if other != event_id and other.startswith("kalshi:"):
+                tasks.setdefault(other, set()).add(title)
+    return [{"event_ticker": eid.removeprefix("kalshi:"),
+             "terms": sorted(terms)}
+            for eid, terms in sorted(tasks.items())]
+
+
+def refresh_derived_links(api: GraphUpdateAPI) -> int:
+    """Recompute + record all derived links. Idempotent via record().
+
+    Call after every commit batch so the graph never goes stale.
+    Returns the number of newly recorded edges.
+    """
+    fresh = 0
+    for e in derive_shared_subject_links(api.store, api.store.now()):
+        if api.record(e).reason == "recorded":
+            fresh += 1
+    return fresh

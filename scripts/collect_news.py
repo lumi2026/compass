@@ -22,13 +22,12 @@ import os
 import sys
 import tempfile
 import time
-from urllib.parse import urlsplit
-
 sys.path.insert(0, ".")
 
-from sources.base import NewsArticle  # noqa: E402
 from sources.gdelt import GdeltSource  # noqa: E402
-from sources.ngrams import ngram_mentions, resolve_snapshot  # noqa: E402
+from sources.ngrams import (  # noqa: E402
+    articles_from_mentions, ngram_mentions, resolve_snapshot,
+)
 
 DEFAULT_TOPICS = {
     "mamdani-nyc-mayor": '(Mamdani OR "New York mayor") sourcecountry:US',
@@ -94,45 +93,6 @@ def summarize_topic(name, query, articles, now=None):
         "headlines": arts[:5],
         "articles": arts,
     }
-
-
-def _to_seendate(value, fallback=""):
-    """Normalize a record/snapshot stamp to digest seendate format."""
-    for fmt in ("%Y%m%dT%H%M%SZ", "%Y%m%d%H%M%S"):
-        try:
-            return datetime.datetime.strptime(value, fmt).strftime(
-                "%Y%m%dT%H%M%SZ")
-        except (ValueError, TypeError):
-            continue
-    return fallback
-
-
-def articles_from_mentions(mentions, snapshot_ts):
-    """Pure: ngram mention samples -> NewsArticles (lead hits first).
-
-    Snippet text stands in for the title; the record date (or snapshot
-    stamp) for seendate; domain parsed from the URL. Deduped by URL.
-    """
-    snap_seendate = _to_seendate(snapshot_ts)
-    arts, seen = [], set()
-    for term, m in mentions.items():
-        for s in sorted(m["samples"], key=lambda r: r.get("pos", 99)):
-            url = s.get("url", "")
-            if not url or url in seen:
-                continue
-            seen.add(url)
-            snippet = f"...{s.get('pre', '')} [{s.get('ngram', '')}] " \
-                f"{s.get('post', '')}...".strip()
-            arts.append(NewsArticle(
-                source="ngrams",
-                external_id=url,
-                title=snippet,
-                url=url,
-                published_at=_to_seendate(s.get("date"), snap_seendate),
-                raw={"domain": urlsplit(url).netloc, "term": term,
-                     "pos": s.get("pos")},
-            ))
-    return arts
 
 
 def _write_digest(digest, out):
