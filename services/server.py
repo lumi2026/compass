@@ -26,7 +26,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from sources.kalshi import KalshiSource
 
 from .feed import FeedStore
-from .listener import KalshiListener, Update
+from .listener import KalshiListener, TickerState, Update
 
 DEFAULT_MOVE_THRESHOLD_CENTS = 5
 
@@ -145,6 +145,58 @@ class Service:
         self.move_threshold_cents = move_threshold_cents
         return {"graph_url": self.graph_url,
                 "move_threshold_cents": self.move_threshold_cents}
+
+    def sweep(self) -> dict:
+        """Push every watched ticker's current live odds to the graph now.
+
+        REST-polled (no socket wait): refreshes each event's markets,
+        updates the store, then posts one Scout + odds batch. First
+        sightings set baselines, never moves — same rule as the tick path.
+        """
+        if not self.graph_url:
+            return {"published": False, "reason": "no graph_url"}
+        tickers = list(self.listener.tickers)
+        if not tickers:
+            return {"published": False, "reason": "no tickers"}
+        by_event: dict[str, list[str]] = {}
+        for t in tickers:
+            by_event.setdefault(self.ticker_event.get(t) or event_of(t), []).append(t)
+        now_ms = int(time.time() * 1000)
+        for ev, ts in by_event.items():
+            try:
+                markets = self.src.fetch_markets(ev)
+            except Exception:
+                continue
+            for m in markets:
+                if m.ticker not in ts:
+                    continue
+                self.ticker_event[m.ticker] = m.event_ticker
+                self.store.ingest_single(
+                    m.ticker,
+                    TickerState(ticker=m.ticker, updated_ms=now_ms, last={
+                        "title": m.title, "yes_bid": m.yes_bid,
+                        "yes_ask": m.yes_ask, "last_price": m.last_price}))
+        all_props: list[dict] = []
+        for t in tickers:
+            st = self.store.state.get(t)
+            all_props.extend(
+                self._proposals_for(t, dict(st.last) if st else {}, now_ms))
+        try:
+            import urllib.request
+
+            body = json.dumps({"proposals": all_props}).encode()
+            req = urllib.request.Request(
+                self.graph_url + "/proposals", data=body,
+                headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                posted = json.loads(resp.read() or b"{}")
+            return {"published": True, "tickers": len(tickers),
+                    "proposals": len(all_props),
+                    "revision": posted.get("revision")}
+        except Exception as e:
+            print(f"[publish] graph unreachable "
+                  f"({e.__class__.__name__}), log-only")
+            return {"published": False, "reason": f"graph unreachable: {e}"}
 
     def _proposals_for(self, ticker: str, last: dict, ts_ms: int) -> list[dict]:
         """Scout discovery nodes (idempotent, odds refreshed) + a move Happening."""
@@ -370,6 +422,11 @@ def make_handler(service: Service):
                     self._send(400, {"error": "graph_url must be http(s)"})
                     return
                 self._send(200, service.set_graph_publish(url, threshold))
+            elif self.path == "/publish/sweep":
+                try:
+                    self._send(200, service.sweep())
+                except Exception as e:
+                    self._send(502, {"error": f"upstream: {e}"})
             elif self.path == "/subscriptions":
                 body = self._read_json()
                 ok = service.store.subscribe_webhook(str(body.get("url", "")))

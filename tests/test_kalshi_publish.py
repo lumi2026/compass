@@ -155,6 +155,36 @@ def test_publish_baseline_then_move_then_small():
         t.join(timeout=10)
 
 
+def test_sweep_pushes_live_odds_without_socket():
+    srv, t = _graph_stub()
+    try:
+        svc, _ = _service()
+        svc.set_topics(["E1"], [])
+        svc.set_graph_publish(
+            f"http://127.0.0.1:{srv.server_address[1]}", 5)
+        r = svc.sweep()
+        assert r["published"] and r["tickers"] == 2 and r["proposals"] == 4
+        markets = [p for p in srv.seen[-1]["proposals"]
+                   if p["entity_id"].startswith("market:")]
+        assert len(markets) == 2
+        assert json.loads(markets[0]["detail"])["props"]["price_cents"] == 50
+        # second sweep: same prices -> idempotent duplicates, no happenings
+        r2 = svc.sweep()
+        assert r2["published"] and r2["proposals"] == 4
+        kinds = {p["action"] for p in srv.seen[-1]["proposals"]}
+        assert kinds == {"add-node"}
+    finally:
+        srv.shutdown()
+        t.join(timeout=10)
+
+
+def test_sweep_needs_graph_and_tickers():
+    svc, _ = _service()
+    assert svc.sweep()["reason"] == "no graph_url"
+    svc.set_graph_publish("http://127.0.0.1:1/")
+    assert svc.sweep()["reason"] == "no tickers"
+
+
 def test_publish_disabled_and_unreachable():
     svc, _ = _service()
     assert svc.maybe_publish(_upd("T1", 1))["reason"] == "no graph_url"

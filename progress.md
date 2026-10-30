@@ -485,6 +485,14 @@ time travel replays. 117/117 green; live: create 55c →
 `refreshed` 63c visible in `/graph`; legacy `demo/mvp_graph.json`
 (48 nodes, no props) still loads.
 
+No-wait publish: `POST /publish/sweep` pushes every watched ticker's
+current REST-polled odds in one batch (baselines, never moves).
+Live end-to-end on prod API: auto top-2 → 8 busy tickers swept →
+rev 1, 10 nodes, markets carrying live `price_cents`/`yes_bid`/
+`yes_ask`/`odds_at`. 119/119 green. Note: prod socket stayed quiet
+on the seed tickers during the window — sweep (REST) is the
+deterministic path; ticks remain the move-detection path.
+
 2- to 5-gram search: matcher was already length-generic
 (lower-middle word rule, no caller caps); locked in with
 `test_four_five_gram_matching` (105/105). Live proof on
