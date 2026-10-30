@@ -3,13 +3,35 @@
 Pure discovery lane (ROLE_ACTIONS["scout"] == ("add-node",) only).
 Live markets come from Kalshi unless the caller injects them via
 context["markets"] or markets_fn (tests / seeded offline runs).
+Market nodes carry live odds in props; each refresh is a logged
+batch, so the commit log holds the odds history for time travel.
 """
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Callable
 import json
 
 from squad import Proposal
+
+
+def market_odds(m: Any) -> dict:
+    """Live odds payload for a market (Kalshi contract or seed stand-in)."""
+    def _num(v):
+        try:
+            return int(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    odds = {"odds_at": datetime.now(timezone.utc).isoformat()}
+    for key in ("last_price", "yes_bid", "yes_ask", "volume_24h"):
+        v = getattr(m, key, None)
+        if isinstance(m, dict):
+            v = m.get(key, v)
+        v = _num(v)
+        if v is not None:
+            odds[{"last_price": "price_cents"}.get(key, key)] = v
+    return odds
 
 
 def _task_ticker(task: dict | str) -> str:
@@ -82,7 +104,8 @@ class Scout:
                 entity_id=f"market:{mt}",
                 detail=json.dumps(
                     {"kind": "Market",
-                     "title": f"{_market_title(m) or mt} [{mt}]"}),
+                     "title": f"{_market_title(m) or mt} [{mt}]",
+                     "props": market_odds(m)}),
                 confidence=0.8,
             ))
         return props

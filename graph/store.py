@@ -54,6 +54,11 @@ class Node:
     # = when an agent laid the trail. created_at is the legacy alias.
     valid_at: str = ""
     recorded_at: str = ""
+    # Live attribute payload. Market nodes carry odds here
+    # (price_cents, yes_bid/yes_ask, volume_24h, odds_at); Happenings
+    # carry move details. History is NOT versioned on the node — every
+    # refresh is a logged batch, so graph_log.jsonl holds the series.
+    props: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

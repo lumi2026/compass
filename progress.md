@@ -461,6 +461,30 @@ revisions contiguous, snapshot + log intact, zero 500s. p50
 post latency 470 ms under full contention (lock queueing, as
 designed), 45 batches/s — far above one batch per agent cycle.
 
+Step 3 (Kalshi discovery/publish) done in `services/server.py`:
+`GET /events`, `POST /topics {auto, top_k, scan_limit}` (volume-ranked,
+per-event failures skipped), `POST/GET /publish/graph`. Each merged
+update publishes Scout Event/Market nodes (idempotent) plus a
+`market-move` Happening + `relates-to` edge when the move clears the
+threshold (default 5c; first sighting is a baseline, not a move).
+One in-flight POST at most; graph down = log-only, feed unaffected.
+`tests/test_kalshi_publish.py`: 112/112 green. Live proof vs real
+graph API: baseline rev 1, +1c rev 2 (no happening), +8c rev 3
+with Happening `moved 55c -> 63c` + edge.
+
+Odds on nodes (follows step 3): `Node.props` (live
+`price_cents`/`yes_bid`/`yes_ask`/`volume_24h`/`odds_at`) flows
+through commit (create/duplicate/`refreshed` with prop merge,
+`created_at` kept), `proposals_to_commit`, JSON save/load, and
+`to_cytoscape`. Scout Market proposals and the Kalshi publish path
+emit odds; Happenings carry structured move props
+(`market`/`old_cents`/`new_cents`/`move_cents`) + `valid_at`.
+History model: nodes hold live odds only; every refresh is a logged
+batch, so `graph_log.jsonl` is the odds series the later `?at=`
+time travel replays. 117/117 green; live: create 55c →
+`refreshed` 63c visible in `/graph`; legacy `demo/mvp_graph.json`
+(48 nodes, no props) still loads.
+
 2- to 5-gram search: matcher was already length-generic
 (lower-middle word rule, no caller caps); locked in with
 `test_four_five_gram_matching` (105/105). Live proof on

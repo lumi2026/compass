@@ -74,6 +74,29 @@ def test_graph_update_api_idempotent_and_validating():
                            rel="vibes", at="t")).committed is False
 
 
+def test_graph_commit_refreshes_props_keeps_history_key():
+    api = GraphUpdateAPI(GraphStore())
+    assert api.commit(Node(id="market:T", kind="Market", title="T")).reason == "created"
+    created_at = api.store.nodes["market:T"].created_at
+    assert api.commit(Node(id="market:T", kind="Market", title="T")).reason == \
+        "duplicate: kept existing"
+    r = api.commit(Node(id="market:T", kind="Market", title="T",
+                        props={"price_cents": 55, "odds_at": "t1"}))
+    assert r.reason == "refreshed"
+    n = api.store.nodes["market:T"]
+    assert n.props == {"price_cents": 55, "odds_at": "t1"}
+    assert n.created_at == created_at and n.recorded_at
+    r2 = api.commit(Node(id="market:T", kind="Market", title="T",
+                         props={"volume_24h": 9}))
+    assert r2.reason == "refreshed"
+    assert api.store.nodes["market:T"].props == {
+        "price_cents": 55, "odds_at": "t1", "volume_24h": 9}  # merged
+    assert api.commit(Node(id="market:T", kind="Market", title="T",
+                           props="nope")).committed is False
+    back = GraphStore.from_json(api.store.to_json())
+    assert back.nodes["market:T"].props["price_cents"] == 55  # roundtrips
+
+
 def test_graph_record_reinforces_reruns():
     api = GraphUpdateAPI(GraphStore())
     api.commit(Node(id="kalshi:E1", kind="Event", title="E1"))
@@ -107,6 +130,30 @@ def test_graph_translator_role_lanes():
     assert edge.committed  # self-loop passes endpoint validation
     assert proposals_to_commit(api, "news-agent", "add-edge", "",
                                "not-json").committed is False
+
+
+def test_graph_translator_carries_props():
+    import json as _json
+
+    from graph import proposals_to_commit as _commit
+
+    api = GraphUpdateAPI(GraphStore())
+    good = _commit(api, "scout", "add-node", "market:T",
+                   _json.dumps({"kind": "Market", "title": "T",
+                                "props": {"price_cents": 55}}))
+    assert good.committed
+    assert api.store.nodes["market:T"].props == {"price_cents": 55}
+    bad = _commit(api, "scout", "add-node", "market:U",
+                  _json.dumps({"kind": "Market", "title": "U",
+                               "props": [1]}))
+    assert bad.committed is False
+
+
+def test_cytoscape_carries_props():
+    nodes = [Node(id="market:T", kind="Market", title="T",
+                  props={"price_cents": 55})]
+    payload = to_cytoscape(nodes, [])
+    assert payload["elements"][0]["data"]["props"] == {"price_cents": 55}
 
 
 def test_connector_derives_shared_subject_links():

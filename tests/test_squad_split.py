@@ -11,9 +11,11 @@ from squad.scout import Scout
 
 
 class FakeMarket:
-    def __init__(self, ticker, title):
+    def __init__(self, ticker, title, last_price=None, volume_24h=None):
         self.ticker = ticker
         self.title = title
+        self.last_price = last_price
+        self.volume_24h = volume_24h
 
 
 def _commit_all(api, proposals, agent_action=None):
@@ -34,6 +36,23 @@ def test_scout_offline_context_markets():
     api = GraphUpdateAPI(GraphStore())
     _commit_all(api, props)
     assert "kalshi:E1" in api.store.nodes
+
+
+def test_scout_market_nodes_carry_odds():
+    sc = Scout()
+    markets = [FakeMarket("E1-A", "A wins", last_price=62, volume_24h=900)]
+    (market_prop,) = [p for p in sc.run({"event_ticker": "E1"},
+                                        {"markets": markets})
+                      if p.entity_id == "market:E1-A"]
+    detail = json.loads(market_prop.detail)
+    assert detail["props"]["price_cents"] == 62
+    assert detail["props"]["volume_24h"] == 900
+    assert detail["props"]["odds_at"]
+    api = GraphUpdateAPI(GraphStore())
+    assert proposals_to_commit(
+        api, market_prop.agent, market_prop.action,
+        market_prop.entity_id, market_prop.detail).committed
+    assert api.store.nodes["market:E1-A"].props["price_cents"] == 62
 
 
 def test_scout_lane_only_add_node():

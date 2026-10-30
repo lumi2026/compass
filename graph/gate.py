@@ -36,12 +36,24 @@ class GraphUpdateAPI:
         verdict = self.validate(node)
         if not verdict.committed:
             return verdict
+        if not isinstance(node.props, dict):
+            return CommitResult(False, "invalid node: props must be an object")
         now = self.store.now()
         if not node.recorded_at or not node.created_at:
             node = replace(node, recorded_at=node.recorded_at or now,
                            created_at=node.created_at or node.recorded_at or now)
-        added = self.store.add_node(node)
-        return CommitResult(True, "created" if added else "duplicate: kept existing")
+        existing = self.store.nodes.get(node.id)
+        if existing is None:
+            self.store.add_node(node)
+            return CommitResult(True, "created")
+        merged_props = ({**existing.props, **node.props} if node.props
+                        else dict(existing.props))
+        if node.title == existing.title and merged_props == existing.props:
+            return CommitResult(True, "duplicate: kept existing")
+        self.store.nodes[node.id] = replace(
+            existing, title=node.title or existing.title,
+            props=merged_props, recorded_at=now)
+        return CommitResult(True, "refreshed")
 
     def validate_edge(self, edge: Edge) -> CommitResult:
         if edge.rel not in EDGE_RELS:
@@ -157,11 +169,15 @@ def proposals_to_commit(api: GraphUpdateAPI, agent: str, action: str,
     if action == "add-node":
         if not isinstance(payload, dict) or "kind" not in payload:
             return CommitResult(False, "add-node needs {kind, title}")
+        props = payload.get("props", {})
+        if not isinstance(props, dict):
+            return CommitResult(False, "add-node props must be an object")
         return api.commit(Node(id=entity_id,
                                kind=payload["kind"],
                                title=payload.get("title", entity_id),
                                created_at=api.store.now(),
-                               valid_at=str(payload.get("valid_at", ""))))
+                               valid_at=str(payload.get("valid_at", "")),
+                               props=props))
     if action == "add-edge":
         if not isinstance(payload, dict) or not {"src", "dst", "rel"} <= set(payload):
             return CommitResult(False, "add-edge needs {src, dst, rel}")

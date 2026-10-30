@@ -25,7 +25,8 @@ def to_cytoscape(nodes: list, edges: list,
     capped payload is always a coherent subgraph, never nodes without
     their links. limit=None returns everything.
     """
-    node_els = [{"data": {"id": n.id, "label": n.title, "kind": n.kind}}
+    node_els = [{"data": {"id": n.id, "label": n.title, "kind": n.kind,
+                            "props": dict(getattr(n, "props", {}) or {})}}
                 for n in nodes]
     if limit is not None:
         node_els = node_els[:limit]

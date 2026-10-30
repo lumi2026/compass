@@ -61,6 +61,27 @@ def test_commit_batch_accept_reject_and_lanes(tmp_path):
     assert back.revision == 1 and set(back.store.nodes) == {"kalshi:A"}
 
 
+def test_odds_history_survives_in_log(tmp_path):
+    """Live odds mutate the node; the log keeps every point for time travel."""
+    log = str(tmp_path / "g.log")
+    snap = str(tmp_path / "g.json")
+    api = GraphUpdateAPI(GraphStore())
+    for price in (55, 63):
+        out = commit_batch(api, [{
+            "agent": "scout", "action": "add-node", "entity_id": "market:T",
+            "detail": json.dumps({"kind": "Market", "title": "T",
+                                 "props": {"price_cents": price}}),
+            "confidence": 0.9}], log_path=log, snapshot_path=snap)
+        assert out["revision"] in (1, 2)
+    assert api.store.nodes["market:T"].props["price_cents"] == 63  # live
+    prices = [json.loads(line)["proposals"][0]["detail"]
+              for line in open(log) if line.strip()]
+    assert [json.loads(d)["props"]["price_cents"] for d in prices] == [55, 63]
+    replayed = GraphUpdateAPI(GraphStore())
+    replay_log(replayed, log, after_revision=0)
+    assert replayed.store.nodes["market:T"].props["price_cents"] == 63
+
+
 def test_happening_kind_commits(tmp_path):
     api = GraphUpdateAPI(GraphStore())
     out = commit_batch(api, [
