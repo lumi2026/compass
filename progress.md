@@ -378,6 +378,16 @@ all edges on big graphs). Suite 95/95. Artifacts:
 (`2d7da5b`). User verdict: promising examples found — calling it
 a day.
 
+### Day 4 usage (approx)
+
+~3.5M tokens this session (cumulative run counter, last observed
+3.1M before the final stretch). Heaviest turns: 3D viewer rewrite
+with brace-escaping repairs + headless browser checks, and the
+cross-link script build. Local compute (100-snapshot scan, ~40 min
+wall) and browser runs cost machine time, not tokens. No paid API
+calls beyond existing keys (Kalshi public REST, GDELT static host,
+CDN fetches in the browser check).
+
 ## Next — living loop milestone (graph builder is the product)
 
 Plan saved to `.agents/plans/2026-10-30-living-loop.md` (direction set,
