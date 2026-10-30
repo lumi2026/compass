@@ -365,6 +365,19 @@ offline POC still OK.
 Not done (next units): append-only log + snapshot, then graph API
 service.
 
+### Cross-topic link test (30 topics × 100 snapshots)
+
+Ran `scripts/cross_link.py`: 30 live Kalshi topics, 96 readable
+snapshots (~25h), union term scan at ~10s/snapshot after grouping
+the matcher by middle word. Result: 7 topic pairs sharing articles
+(NFL clusters, a genuine GDP–GDP link, Mamdani × unemployment),
+each as a Hypothesis with article evidence; graph 564 nodes / 1333
+edges, viewer page renders all of it (fixed a cap bug that dropped
+all edges on big graphs). Suite 95/95. Artifacts:
+`demo/cross_graph.json` + `demo/cross_graph.html`. Pushed
+(`2d7da5b`). User verdict: promising examples found — calling it
+a day.
+
 ## Next — living loop milestone (graph builder is the product)
 
 Plan saved to `.agents/plans/2026-10-30-living-loop.md` (direction set,
