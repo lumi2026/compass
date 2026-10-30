@@ -64,6 +64,58 @@ def test_multi_gram_matching(tmp_path):
                             "post": "c"}, ["a", "b", "c"]) is True
 
 
+def _long_phrase_gz(path):
+    rows = [
+        # 4-gram "new york city mayor": mid index 1 -> ngram "york",
+        # pre-tail ["new"], post-head ["city", "mayor"]
+        {"ngram": "york", "type": 1, "lang": "en",
+         "pre": "voters across new", "post": "city mayor faces runoff",
+         "url": "http://e.test/4gram"},
+        # same ngram, wrong context: must not match
+        {"ngram": "york", "type": 1, "lang": "en",
+         "pre": "voters across new", "post": "times bestseller list grows",
+         "url": "http://e.test/york-times"},
+        # 5-gram "secretary of state marco rubio": mid index 2 -> "state",
+        # pre-tail ["secretary", "of"], post-head ["marco", "rubio"]
+        {"ngram": "state", "type": 1, "lang": "en",
+         "pre": "the secretary of", "post": "marco rubio visits kyiv",
+         "url": "http://e.test/5gram"},
+        # same ngram, wrong tail: must not match
+        {"ngram": "state", "type": 1, "lang": "en",
+         "pre": "the deep", "post": "marco rubio visits kyiv",
+         "url": "http://e.test/deep-state"},
+    ]
+    with gzip.open(str(path), "wt") as f:
+        for r in rows:
+            f.write(json.dumps(r) + "\n")
+
+
+def test_four_five_gram_matching(tmp_path):
+    gz = tmp_path / "long.json.gz"
+    _long_phrase_gz(gz)
+    m = ng.ngram_mentions(["new york city mayor",
+                           "secretary of state marco rubio"], str(gz))
+    assert m["new york city mayor"]["urls"] == ["http://e.test/4gram"]
+    assert m["secretary of state marco rubio"]["urls"] == ["http://e.test/5gram"]
+    assert ng.match_record(
+        {"ngram": "york", "type": 1, "pre": "voters across new",
+         "post": "city mayor faces runoff"},
+        ["new", "york", "city", "mayor"]) is True
+    assert ng.match_record(
+        {"ngram": "state", "type": 1, "pre": "the secretary of",
+         "post": "marco rubio visits kyiv"},
+        ["secretary", "of", "state", "marco", "rubio"]) is True
+    # exact-ngram-but-wrong-context and char-type records stay out
+    assert ng.match_record(
+        {"ngram": "state", "type": 1, "pre": "the deep",
+         "post": "marco rubio visits kyiv"},
+        ["secretary", "of", "state", "marco", "rubio"]) is False
+    assert ng.match_record(
+        {"ngram": "state", "type": 2, "pre": "the secretary of",
+         "post": "marco rubio visits kyiv"},
+        ["secretary", "of", "state", "marco", "rubio"]) is False
+
+
 def test_summarize_picks_term_sentences():
     text = ("The sky is blue today. SpaceX launched another Starlink batch "
             "from Florida. Markets were calm and quiet overall. "

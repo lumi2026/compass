@@ -131,6 +131,7 @@ def test_as_of_time_travel_via_service(tmp_path):
 
 
 def test_concurrent_overlapping_batches_equal_sequential(tmp_path):
+    """20 agents, overlapping writes: final state equals sequential."""
     proposals = [_node_prop("scout", f"kalshi:N{i}") for i in range(20)]
     proposals += [_node_prop("scout", "kalshi:SHARED") for _ in range(8)]
 
@@ -156,7 +157,7 @@ def test_concurrent_overlapping_batches_equal_sequential(tmp_path):
         except Exception as e:  # noqa: BLE001
             errors.append(e)
 
-    chunks = [proposals[i::4] for i in range(4)]
+    chunks = [proposals[i::20] for i in range(20)]
     threads = [threading.Thread(target=worker, args=(c,)) for c in chunks]
     for t in threads:
         t.start()

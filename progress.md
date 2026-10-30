@@ -453,3 +453,17 @@ Next: step 3 (Kalshi discovery/publish) then step 4 (news loop).
 
 All 13 CLIs (`scripts/*`, graph API) migrated from argparse to
 click; flags and defaults unchanged; 104/104 green, POC OK.
+
+Concurrency proven for 10–20 agents (`/tmp/stress_graph.py`,
+re-runnable): 20 writers × 15 overlapping batches + 3 readers vs
+live uvicorn — 300/300 batches committed, 1801 nodes / 300 edges,
+revisions contiguous, snapshot + log intact, zero 500s. p50
+post latency 470 ms under full contention (lock queueing, as
+designed), 45 batches/s — far above one batch per agent cycle.
+
+2- to 5-gram search: matcher was already length-generic
+(lower-middle word rule, no caller caps); locked in with
+`test_four_five_gram_matching` (105/105). Live proof on
+`20261030194600`: "new york city mayor" 2 hits/2 urls,
+"secretary of state marco rubio" 15/11; controls "white house"
+43/29, "interest rates" 11/4, "artificial intelligence" 38/25.
