@@ -11,9 +11,11 @@ Run:
   offline: pass --snapshot fixture and/or --seed data/seed.json
 """
 
-import argparse
 import json
 import sys
+from types import SimpleNamespace
+
+import click
 
 sys.path.insert(0, ".")
 
@@ -53,29 +55,32 @@ def seed_markets(seed_path: str, event: str) -> list:
     return out
 
 
-def main() -> int:
-    p = argparse.ArgumentParser()
-    p.add_argument("--event", default="KXSPACEXMARS-30")
-    p.add_argument("--terms", nargs="*", default=["spacex", "starlink", "elon musk"])
-    p.add_argument("--snapshot", default=None)
-    p.add_argument("--lookback", type=int, default=8)
-    p.add_argument("--seed", default="data/seed.json")
-    p.add_argument("--out", default="/tmp/squad_graph.json")
-    p.add_argument("--max-articles", type=int, default=3)
-    p.add_argument("--langsmith-project", default=None)
-    args = p.parse_args()
-
+@click.command()
+@click.option("--event", default="KXSPACEXMARS-30")
+@click.option("--terms", multiple=True,
+              default=("spacex", "starlink", "elon musk"))
+@click.option("--snapshot", default=None)
+@click.option("--lookback", type=int, default=8)
+@click.option("--seed", default="data/seed.json")
+@click.option("--out", default="/tmp/squad_graph.json")
+@click.option("--max-articles", type=int, default=3)
+@click.option("--langsmith-project", default=None)
+def main(event, terms, snapshot, lookback, seed, out, max_articles,
+         langsmith_project) -> None:
     from squad.tracing import setup_langsmith, squad_span  # noqa: E402
 
-    ls = setup_langsmith(project=args.langsmith_project)
+    args = SimpleNamespace(event=event, terms=list(terms), snapshot=snapshot,
+                           lookback=lookback, seed=seed, out=out,
+                           max_articles=max_articles)
+    ls = setup_langsmith(project=langsmith_project)
     print(f"[squad] langsmith={'on' if ls['enabled'] else 'off'} "
           f"project={ls['project']}")
 
-    with squad_span("squad-run", {"event": args.event,
+    with squad_span("squad-run", {"event": event,
                                   "terms": args.terms}) as span:
         result = _run(args)
         span.outputs = result
-    return 0
+    sys.exit(0)
 
 
 def _run(args) -> dict:
@@ -151,4 +156,4 @@ def _run(args) -> dict:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

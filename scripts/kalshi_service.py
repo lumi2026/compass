@@ -14,10 +14,11 @@ Agents then:
   curl -X POST localhost:8080/subscriptions -d '{"url":"http://agent/hook"}'
 """
 
-import argparse
 import asyncio
 import sys
 import threading
+
+import click
 
 sys.path.insert(0, ".")
 
@@ -28,22 +29,20 @@ from services.seed import load as load_seed
 from services.server import Service, serve
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--event", action="append", default=[])
-    parser.add_argument("--ticker", action="append", default=[])
-    parser.add_argument("--port", type=int, default=8080)
-    parser.add_argument("--env", default="demo", choices=["demo", "prod"])
-    parser.add_argument("--seed", default=None, help="frozen seed JSON for offline runs")
-    args = parser.parse_args()
-
-    creds = load_credentials(args.env)
+@click.command()
+@click.option("--event", multiple=True, default=())
+@click.option("--ticker", multiple=True, default=())
+@click.option("--port", type=int, default=8080)
+@click.option("--env", type=click.Choice(["demo", "prod"]), default="demo")
+@click.option("--seed", default=None, help="frozen seed JSON for offline runs")
+def main(event, ticker, port, env, seed) -> None:
+    creds = load_credentials(env)
     store = FeedStore()
     listener = KalshiListener(creds)
     service = Service(listener, store)
-    tickers = service.set_topics(args.event, args.ticker)
-    if args.seed:
-        tickers = sorted(set(tickers) | set(load_seed(args.seed, store)))
+    tickers = service.set_topics(list(event), list(ticker))
+    if seed:
+        tickers = sorted(set(tickers) | set(load_seed(seed, store)))
         listener.watch(tickers)
     print(f"watching {len(tickers)} tickers (live_ws={listener.live}): {tickers[:5]}")
 
@@ -51,13 +50,13 @@ def main() -> int:
     thread = threading.Thread(target=loop.run_until_complete, args=(listener.run(),), daemon=True)
     thread.start()
     try:
-        serve(service, args.port).serve_forever()
+        serve(service, port).serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
         listener.stop()
-    return 0
+    sys.exit(0)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

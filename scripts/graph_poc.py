@@ -9,9 +9,10 @@ view. Fails loudly when the expected link is missing.
 Run:  python3 scripts/graph_poc.py [--out /tmp/graph_poc.json]
 """
 
-import argparse
 import json
 import sys
+
+import click
 
 sys.path.insert(0, ".")
 
@@ -47,10 +48,9 @@ def event_of(market_ticker: str) -> str:
     return market_ticker
 
 
-def main() -> int:
-    p = argparse.ArgumentParser()
-    p.add_argument("--out", default="/tmp/graph_poc.json")
-    args = p.parse_args()
+@click.command()
+@click.option("--out", default="/tmp/graph_poc.json")
+def main(out) -> None:
 
     seed = json.load(open("data/seed.json"))["tickers"]
     api = GraphUpdateAPI(GraphStore())
@@ -104,9 +104,9 @@ def main() -> int:
     print("event links:", pairs)
     payload = to_cytoscape(list(api.store.nodes.values()), api.store.edges)
     print(f"workspace elements={len(payload['elements'])}")
-    api.save(args.out)
-    print(f"[poc] wrote {args.out}")
-    reloaded = GraphUpdateAPI.load(args.out)
+    api.save(out)
+    print(f"[poc] wrote {out}")
+    reloaded = GraphUpdateAPI.load(out)
     assert len(reloaded.store.nodes) == len(api.store.nodes)
     assert len(reloaded.store.edges) == len(api.store.edges)
     print("[poc] save/load roundtrip OK")
@@ -114,13 +114,13 @@ def main() -> int:
     want = ("kalshi:KXELONMARS-99", "kalshi:KXNEXTNATOSECGEN-99")
     if want not in pairs:
         print("[poc] FAIL: expected Elon<->NATO link missing")
-        return 1
+        sys.exit(1)
     if any("KXNEWPOPE-70" in (s, d) for s, d in pairs):
         print("[poc] FAIL: pope event should stay unlinked")
-        return 1
+        sys.exit(1)
     print("[poc] OK: link via subject:spacex, control isolated")
-    return 0
+    sys.exit(0)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

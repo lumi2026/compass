@@ -32,6 +32,7 @@ from .derive import (
     refresh_derived_links,
     subgraph_as_of,
 )
+from .persist import append_finding, boot, commit_batch, replay_log
 from .gate import (
     ROLE_ACTIONS,
     CommitResult,
@@ -46,6 +47,7 @@ from .store import (
     GraphStore,
     Node,
     article_id,
+    happening_id,
     subject_id,
 )
 
@@ -59,11 +61,16 @@ __all__ = [
     "GraphUpdateAPI",
     "Node",
     "ROLE_ACTIONS",
+    "append_finding",
     "article_id",
+    "boot",
+    "commit_batch",
     "derive_shared_subject_links",
     "followup_tasks",
+    "happening_id",
     "proposals_to_commit",
     "refresh_derived_links",
+    "replay_log",
     "subgraph_as_of",
     "subject_id",
 ]

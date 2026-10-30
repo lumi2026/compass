@@ -224,4 +224,8 @@ __marimo__/
 
 # Local news accumulator state (large, machine-local)
 data/news.db*
+# Graph API runtime state (rebuilt from seeds + live loops; never commit)
+data/graph_snapshot.json
+data/graph_log.jsonl
+data/findings.jsonl
 /tmp/

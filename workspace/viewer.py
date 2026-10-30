@@ -17,6 +17,7 @@ KIND_COLORS = {
     "Article": "#1f9d55",
     "Subject": "#d97706",
     "Hypothesis": "#7c3aed",
+    "Happening": "#0e7490",
 }
 
 EDGE_COLORS = {
@@ -36,7 +37,7 @@ SPRITETEXT_VERSION = "1.10.0"
 FORCE3D_VERSION = "1.80.1"
 
 # Node kinds that always get a text sprite; the rest label on demand.
-SKELETON_KINDS = ("Event", "Subject", "Hypothesis")
+SKELETON_KINDS = ("Event", "Subject", "Hypothesis", "Happening")
 
 SHORT_LEN = 28
 

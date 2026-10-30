@@ -7,8 +7,9 @@ Prints one Proposal per topic. Needs no LLM key (extractive fallback);
 with MODEL_API_KEY set, bullets come from Muse Spark.
 """
 
-import argparse
 import sys
+
+import click
 
 sys.path.insert(0, ".")
 
@@ -25,37 +26,35 @@ TASKS = [
 ]
 
 
-def main() -> int:
-    p = argparse.ArgumentParser()
-    p.add_argument("--snapshot", default=None)
-    p.add_argument("--max-articles", type=int, default=3)
-    p.add_argument("--langsmith-project", default=None)
-    args = p.parse_args()
-
+@click.command()
+@click.option("--snapshot", default=None)
+@click.option("--max-articles", type=int, default=3)
+@click.option("--langsmith-project", default=None)
+def main(snapshot, max_articles, langsmith_project) -> None:
     from squad.tracing import setup_langsmith  # noqa: E402
 
-    ls = setup_langsmith(project=args.langsmith_project)
+    ls = setup_langsmith(project=langsmith_project)
     print(f"[agent] langsmith={'on' if ls['enabled'] else 'off'} "
           f"project={ls['project']}")
 
-    snap = args.snapshot
+    snap = snapshot
     if not snap:
         try:
             ts, snap = resolve_snapshot()
         except RuntimeError:
             print("[agent] FAIL: no snapshot")
-            return 1
+            sys.exit(1)
     print(f"[agent] snapshot {snap}")
 
-    ag = NewsAgent(snapshot_gz=snap, max_articles=args.max_articles)
+    ag = NewsAgent(snapshot_gz=snap, max_articles=max_articles)
     for task in TASKS:
         for proposal in ag.run(task):
             print("=" * 100)
             print(f"{proposal.agent} | {proposal.action} | "
                   f"{proposal.entity_id} | conf={proposal.confidence}")
             print(proposal.detail)
-    return 0
+    sys.exit(0)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

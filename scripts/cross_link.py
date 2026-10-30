@@ -11,12 +11,13 @@ Run:
       --out demo/cross_graph.json --html demo/cross_graph.html
 """
 
-import argparse
 import json
 import os
 import re
 import sys
 import time
+
+import click
 
 sys.path.insert(0, ".")
 
@@ -137,25 +138,23 @@ def scan_union(tasks: list[dict], max_snapshots: int,
     return ({"counts": counts, "urls": urls, "samples": samples}, scanned)
 
 
-def main() -> int:
-    p = argparse.ArgumentParser()
-    p.add_argument("--events", type=int, default=30)
-    p.add_argument("--lookback", type=int, default=100)
-    p.add_argument("--seed", default="data/seed.json")
-    p.add_argument("--out", default="demo/cross_graph.json")
-    p.add_argument("--html", default="demo/cross_graph.html")
-    p.add_argument("--max-articles", type=int, default=3)
-    args = p.parse_args()
-
-    tasks = pick_events(args.events)
+@click.command()
+@click.option("--events", type=int, default=30)
+@click.option("--lookback", type=int, default=100)
+@click.option("--seed", default="data/seed.json")
+@click.option("--out", default="demo/cross_graph.json")
+@click.option("--html", default="demo/cross_graph.html")
+@click.option("--max-articles", type=int, default=3)
+def main(events, lookback, seed, out, html, max_articles) -> None:
+    tasks = pick_events(events)
     print(f"[xlink] topics={len(tasks)}")
     for t in tasks:
         print(f"  {t['event_ticker']}: {t['terms']}")
     if not tasks:
         print("[xlink] FAIL: no live events")
-        return 1
+        sys.exit(1)
 
-    agg, scanned = scan_union(tasks, args.lookback)
+    agg, scanned = scan_union(tasks, lookback)
     print(f"[xlink] scanned={scanned} "
           f"total_hits={sum(agg['counts'].values())}")
 
@@ -195,9 +194,9 @@ def main() -> int:
                              "subjects": list(task["terms"]),
                              "snapshot": s.get("_snap", ""),
                              "seendate": s.get("date", "") or s.get("_snap", "")})
-                if len(kept) >= args.max_articles * 5:
+                if len(kept) >= max_articles * 5:
                     break
-            if len(kept) >= args.max_articles * 5:
+            if len(kept) >= max_articles * 5:
                 break
         topic_urls[ev] = [k["url"] for k in kept]
         agent = NewsAgent()
@@ -250,17 +249,17 @@ def main() -> int:
 
     payload = to_cytoscape(list(api.store.nodes.values()), api.store.edges,
                             limit=None)  # full graph: links are the point
-    api.save(args.out)
-    with open(args.html, "w") as f:
+    api.save(out)
+    with open(html, "w") as f:
         f.write(render_page(payload, title="Compass cross-topic graph"))
     print(f"[xlink] topics={len(tasks)} snapshots={scanned} "
           f"nodes={len(api.store.nodes)} edges={len(api.store.edges)} "
           f"elements={len(payload['elements'])}")
-    print(f"[xlink] graph -> {args.out}")
-    print(f"[xlink] view  -> {args.html}")
+    print(f"[xlink] graph -> {out}")
+    print(f"[xlink] view  -> {html}")
     print("[xlink] OK")
-    return 0
+    sys.exit(0)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

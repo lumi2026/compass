@@ -422,3 +422,34 @@ signal: Market nodes carry live odds, price moves ≥ threshold
 become `market-move` happenings, co-moving odds nominate topic
 pairs for news exploration (odds suggest, news explains), and
 news-vs-odds divergence triggers re-investigation.
+
+## Day 5 — Oct 30: living-loop steps 1 + 2
+
+Built (storage v1, no SQLite yet — JSONL is the later migration base):
+- `graph/store.py`: `Happening` kind + `happening_id()` helper.
+- `graph/gate.py`: `GraphUpdateAPI.revision`, atomic `save`
+  (temp + rename), `load` accepts envelope + legacy plain shape.
+- `graph/persist.py` (new): `commit_batch` (Skeptic confidence
+  gate + role lanes, derived refresh, log append, snapshot),
+  `append_finding`, `replay_log`, `boot` (snapshot + replay).
+- `services/graph_server.py` (new, FastAPI + Pydantic, :8090):
+  `GET /health`, `GET /graph` (+`?at=` time travel,
+  `ETag`/`If-None-Match` 304), `POST /proposals` (per-proposal
+  verdicts, wrong-lane refusal), `POST /findings`. One lock,
+  snapshot-copy reads. Deps: `fastapi` + `uvicorn` + `httpx`
+  via uv. Run: `uv run python -m services.graph_server`.
+- `tests/test_graph_api.py` (new): lanes, vetoes, Happening,
+  boot/replay, legacy load, findings, `?at=`, 4-thread overlap
+  equals sequential, TestClient HTTP roundtrip + validation/422.
+
+Verified: 104/104 green; POC OK (17/17, spacex link, control
+isolated); legacy `demo/mvp_graph.json` loads (48/137, rev 0);
+live boot on :8099 served health + a proposals commit over HTTP.
+Layout settled: graph API :8090 owns store + `data/graph_*`
+(git-ignored); kalshi :8080; news loop as `scripts/news_loop.py`;
+view reads :8090. `COMPASS_DATA_DIR` (or `--data-dir`) locates
+state — same image runs on the Fly `/data` volume later.
+Next: step 3 (Kalshi discovery/publish) then step 4 (news loop).
+
+All 13 CLIs (`scripts/*`, graph API) migrated from argparse to
+click; flags and defaults unchanged; 104/104 green, POC OK.

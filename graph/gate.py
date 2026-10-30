@@ -20,8 +20,10 @@ class CommitResult:
 class GraphUpdateAPI:
     """Gate contract: validate, commit idempotently, record history."""
 
-    def __init__(self, store: GraphStore | None = None) -> None:
+    def __init__(self, store: GraphStore | None = None,
+                 revision: int = 0) -> None:
         self.store = store or GraphStore()
+        self.revision = revision
 
     def validate(self, node: Node) -> CommitResult:
         if not node.id or not node.kind or not node.title:
@@ -68,19 +70,54 @@ class GraphUpdateAPI:
         self.store.add_edge(edge)
         return CommitResult(True, "recorded")
 
+    def to_snapshot(self) -> dict:
+        """Checkpoint payload: revision + store (atomic write unit)."""
+        return {"revision": self.revision, "store": self.store.to_json()}
+
     def save(self, path: str) -> str:
-        """Persist the store to JSON. Services load on start."""
-        with open(path, "w") as f:
-            json.dump(self.store.to_json(), f, indent=1)
+        """Persist the store to JSON, atomically (temp + rename)."""
+        import os
+        import tempfile
+
+        tmp_fd, tmp_path = tempfile.mkstemp(
+            dir=os.path.dirname(os.path.abspath(path)) or ".",
+            prefix=".graph_snapshot_")
+        try:
+            with open(tmp_fd, "w") as f:
+                json.dump(self.to_snapshot(), f, indent=1)
+            os.replace(tmp_path, path)
+        except BaseException:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
         return path
 
     @classmethod
     def load(cls, path: str) -> "GraphUpdateAPI":
-        """Load a persisted store (missing file -> empty store)."""
+        """Load a persisted store (missing file -> empty store).
+
+        Accepts both the snapshot envelope {"revision", "store"} and
+        the legacy plain {"nodes", "edges"} shape.
+        """
         try:
             with open(path) as f:
-                return cls(GraphStore.from_json(json.load(f)))
+                data = json.load(f)
         except (OSError, ValueError):
+            return cls()
+        if isinstance(data, dict) and "store" in data and "revision" in data:
+            try:
+                rev = int(data.get("revision", 0))
+            except (TypeError, ValueError):
+                rev = 0
+            try:
+                return cls(GraphStore.from_json(data["store"]), revision=rev)
+            except (AttributeError, TypeError, ValueError, KeyError):
+                return cls()
+        try:
+            return cls(GraphStore.from_json(data))
+        except (AttributeError, TypeError, ValueError, KeyError):
             return cls()
 
 

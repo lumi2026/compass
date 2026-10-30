@@ -5,32 +5,31 @@ Run:  python3 scripts/smoke_gdelt.py [--limit 3] [--query climate]
 Public artlist queries need no key. Retries on 429. Exits non-zero on failure.
 """
 
-import argparse
 import sys
+
+import click
 
 sys.path.insert(0, ".")
 
 from sources.gdelt import GdeltSource
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--limit", type=int, default=3)
-    parser.add_argument("--query", type=str, default="climate")
-    args = parser.parse_args()
-
-    print(f"[gdelt] GET artlist query={args.query} (limit={args.limit}) ...")
-    articles = GdeltSource(query=args.query).fetch_normalized(limit=args.limit)
+@click.command()
+@click.option("--limit", type=int, default=3)
+@click.option("--query", type=str, default="climate")
+def main(limit, query) -> None:
+    print(f"[gdelt] GET artlist query={query} (limit={limit}) ...")
+    articles = GdeltSource(query=query).fetch_normalized(limit=limit)
     print(f"[gdelt] got {len(articles)} articles")
-    for a in articles[: args.limit]:
+    for a in articles[: limit]:
         print(f"  - {a.title[:100]} ({a.url[:60]})")
     if not articles:
         print("[gdelt] FAIL: empty result")
-        return 1
+        sys.exit(1)
 
     print("SMOKE OK: gdelt returned data")
-    return 0
+    sys.exit(0)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

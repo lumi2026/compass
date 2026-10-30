@@ -10,7 +10,8 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-NODE_KINDS = ("Event", "Market", "Article", "Subject", "Hypothesis")
+NODE_KINDS = ("Event", "Market", "Article", "Subject", "Hypothesis",
+              "Happening")
 
 EDGE_RELS = ("mentions", "about", "shares-subject-with", "supports",
              "challenges", "relates-to")
@@ -32,6 +33,14 @@ def subject_id(term: str) -> str:
 
     slug = re.sub(r"[^a-z0-9]+", "-", term.lower()).strip("-")
     return "subject:" + slug
+
+
+def happening_id(slug: str) -> str:
+    """Canonical Happening node id for a dated key event."""
+    import re
+
+    clean = re.sub(r"[^a-z0-9]+", "-", slug.lower()).strip("-")
+    return "happening:" + clean
 
 
 @dataclass(frozen=True)

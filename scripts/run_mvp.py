@@ -13,9 +13,11 @@ Offline: pass --snapshot fixture and/or --seed JSON.
 Live: defaults walk back --lookback snapshots per event.
 """
 
-import argparse
 import json
 import sys
+from types import SimpleNamespace
+
+import click
 
 sys.path.insert(0, ".")
 
@@ -91,20 +93,19 @@ def scan_kept(task: dict, snapshot: str | None, lookback: int,
     return kept[: max_articles * 3], [ts for ts, _ in used]
 
 
-def main() -> int:
-    p = argparse.ArgumentParser()
-    p.add_argument("--snapshot", default=None)
-    p.add_argument("--lookback", type=int, default=8)
-    p.add_argument("--seed", default="data/seed.json")
-    p.add_argument("--out", default="demo/mvp_graph.json")
-    p.add_argument("--html", default="demo/mvp_graph.html")
-    p.add_argument("--max-articles", type=int, default=3)
-    p.add_argument("--langsmith-project", default=None)
-    args = p.parse_args()
-
+@click.command()
+@click.option("--snapshot", default=None)
+@click.option("--lookback", type=int, default=8)
+@click.option("--seed", default="data/seed.json")
+@click.option("--out", default="demo/mvp_graph.json")
+@click.option("--html", default="demo/mvp_graph.html")
+@click.option("--max-articles", type=int, default=3)
+@click.option("--langsmith-project", default=None)
+def main(snapshot, lookback, seed, out, html, max_articles,
+         langsmith_project) -> None:
     from squad.tracing import setup_langsmith, squad_span  # noqa: E402
 
-    ls = setup_langsmith(project=args.langsmith_project)
+    ls = setup_langsmith(project=langsmith_project)
     print(f"[mvp] langsmith={'on' if ls['enabled'] else 'off'} "
           f"project={ls['project']} events={len(TASKS)}")
 
@@ -123,7 +124,7 @@ def main() -> int:
             except Exception:
                 markets = []
             if not markets:
-                markets = seed_markets(args.seed, task["event_ticker"])
+                markets = seed_markets(seed, task["event_ticker"])
                 print(f"[mvp] seed fallback: {len(markets)} markets")
             orch = Orchestrator(agents=[Scout()], skeptic=skeptic)
             for prop in orch.investigate(task, {"markets": markets}):
@@ -131,11 +132,11 @@ def main() -> int:
                                           prop.entity_id, prop.detail).reason)
             # News scan -> graph proposals.
             try:
-                kept, used = scan_kept(task, args.snapshot, args.lookback,
-                                       args.max_articles)
+                kept, used = scan_kept(task, snapshot, lookback,
+                                       max_articles)
             except RuntimeError:
                 print("[mvp] FAIL: no snapshot (pass --snapshot fixture offline)")
-                return 1
+                sys.exit(1)
             print(f"[mvp] snapshots: {used} kept={len(kept)}")
             total_kept += len(kept)
             agent = NewsAgent()
@@ -157,19 +158,19 @@ def main() -> int:
                   Connector().followups(api.store, t["event_ticker"]))
 
         payload = to_cytoscape(list(api.store.nodes.values()), api.store.edges)
-        api.save(args.out)
-        with open(args.html, "w") as f:
+        api.save(out)
+        with open(html, "w") as f:
             f.write(render_page(payload, title="Compass MVP graph"))
         print(f"[mvp] nodes={len(api.store.nodes)} edges={len(api.store.edges)} "
               f"kept={total_kept} elements={len(payload['elements'])}")
-        print(f"[mvp] graph -> {args.out}")
-        print(f"[mvp] view  -> {args.html} (open in a browser)")
+        print(f"[mvp] graph -> {out}")
+        print(f"[mvp] view  -> {html} (open in a browser)")
         print("[mvp] OK")
         span.outputs = {"nodes": len(api.store.nodes),
                         "edges": len(api.store.edges),
-                        "kept": total_kept, "out": args.out, "html": args.html}
-    return 0
+                        "kept": total_kept, "out": out, "html": html}
+    sys.exit(0)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

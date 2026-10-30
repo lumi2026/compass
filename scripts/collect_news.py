@@ -14,7 +14,6 @@ observed ~19h stale and it throttles to ~1 req / 5s.
 Stdlib only. DOC requests are spaced by --gap-sec (GDELT throttles hard).
 """
 
-import argparse
 import collections
 import datetime
 import json
@@ -22,6 +21,9 @@ import os
 import sys
 import tempfile
 import time
+
+import click
+
 sys.path.insert(0, ".")
 
 from sources.gdelt import GdeltSource  # noqa: E402
@@ -172,56 +174,53 @@ def collect_once(topics, timespan, limit, gap_sec, out):
     return 0 if digest["topics"] else 1
 
 
-def main() -> int:
-    p = argparse.ArgumentParser()
-    p.add_argument("--source", choices=["ngrams", "doc"], default="ngrams",
-                   help="news source (default: ngrams)")
-    p.add_argument("--topic", action="append", default=[],
-                   help="doc query string (or comma-separated ngram terms "
-                   "with --source ngrams); repeatable")
-    p.add_argument("--name", action="append", default=[],
-                   help="names for --topic values, in order")
-    p.add_argument("--timespan", default="1days",
-                   help="doc only: GDELT timespan window")
-    p.add_argument("--limit", type=int, default=10)
-    p.add_argument("--gap-sec", type=float, default=240,
-                   help="doc only: spacing between topic requests")
-    p.add_argument("--snapshot", default=None,
-                   help="ngrams only: pin a snapshot .json.gz path")
-    p.add_argument("--out", default="data/news_digest.json")
-    p.add_argument("--once", action="store_true",
-                   help="single round (default; --loop repeats)")
-    p.add_argument("--loop", action="store_true")
-    p.add_argument("--interval-min", type=float, default=15)
-    args = p.parse_args()
-
-    if args.source == "ngrams":
-        if args.topic:
-            names = args.name or [f"topic-{i}"
-                                  for i in range(len(args.topic))]
+@click.command()
+@click.option("--source", type=click.Choice(["ngrams", "doc"]),
+              default="ngrams", help="news source (default: ngrams)")
+@click.option("--topic", multiple=True, default=(),
+              help="doc query string (or comma-separated ngram terms "
+              "with --source ngrams); repeatable")
+@click.option("--name", multiple=True, default=(),
+              help="names for --topic values, in order")
+@click.option("--timespan", default="1days",
+              help="doc only: GDELT timespan window")
+@click.option("--limit", type=int, default=10)
+@click.option("--gap-sec", type=float, default=240,
+              help="doc only: spacing between topic requests")
+@click.option("--snapshot", default=None,
+              help="ngrams only: pin a snapshot .json.gz path")
+@click.option("--out", default="data/news_digest.json")
+@click.option("--once", is_flag=True, default=False,
+              help="single round (default; --loop repeats)")
+@click.option("--loop", is_flag=True, default=False)
+@click.option("--interval-min", type=float, default=15)
+def main(source, topic, name, timespan, limit, gap_sec, snapshot, out,
+         once, loop, interval_min) -> None:
+    topic = list(topic)
+    name = list(name)
+    if source == "ngrams":
+        if topic:
+            names = name or [f"topic-{i}" for i in range(len(topic))]
             topics_terms = {n: [w.strip() for w in q.split(",") if w.strip()]
-                            for n, q in zip(names, args.topic)}
+                            for n, q in zip(names, topic)}
         else:
             topics_terms = dict(DEFAULT_NGRAM_TERMS)
-        run = lambda: collect_once_ngrams(topics_terms, args.limit,
-                                          args.out, args.snapshot)
+        run = lambda: collect_once_ngrams(topics_terms, limit, out, snapshot)
     else:
-        if args.topic:
-            names = args.name or [f"topic-{i}"
-                                  for i in range(len(args.topic))]
-            topics = dict(zip(names, args.topic))
+        if topic:
+            names = name or [f"topic-{i}" for i in range(len(topic))]
+            topics = dict(zip(names, topic))
         else:
             topics = dict(DEFAULT_TOPICS)
-        run = lambda: collect_once(topics, args.timespan, args.limit,
-                                   args.gap_sec, args.out)
+        run = lambda: collect_once(topics, timespan, limit, gap_sec, out)
 
-    if not args.loop:
-        return run()
+    if not loop:
+        sys.exit(run())
     while True:
         run()
-        print(f"[news] sleeping {args.interval_min} min ...", flush=True)
-        time.sleep(args.interval_min * 60)
+        print(f"[news] sleeping {interval_min} min ...", flush=True)
+        time.sleep(interval_min * 60)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

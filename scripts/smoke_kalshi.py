@@ -6,36 +6,36 @@ Covers events -> markets -> orderbook -> candles for the first event.
 Public reads need no API key. Exits non-zero on failure.
 """
 
-import argparse
 import sys
 import time
+
+import click
 
 sys.path.insert(0, ".")
 
 from sources.kalshi import KalshiSource, best_bid
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--limit", type=int, default=3)
-    args = parser.parse_args()
+@click.command()
+@click.option("--limit", type=int, default=3)
+def main(limit) -> None:
     src = KalshiSource()
 
-    print(f"[kalshi] GET events (limit={args.limit}) ...")
-    events = src.fetch_normalized(limit=args.limit)
+    print(f"[kalshi] GET events (limit={limit}) ...")
+    events = src.fetch_normalized(limit=limit)
     print(f"[kalshi] got {len(events)} events")
-    for e in events[: args.limit]:
+    for e in events[: limit]:
         print(f"  - {e.external_id}: {e.title[:100]}")
     if not events:
         print("[kalshi] FAIL: empty events")
-        return 1
+        sys.exit(1)
 
     print(f"[kalshi] GET markets for {events[0].external_id} ...")
     markets = src.fetch_markets(events[0].external_id)
     print(f"[kalshi] got {len(markets)} markets")
     if not markets:
         print("[kalshi] FAIL: empty markets")
-        return 1
+        sys.exit(1)
     ticker = markets[0].ticker
     print(f"  - {ticker}: {markets[0].title[:100]}")
 
@@ -59,8 +59,8 @@ def main() -> int:
         print("  - note: no resting liquidity in first markets (endpoints OK)")
 
     print("SMOKE OK: kalshi events+markets+orderbook+candles")
-    return 0
+    sys.exit(0)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
