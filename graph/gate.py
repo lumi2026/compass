@@ -1,0 +1,134 @@
+"""Graph gate: Validate | Commit | Record so agents cannot corrupt the graph.
+
+Which proposal actions each agent role may write (role lanes). Derived
+edges are never proposed directly: only the Connector derives them
+(see graph.derive).
+"""
+
+import json
+from dataclasses import dataclass, replace
+
+from .store import EDGE_RELS, NODE_KINDS, Edge, GraphStore, Node
+
+
+@dataclass(frozen=True)
+class CommitResult:
+    committed: bool
+    reason: str = ""
+
+
+class GraphUpdateAPI:
+    """Gate contract: validate, commit idempotently, record history."""
+
+    def __init__(self, store: GraphStore | None = None) -> None:
+        self.store = store or GraphStore()
+
+    def validate(self, node: Node) -> CommitResult:
+        if not node.id or not node.kind or not node.title:
+            return CommitResult(False, "invalid node: id/kind/title required")
+        if node.kind not in NODE_KINDS:
+            return CommitResult(False, f"invalid kind: {node.kind!r}")
+        return CommitResult(True)
+
+    def commit(self, node: Node) -> CommitResult:
+        verdict = self.validate(node)
+        if not verdict.committed:
+            return verdict
+        now = self.store.now()
+        if not node.recorded_at or not node.created_at:
+            node = replace(node, recorded_at=node.recorded_at or now,
+                           created_at=node.created_at or node.recorded_at or now)
+        added = self.store.add_node(node)
+        return CommitResult(True, "created" if added else "duplicate: kept existing")
+
+    def validate_edge(self, edge: Edge) -> CommitResult:
+        if edge.rel not in EDGE_RELS:
+            return CommitResult(False, f"invalid rel: {edge.rel!r}")
+        if edge.src not in self.store.nodes:
+            return CommitResult(False, f"unknown src: {edge.src!r}")
+        if edge.dst not in self.store.nodes:
+            return CommitResult(False, f"unknown dst: {edge.dst!r}")
+        return CommitResult(True)
+
+    def record(self, edge: Edge) -> CommitResult:
+        """Idempotent on (src, dst, rel): re-laying a trail keeps
+        first-seen `at` and bumps `seen_count` (trail reinforcement)."""
+        verdict = self.validate_edge(edge)
+        if not verdict.committed:
+            return verdict
+        for i, e in enumerate(self.store.edges):
+            if (e.src, e.dst, e.rel) == (edge.src, edge.dst, edge.rel):
+                n = e.seen_count + 1
+                self.store.edges[i] = replace(
+                    e, seen_count=n,
+                    last_seen_at=edge.last_seen_at or self.store.now())
+                return CommitResult(True, f"reinforced x{n}")
+        if not edge.last_seen_at:
+            edge = replace(edge, last_seen_at=edge.at)
+        self.store.add_edge(edge)
+        return CommitResult(True, "recorded")
+
+    def save(self, path: str) -> str:
+        """Persist the store to JSON. Services load on start."""
+        with open(path, "w") as f:
+            json.dump(self.store.to_json(), f, indent=1)
+        return path
+
+    @classmethod
+    def load(cls, path: str) -> "GraphUpdateAPI":
+        """Load a persisted store (missing file -> empty store)."""
+        try:
+            with open(path) as f:
+                return cls(GraphStore.from_json(json.load(f)))
+        except (OSError, ValueError):
+            return cls()
+
+
+# -- collective authorship ----------------------------------------------
+
+# Which proposal actions each agent role may write. Derived edges are
+# never proposed directly: only the Connector derives them.
+ROLE_ACTIONS = {
+    "scout": ("add-node",),
+    "news-agent": ("add-node", "add-edge"),
+    "investigator": ("add-node", "add-edge"),
+    "connector": ("derive-links",),
+}
+
+
+def proposals_to_commit(api: GraphUpdateAPI, agent: str, action: str,
+                         entity_id: str, detail: str) -> CommitResult:
+    """Translate one gated Proposal into a graph write.
+
+    `add-node`: entity_id is the node id, detail is JSON {kind, title}.
+    `add-edge`: detail is JSON {src, dst, rel}.
+    `derive-links`: connector-only, recomputes derived edges.
+    Anything outside the role lane (or malformed JSON) is refused.
+    `news_summary` is never committable: only graph_proposals() commits.
+    """
+    from .derive import refresh_derived_links  # lazy: derive imports gate types
+
+    if action not in ROLE_ACTIONS.get(agent, ()):
+        return CommitResult(False, f"role {agent!r} may not {action!r}")
+    if action == "derive-links":
+        fresh = refresh_derived_links(api)
+        return CommitResult(True, f"derived {fresh}")
+    try:
+        payload = json.loads(detail) if detail else {}
+    except ValueError:
+        return CommitResult(False, "detail is not JSON")
+    if action == "add-node":
+        if not isinstance(payload, dict) or "kind" not in payload:
+            return CommitResult(False, "add-node needs {kind, title}")
+        return api.commit(Node(id=entity_id,
+                               kind=payload["kind"],
+                               title=payload.get("title", entity_id),
+                               created_at=api.store.now(),
+                               valid_at=str(payload.get("valid_at", ""))))
+    if action == "add-edge":
+        if not isinstance(payload, dict) or not {"src", "dst", "rel"} <= set(payload):
+            return CommitResult(False, "add-edge needs {src, dst, rel}")
+        return api.record(Edge(src=payload["src"], dst=payload["dst"],
+                               rel=payload["rel"], at=api.store.now(),
+                               valid_at=str(payload.get("valid_at", ""))))
+    return CommitResult(False, f"unsupported action: {action!r}")
