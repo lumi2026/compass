@@ -59,6 +59,21 @@ def test_viewer_empty_graph():
     assert 'id="counts"' in page and "3d-force-graph" in page
 
 
+def test_capped_payload_keeps_edges_coherent():
+    from graph import Edge, Node
+    from workspace import to_cytoscape
+
+    nodes = [Node(id=f"n{i}", kind="Event", title=f"t{i}") for i in range(5)]
+    edges = [Edge(src="n0", dst="n4", rel="mentions", at="t"),
+             Edge(src="n4", dst="n3", rel="mentions", at="t")]
+    payload = to_cytoscape(nodes, edges, limit=3)
+    ids = [e["data"].get("id", "") for e in payload["elements"]]
+    assert ids == ["n0", "n1", "n2"]
+    assert payload["elements"][3:] == []  # n3/n4 cut -> their edges cut too
+    full = to_cytoscape(nodes, edges, limit=None)
+    assert len(full["elements"]) == 7
+
+
 def _linked_pair():
     return [
         {"data": {"id": "kalshi:X",
