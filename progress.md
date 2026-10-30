@@ -162,7 +162,7 @@
   git-ignored) that agents query: snapshots log, mentions (term/ts/url/
   pre/post/pos), articles (url/text/summary/engine).
 
-## Day 3 — Oct 28
+## Day 2 (cont.) — Oct 28
 
 ### Plan
 - Fan-out accumulator: `squad/store.py` (SQLite: snapshots/mentions/articles),
@@ -274,7 +274,7 @@
   provider keys, `COMPASS_MODEL`/`MODEL_BASE_URL` overrides; agent tools
   already provider-agnostic (`model.invoke` only). 15/15 tests green.
 
-### Day 3 close-out
+### Day 2 close-out
 Done: Meta/LLM wiring + live validation, per-agent + role-based models
 (contributor default), subject-level relevance, squad/tools + ngrams split,
 ngrams-as-default digest, 404 avoidance, graph schema + POC + use-case
@@ -293,7 +293,7 @@ split, workspace + feedback demo.
   suffices for now); heuristic relevance pre-score (saves LLM calls);
   mamdani term widening; `KXTOPLLMGENERAL-30` zero-market gap.
 
-## Day 4 — Oct 29: squad split + LangSmith
+## Day 3 — Oct 29: squad split + LangSmith
 
 ### Built
 - Squad split: real Scout / Investigator / Connector agents behind the
@@ -306,13 +306,13 @@ split, workspace + feedback demo.
 - Full suite green, graph POC OK, live squad run OK, tracing live
   probes ingested. Pushed (`b8d836a`).
 
-### Day 4 close-out
+### Day 3 close-out
 Done: squad split + LangSmith.
 Not done: Cytoscape workspace + feedback demo; accumulator + `--loop`
 (deferred); heuristic pre-filter; mamdani widening;
 `KXTOPLLMGENERAL-30` zero-market gap.
 
-## Day 5 — Oct 29: real-data MVP
+## Day 3 (cont.) — Oct 29: real-data MVP
 
 ### Built
 - Cross-category seed: `seed_kalshi.py --event` (repeatable) captures
@@ -333,7 +333,7 @@ Not done: Cytoscape workspace + feedback demo; accumulator + `--loop`
   (deferred); heuristic pre-filter; `KXTOPLLMGENERAL-30` zero-market gap.
 - Changes uncommitted (MVP scripts, viewer, demo page, seed, docs).
 
-## Day 6 — Oct 29: dates + 3D graph
+## Day 3 (cont.) — Oct 29: dates + 3D graph
 
 ### Built
 - News summaries carry dates: run-date line plus per-article stamps.
@@ -351,3 +351,51 @@ Not done: Cytoscape workspace + feedback demo; accumulator + `--loop`
 ### Not done
 - Display refinement (layout, label density, mobile) — later step.
 - Changes uncommitted.
+
+## Day 4 — Oct 30: unit 1 (graph timestamps + trail weight)
+
+Done: bitemporal fields on Node/Edge (`valid_at` + `recorded_at`,
+legacy `created_at`/`at` kept and auto-filled; old JSON loads with
+defaults), edge re-lays bump `seen_count`/`last_seen_at` instead of
+silent dedupe (`reinforced xN`), `valid_at` passthrough in
+`proposals_to_commit`, pure `subgraph_as_of(store, ts)` time-travel
+helper. Suite 91/91 (new `tests/test_graph_times.py`; one
+contracts test updated to the intended reinforcement behavior);
+offline POC still OK.
+Not done (next units): append-only log + snapshot, then graph API
+service.
+
+## Next — living loop milestone (graph builder is the product)
+
+Plan saved to `.agents/plans/2026-10-30-living-loop.md` (direction set,
+not started): interconnecting seemingly unrelated Kalshi topics is the
+core — a background team of news agents explores *across* topics
+(co-mentions, shared subjects, burst correlation, entity overlap),
+extracts dated key events, and infers relations only with article
+evidence (hypotheses through the gate, per the agent prompt contract).
+Two storage layers: a centralized SQLite news store (every finding
+with valid + recorded timestamps, backing time travel via
+`GET /graph?at=`) under the curated graph. Backend first (central
+store, graph API, Kalshi discovery/publish, news team); React + Vite
+view after. Graph API serializes concurrent writers (lock + atomic
+save). Deployment planned ahead on Fly.io (backend first): one
+`compass-backend` app, graph API + Kalshi + news loop as process
+groups on one Machine, `compass_data` volume for `news.db` + graph
+JSON, secrets via `fly secrets`, only the graph API public (Bearer
+token required before any public deploy); frontend deploys
+separately. Graph state lives only in the backend (graph API owns
+the store in memory, atomic volume checkpoints, `revision` counter
+on responses); the frontend is a stateless view reading `/graph`
+(+`?at=` time travel) and `/news`/`/happenings` evidence endpoints —
+never the files — with agent writes and later human feedback sharing
+the same gated proposals path. Storage starts simple and
+append-only (ants accreting trails): `graph_log.jsonl` +
+`findings.jsonl` + atomic `graph_snapshot.json`, re-committed edges
+gain `seen_count` (trail reinforcement); SQLite is the later
+migration, not step 1. Data model settled: bitemporal,
+event-sourced property graph (reified hypotheses, `Happening`
+nodes, `seen_count` trail weight). Kalshi odds are the belief
+signal: Market nodes carry live odds, price moves ≥ threshold
+become `market-move` happenings, co-moving odds nominate topic
+pairs for news exploration (odds suggest, news explains), and
+news-vs-odds divergence triggers re-investigation.

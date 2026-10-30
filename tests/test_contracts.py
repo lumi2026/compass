@@ -74,7 +74,7 @@ def test_graph_update_api_idempotent_and_validating():
                            rel="vibes", at="t")).committed is False
 
 
-def test_graph_record_dedupes_reruns():
+def test_graph_record_reinforces_reruns():
     api = GraphUpdateAPI(GraphStore())
     api.commit(Node(id="kalshi:E1", kind="Event", title="E1"))
     api.commit(Node(id="gdelt:a1", kind="Article", title="a"))
@@ -82,8 +82,10 @@ def test_graph_record_dedupes_reruns():
     assert api.record(e).reason == "recorded"
     dup = api.record(Edge(src="gdelt:a1", dst="kalshi:E1", rel="about",
                           at="t2"))
-    assert dup.committed and dup.reason.startswith("duplicate")
+    assert dup.committed and dup.reason == "reinforced x2"
     assert len(api.store.edges) == 1
+    assert api.store.edges[0].at == "t1"  # first-seen kept
+    assert api.store.edges[0].seen_count == 2
 
 
 def test_graph_translator_role_lanes():

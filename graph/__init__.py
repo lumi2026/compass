@@ -21,7 +21,7 @@ Edge vocabulary:
 """
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 
 NODE_KINDS = ("Event", "Market", "Article", "Subject", "Hypothesis")
@@ -54,6 +54,11 @@ class Node:
     kind: str  # see NODE_KINDS
     title: str
     created_at: str = ""
+    # Bitemporal pair: valid_at = when it happened in the world
+    # (article seendate, happening date; "" = unknown/always), recorded_at
+    # = when an agent laid the trail. created_at is the legacy alias.
+    valid_at: str = ""
+    recorded_at: str = ""
 
 
 @dataclass(frozen=True)
@@ -61,7 +66,12 @@ class Edge:
     src: str
     dst: str
     rel: str  # see EDGE_RELS
-    at: str  # timestamp, version marker
+    at: str  # first-recorded timestamp, version marker
+    valid_at: str = ""  # world time; "" = unknown/always
+    # Trail weight: re-laying an existing trail bumps seen_count instead
+    # of duplicating, so repeatedly confirmed links grow heavier.
+    seen_count: int = 1
+    last_seen_at: str = ""
 
 
 @dataclass
@@ -122,6 +132,10 @@ class GraphUpdateAPI:
         verdict = self.validate(node)
         if not verdict.committed:
             return verdict
+        now = self.store.now()
+        if not node.recorded_at or not node.created_at:
+            node = replace(node, recorded_at=node.recorded_at or now,
+                           created_at=node.created_at or node.recorded_at or now)
         added = self.store.add_node(node)
         return CommitResult(True, "created" if added else "duplicate: kept existing")
 
@@ -135,13 +149,20 @@ class GraphUpdateAPI:
         return CommitResult(True)
 
     def record(self, edge: Edge) -> CommitResult:
-        """Idempotent on (src, dst, rel): re-records keep first-seen `at`."""
+        """Idempotent on (src, dst, rel): re-laying a trail keeps
+        first-seen `at` and bumps `seen_count` (trail reinforcement)."""
         verdict = self.validate_edge(edge)
         if not verdict.committed:
             return verdict
-        for e in self.store.edges:
+        for i, e in enumerate(self.store.edges):
             if (e.src, e.dst, e.rel) == (edge.src, edge.dst, edge.rel):
-                return CommitResult(True, "duplicate: kept existing")
+                n = e.seen_count + 1
+                self.store.edges[i] = replace(
+                    e, seen_count=n,
+                    last_seen_at=edge.last_seen_at or self.store.now())
+                return CommitResult(True, f"reinforced x{n}")
+        if not edge.last_seen_at:
+            edge = replace(edge, last_seen_at=edge.at)
         self.store.add_edge(edge)
         return CommitResult(True, "recorded")
 
@@ -200,12 +221,14 @@ def proposals_to_commit(api: GraphUpdateAPI, agent: str, action: str,
         return api.commit(Node(id=entity_id,
                                kind=payload["kind"],
                                title=payload.get("title", entity_id),
-                               created_at=api.store.now()))
+                               created_at=api.store.now(),
+                               valid_at=str(payload.get("valid_at", ""))))
     if action == "add-edge":
         if not isinstance(payload, dict) or not {"src", "dst", "rel"} <= set(payload):
             return CommitResult(False, "add-edge needs {src, dst, rel}")
         return api.record(Edge(src=payload["src"], dst=payload["dst"],
-                               rel=payload["rel"], at=api.store.now()))
+                               rel=payload["rel"], at=api.store.now(),
+                               valid_at=str(payload.get("valid_at", ""))))
     return CommitResult(False, f"unsupported action: {action!r}")
 
 
@@ -268,10 +291,30 @@ def refresh_derived_links(api: GraphUpdateAPI) -> int:
     """Recompute + record all derived links. Idempotent via record().
 
     Call after every commit batch so the graph never goes stale.
-    Returns the number of newly recorded edges.
+    Returns the number of newly recorded edges (reinforcements don't
+    count as new).
     """
     fresh = 0
     for e in derive_shared_subject_links(api.store, api.store.now()):
         if api.record(e).reason == "recorded":
             fresh += 1
     return fresh
+
+
+def subgraph_as_of(store: GraphStore, ts: str) -> GraphStore:
+    """Time travel: the graph as of world-time `ts` (valid_at <= ts).
+
+    Undated nodes/edges (valid_at == "") are always included; edges
+    touching pruned nodes are dropped. Timestamps compare
+    lexicographically, which matches chronological order for the
+    %Y%m%dT%H%M%SZ format used throughout.
+    """
+    snap = GraphStore()
+    for nid, n in store.nodes.items():
+        if not n.valid_at or n.valid_at <= ts:
+            snap.nodes[nid] = n
+    for e in store.edges:
+        if e.src in snap.nodes and e.dst in snap.nodes and (
+                not e.valid_at or e.valid_at <= ts):
+            snap.edges.append(e)
+    return snap
