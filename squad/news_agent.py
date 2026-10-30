@@ -173,7 +173,8 @@ class NewsAgent:
             props.append(Proposal(
                 agent=self.name, action="add-node", entity_id=aid,
                 detail=json.dumps({"kind": "Article",
-                                   "title": a.get("title", a["url"])}),
+                                   "title": a.get("title", a["url"]),
+                                   "valid_at": a.get("seendate", "")}),
                 confidence=0.8))
             for term in a.get("subjects") or terms:
                 sid = subject_id(term)

@@ -234,6 +234,12 @@ def test_handler_routes_for_step3():
                             "move_threshold_cents": 7})
         assert code == 200 and body == {"graph_url": "http://g:8090/x",
                                         "move_threshold_cents": 7}
+        code, body = _http("GET", base + "/markets?event=E1")
+        assert code == 200
+        assert [m["ticker"] for m in body["markets"]] == ["E1-A", "E1-B"]
+        assert body["markets"][0]["volume_24h"] == 900
+        code, _ = _http("GET", base + "/markets")
+        assert code == 400
         code, body = _http("GET", base + "/publish/graph")
         assert code == 200 and body["graph_url"] == "http://g:8090/x"
         code, body = _http("POST", base + "/publish/graph",

@@ -493,9 +493,63 @@ rev 1, 10 nodes, markets carrying live `price_cents`/`yes_bid`/
 on the seed tickers during the window — sweep (REST) is the
 deterministic path; ticks remain the move-detection path.
 
+Step 4 (news loop) done: `scripts/news_loop.py` (click, single
+process, threaded fan-out, `--once`/`--loop`, `--event` slice,
+`--mode` pin). Each cycle: kalshi discovery → rotating mode
+(co-mention, shared-subject, burst, entity-overlap,
+odds-correlation) → snapshot scan → `NewsAgent.graph_proposals`
+(now with `valid_at` from seendate) + LLM-or-extractive Hypothesis
+with `supports` evidence edges → Skeptic → POST /proposals →
+connector `derive-links` → POST /findings. `GET /markets?event=`
+added to the kalshi service (no watchlist side effects) for the
+odds mode, which correlates lead-market 24h closes (|r|≥0.7).
+`tests/test_news_loop.py`: incl. an offline end-to-end cycle
+(co-mention → hypothesis committed), a followup fan-out test
+(new Hypothesis → 2 follow-ups + derived cross-links), and a skip
+test for the late-publish 404 found live. Follow-ups key off
+freshly *created* Hypothesis verdicts (explicit derive-links
+re-derives are idempotent, so `derived_fresh` alone can't signal
+newness). `--max-cycles` bounds loop runs for demos. Live: all 5
+modes run clean against prod; findings logged; pairs 0 — verified
+genuine (shared terms have 0 hits in the current snapshot; even GDP
+candles are empty right now). Fixed live: odds mode queried
+event tickers for history (always empty) — now resolves lead
+market tickers via the new `GET /markets?event=`. 131/131 green.
+
 2- to 5-gram search: matcher was already length-generic
 (lower-middle word rule, no caller caps); locked in with
 `test_four_five_gram_matching` (105/105). Live proof on
 `20261030194600`: "new york city mayor" 2 hits/2 urls,
 "secretary of state marco rubio" 15/11; controls "white house"
 43/29, "interest rates" 11/4, "artificial intelligence" 38/25.
+
+## Next (ordered)
+
+1. **Live interconnect proof.** The loop's commit path is proven
+   offline, but no live cycle has found shared coverage yet (quiet
+   windows verified genuine twice). Run `news_loop --loop` with a
+   short interval across snapshot turns until a pair lands, then
+   confirm the Hypothesis + derived link + followups in `/graph`.
+   This closes the last unverified line in step 4.
+2. **Step 5 — React view** (`view/`): `react-force-graph-3d`
+   polling `GET /graph` (+`?at=` slider), same color/shape language,
+   empty/stale states (never a blank page). Highest-risk check stays
+   the stale/empty-API case — build that first, not last.
+3. **Time-travel replay.** `GET /graph?at=` filters nodes today but
+   shows live odds; implement replay from `graph_log.jsonl` so odds
+   scrub with the slider. The loop already records everything the
+   replay needs (`valid_at`, move props, per-batch log).
+4. **Step 6 — wiring + docs.** `docs/live_test.md` multi-terminal
+   run (graph API → kalshi → 2 loops → view) + the interconnect
+   demo script (seed 3 topics, run team, scrub time).
+5. **Pre-public gate.** Bearer-token auth on all non-`/health`
+   graph routes (`COMPASS_API_TOKEN`) — the current no-auth local
+   API must not ship as-is. Then Fly.io backend deploy + staging
+   smoke (`/health`, `/graph`, one proposals round-trip).
+6. **Polish (as needed).** Heuristic relevance pre-filter to save
+   LLM calls; mamdani term widening; `KXTOPLLMGENERAL-30` zero-market
+   gap; human feedback loop on the workspace; Cytoscape label
+   density/mobile refinement.
+7. **Later migrations (explicit non-goals now).** SQLite central
+   store when JSONL replay gets slow; multi-machine writers;
+   snapshot compaction/retention; webhook push graph → agents.

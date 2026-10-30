@@ -346,6 +346,26 @@ def make_handler(service: Service):
                 self._send(200, {"graph_url": service.graph_url,
                                  "move_threshold_cents":
                                      service.move_threshold_cents})
+            elif parsed.path == "/markets":
+                ev = (qs.get("event") or [""])[0]
+                try:
+                    limit = int((qs.get("limit") or ["20"])[0])
+                except (ValueError, TypeError):
+                    self._send(400, {"error": "limit must be an integer"})
+                    return
+                if not ev:
+                    self._send(400, {"error": "need ?event=EVENT_TICKER"})
+                    return
+                try:
+                    markets = service.src.fetch_markets(ev, limit=limit)
+                except Exception as e:
+                    self._send(502, {"error": f"upstream: {e}"})
+                    return
+                self._send(200, {"markets": [
+                    {"ticker": m.ticker, "title": m.title,
+                     "last_price": m.last_price, "yes_bid": m.yes_bid,
+                     "yes_ask": m.yes_ask, "volume_24h": m.volume_24h}
+                    for m in markets]})
             elif parsed.path == "/snapshot":
                 tickers = (qs.get("tickers") or [""])[0]
                 want = [t for t in tickers.split(",") if t] or None
