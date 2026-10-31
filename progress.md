@@ -653,3 +653,9 @@ market tickers via the new `GET /markets?event=`. 131/131 green.
   → `api.meta.ai/v1`, provider `meta`), so they show on the Meta
   dashboard — not on any OpenAI/LangSmith usage page. Tonight:
   54 measurement calls + 2 probes.
+- 2026-10-31 session (item-1 closeout): goal token counter went
+  ~11.77M → ~13.29M across the measurement wait, both-arms
+  scoring, tracing verification (1 smoke call + LangSmith API
+  reads), deliberate-mode docs, and this commit. Model calls this
+  session: 54 measurement + ~4 probes/smoke (all Meta key,
+  `compass-dev` traces).
