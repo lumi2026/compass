@@ -438,6 +438,136 @@ def test_cycle_veto_skips_pair_and_challenges_existing(tmp_path,
     assert holder.findings and holder.findings[0]["vetoed"] == 1
 
 
+INEGI_EVIDENCE = ["INEGI: Mexico Q3 GDP growth 0.9% quarterly"]
+WSJ_EVIDENCE = ["WSJ: U.S. GDP growth hit 3.4%"]
+BACKER_EVIDENCE = ["Musk backs biotech entrepreneur in funding round"]
+MODI_EVIDENCE = ["Modi Canada trade visit; PM Narendra Modi expected"]
+
+#: Labeled from the 11 live pairs, 2026-10-30/31. Ground truth is
+#: market identity, not story similarity: KXGDPYEAR tracks US GDP,
+#: so INEGI (Mexico) evidence is spurious even when the story rhymes.
+PAIR_FIXTURES = [
+    ("KXGDPYEAR-36", "US GDP 2036 annual growth",
+     "KXNOMGDPGROWTH-37JAN28", "US nominal GDP growth Jan 2037",
+     WSJ_EVIDENCE, True),
+    ("KXGDPYEAR-34", "US GDP 2034 annual growth",
+     "KXGDPYEAR-35", "US GDP 2035 annual growth", INEGI_EVIDENCE, False),
+    ("KXGDPYEAR-34", "US GDP 2034 annual growth",
+     "KXGDPYEAR-36", "US GDP 2036 annual growth", INEGI_EVIDENCE, False),
+    ("KXGDPYEAR-34", "US GDP 2034 annual growth",
+     "KXNOMGDPGROWTH-35JAN28", "US nominal GDP growth Jan 2035",
+     INEGI_EVIDENCE, False),
+    ("KXGDPYEAR-34", "US GDP 2034 annual growth",
+     "KXNOMGDPGROWTH-36JAN28", "US nominal GDP growth Jan 2036",
+     INEGI_EVIDENCE, False),
+    ("KXGDPYEAR-34", "US GDP 2034 annual growth",
+     "KXNOMGDPGROWTH-37JAN28", "US nominal GDP growth Jan 2037",
+     INEGI_EVIDENCE, False),
+    ("KXGDPYEAR-35", "US GDP 2035 annual growth",
+     "KXGDPYEAR-36", "US GDP 2036 annual growth", INEGI_EVIDENCE, False),
+    ("KXGDPYEAR-35", "US GDP 2035 annual growth",
+     "KXNOMGDPGROWTH-35JAN28", "US nominal GDP growth Jan 2035",
+     INEGI_EVIDENCE, False),
+    ("KXGDPYEAR-35", "US GDP 2035 annual growth",
+     "KXNOMGDPGROWTH-36JAN28", "US nominal GDP growth Jan 2036",
+     INEGI_EVIDENCE, False),
+    ("KXELONMARS-99", "Will Elon Musk visit Mars in his lifetime?",
+     "KXPERSONPRESMAM-45", "Mamdani presidential speculation",
+     BACKER_EVIDENCE, False),
+    ("KXNEXTISRAELPM-45JAN01", "Who will succeed Netanyahu as PM?",
+     "KXNEXTUKPRIMEMIN-35JAN01", "Who will be the next UK PM?",
+     MODI_EVIDENCE, False),
+]
+
+
+class ScriptModel:
+    """Canned per-turn replies; records message lists for assertions."""
+
+    def __init__(self, replies):
+        self.replies = replies
+        self.seen = []
+
+    def invoke(self, messages):
+        self.seen.append(list(messages))
+        r = self.replies[min(len(self.seen) - 1, len(self.replies) - 1)]
+        if isinstance(r, Exception):
+            raise r
+        return type("R", (), {"content": r})()
+
+
+def test_deliberate_keep_threads_history():
+    from squad.auditor import deliberate_pair
+
+    m = ScriptModel(["Link sentence here.",
+                     "YES\nholds up\n0.8"])
+    d = deliberate_pair("EA", "A market", "EB", "B market", ["ev one"],
+                        "co-mention", m)
+    assert d.keep and d.title == "Link sentence here." and d.turns_used == 2
+    assert d.confidence == 0.8
+    # turn 2 sees turn 1: 4 messages, the AI proposal quoted back
+    assert len(m.seen[1]) == 4
+    assert "Link sentence here." in str(m.seen[1][2].content)
+
+
+def test_deliberate_veto_then_drop():
+    from squad.auditor import deliberate_pair
+
+    m = ScriptModel(["Bad link sentence.",
+                     "NO\nmexico not us\n0.2",
+                     "DROP\nnothing salvageable"])
+    d = deliberate_pair("EA", "A", "EB", "B", ["mexico evidence"],
+                        "co-mention", m)
+    assert d.keep is False and d.turns_used == 3
+    assert "salvageable" in d.reason
+
+
+def test_deliberate_veto_then_salvage():
+    from squad.auditor import deliberate_pair
+
+    m = ScriptModel(["Bad link sentence.",
+                     "NO\nwrong country\n0.3",
+                     "Both track GDP releases\nnarrower"])
+    d = deliberate_pair("EA", "A", "EB", "B", ["gdp release"],
+                        "co-mention", m)
+    assert d.keep and d.title == "Both track GDP releases"
+    assert d.turns_used == 3
+
+
+def test_deliberate_fallbacks():
+    from squad.auditor import deliberate_pair
+
+    d = deliberate_pair("EA", "A", "EB", "B", ["ev"], "co-mention", None)
+    assert d.keep and d.turns_used == 0
+    m = ScriptModel([RuntimeError("down")])
+    d = deliberate_pair("EA", "A", "EB", "B", ["ev"], "co-mention", m)
+    assert d.keep and d.turns_used == 0  # failed before completing a turn
+
+
+def test_cycle_deliberate_without_model_matches_singleshot(tmp_path,
+                                                            monkeypatch):
+    gz = tmp_path / "s.json.gz"
+    _snap(gz)
+    monkeypatch.setattr(nl, "_snapshot_pair",
+                        lambda *a, **k: ("20261030T000000Z", str(gz),
+                                         "20261029T000000Z", str(gz)))
+    api = GraphUpdateAPI(GraphStore())
+    gsrv, gt, holder = _serve_graph(api)
+    ksrv, kt = _serve_kalshi()
+    try:
+        summary = nl.run_cycle(
+            f"http://127.0.0.1:{gsrv.server_address[1]}",
+            f"http://127.0.0.1:{ksrv.server_address[1]}",
+            cycle=0, model=None, deliberate=True)
+    finally:
+        gsrv.shutdown()
+        ksrv.shutdown()
+        gt.join(timeout=10)
+        kt.join(timeout=10)
+    assert summary["ok"] and summary["pairs"] == 1
+    assert summary["llm_calls"] == 0
+    assert "hypothesis:loop-ea-eb" in api.store.nodes
+
+
 def test_cycle_needs_two_topics(monkeypatch):
     assert nl.run_cycle("http://127.0.0.1:1", "http://127.0.0.1:1",
                         model=None)["ok"] is False

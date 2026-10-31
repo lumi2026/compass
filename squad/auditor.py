@@ -20,6 +20,32 @@ class AuditResult:
     confidence: float = 0.5
 
 
+@dataclass
+class DeliberationResult:
+    keep: bool
+    title: str = ""
+    reason: str = ""
+    confidence: float = 0.5
+    turns_used: int = 0
+
+
+def _is_veto(lines: list[str]) -> bool:
+    return bool(lines) and lines[0].strip().upper().startswith("NO")
+
+
+def _parse_conf(lines: list[str], default: float = 0.6) -> float:
+    for line in lines:
+        try:
+            return max(0.0, min(0.9, float(line.strip())))
+        except ValueError:
+            continue
+    return default
+
+
+def _parse_reason(lines: list[str], default: str = "") -> str:
+    return lines[1].strip()[:300] if len(lines) > 1 else default
+
+
 def audit_pair(topic_a: str, title_a: str, topic_b: str, title_b: str,
                evidence_titles: list[str], mode: str,
                model=None) -> AuditResult:
@@ -54,17 +80,79 @@ def audit_pair(topic_a: str, title_a: str, topic_b: str, title_b: str,
                 f"Shared articles: {'; '.join(evidence_titles[:5]) or '(none)'}"),
         ])
         lines = str(msg.content).strip().splitlines()
-        verdict = lines[0].strip().upper() if lines else ""
-        reason = lines[1].strip()[:300] if len(lines) > 1 else ""
-        conf = 0.6
-        for line in lines:
-            try:
-                conf = max(0.0, min(0.9, float(line.strip())))
-                break
-            except ValueError:
-                continue
-        if verdict.startswith("NO"):
-            return AuditResult(False, reason or "spurious link", conf)
-        return AuditResult(True, reason or "genuine link", conf)
+        conf = _parse_conf(lines)
+        if _is_veto(lines):
+            return AuditResult(False,
+                               _parse_reason(lines, "spurious link"), conf)
+        return AuditResult(True,
+                           _parse_reason(lines, "genuine link"), conf)
     except Exception:
         return AuditResult(True, "llm-error: keep (fail-open)", 0.5)
+
+
+def deliberate_pair(topic_a: str, title_a: str, topic_b: str, title_b: str,
+                    evidence_titles: list[str], mode: str,
+                    model=None) -> DeliberationResult:
+    """One shared session: propose, audit in-context, revise or drop.
+
+    Turn 1 proposes the hypothesis; turn 2 audits it with the proposal
+    in context (it can quote and challenge its own claims instead of
+    re-reading cold evidence); turn 3 salvages a narrower true claim
+    or confirms the drop. Fail-open throughout.
+    """
+    if model is None:
+        head = "; ".join(evidence_titles[:2]) or "no evidence"
+        return DeliberationResult(True, f"shared coverage: {head}",
+                                  "no-model: keep (fail-open)", 0.5, 0)
+    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+    ev = "; ".join(evidence_titles[:5]) or "(none)"
+    context = (f"Topic A: {topic_a} ({title_a})\n"
+               f"Topic B: {topic_b} ({title_b})\n"
+               f"Mode: {mode}\nShared articles: {ev}")
+    turns = 0
+    try:
+        msgs = [SystemMessage(
+                    "You are a prediction-market analyst linking topics "
+                    "through world news. Propose one sentence stating how "
+                    "the two topics are related, grounded in the shared "
+                    "articles."),
+                HumanMessage(context + "\nPropose the link in one sentence.")]
+        t1 = model.invoke(msgs)
+        turns = 1
+        first = str(t1.content).strip().splitlines()
+        title = first[0].strip()[:300] if first else ""
+        msgs += [AIMessage(str(t1.content)),
+                 HumanMessage(
+                     "Now audit your own proposal against the same "
+                     "evidence. Reply NO only if the shared articles are "
+                     "substantively about a different country, market, or "
+                     "entity than your claim. Reply YES if it holds. Then "
+                     "a one-line reason, then a confidence number 0-1 on "
+                     "its own line.")]
+        t2 = model.invoke(msgs)
+        turns = 2
+        lines = str(t2.content).strip().splitlines()
+        if not _is_veto(lines):
+            return DeliberationResult(
+                True, title, _parse_reason(lines, "genuine link"),
+                _parse_conf(lines), turns)
+        msgs += [AIMessage(str(t2.content)),
+                 HumanMessage(
+                     "You vetoed your own link. Either state a narrower "
+                     "claim that IS supported by the evidence (one "
+                     "sentence), or reply DROP. Then a one-line reason.")]
+        t3 = model.invoke(msgs)
+        turns = 3
+        l3 = str(t3.content).strip().splitlines()
+        if l3 and l3[0].strip().upper() == "DROP":
+            return DeliberationResult(
+                False, title, _parse_reason(l3, "dropped on review"),
+                _parse_conf(l3), turns)
+        revised = l3[0].strip()[:300] if l3 else title
+        return DeliberationResult(
+            True, revised, _parse_reason(l3, "narrowed on review"),
+            _parse_conf(l3), turns)
+    except Exception:
+        return DeliberationResult(True, "", "llm-error: keep (fail-open)",
+                                  0.5, turns)

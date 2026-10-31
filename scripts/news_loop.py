@@ -410,7 +410,8 @@ def run_cycle(graph_url: str, kalshi_url: str, cycle: int = 0,
               mode_pin: str | None = None, model="auto",
               event_limit: int = 30, history_snaps: int = 1,
               history_hours: float = 48,
-              history_stride_hours: float = 6) -> dict:
+              history_stride_hours: float = 6,
+              deliberate: bool = False) -> dict:
     """One full explore -> propose -> commit cycle. Returns a summary."""
     mode = next_mode(cycle, mode_pin)
     try:
@@ -490,39 +491,52 @@ def run_cycle(graph_url: str, kalshi_url: str, cycle: int = 0,
     title_of = {t["event_ticker"]: t["title"] for t in topics}
     existing_hids = _existing_hypotheses(graph_url)
     audit_llm = resolve_model(model, role="auditor") if model else None
-    live_pairs: list[dict] = []
+    live_pairs: list[tuple] = []  # (pair, title|None, conf|None)
     vetoed = 0
     for p in pairs:
         ev_titles = [url_kept[u]["title"] for u in p["urls"][:3]
                      if u in url_kept]
-        if audit_llm is not None:
-            llm_calls += 1
-        res = audit_pair(p["a"], title_of.get(p["a"], p["a"]),
-                         p["b"], title_of.get(p["b"], p["b"]),
-                         ev_titles, p["mode"], audit_llm)
-        if res.keep:
-            live_pairs.append(p)
+        hid = f"hypothesis:loop-{_slug(p['a'])}-{_slug(p['b'])}"
+        if deliberate and audit_llm is not None:
+            from squad.auditor import deliberate_pair  # noqa: E402
+
+            d = deliberate_pair(
+                p["a"], title_of.get(p["a"], p["a"]),
+                p["b"], title_of.get(p["b"], p["b"]),
+                ev_titles, p["mode"], audit_llm)
+            llm_calls += d.turns_used
+            keep, reason, dtitle, dconf = (d.keep, d.reason, d.title,
+                                           d.confidence)
+        else:
+            if audit_llm is not None:
+                llm_calls += 1
+            r = audit_pair(p["a"], title_of.get(p["a"], p["a"]),
+                           p["b"], title_of.get(p["b"], p["b"]),
+                           ev_titles, p["mode"], audit_llm)
+            keep, reason, dtitle, dconf = (r.keep, r.reason, None, None)
+        if keep:
+            live_pairs.append((p, dtitle, dconf))
             continue
         vetoed += 1
-        log(f"cycle={cycle} veto {p['a']}x{p['b']}: {res.reason}")
-        hid = f"hypothesis:loop-{_slug(p['a'])}-{_slug(p['b'])}"
+        log(f"cycle={cycle} veto {p['a']}x{p['b']}: {reason}")
         if hid in existing_hids:
             aid = f"audit:{hid}"
             all_props.append(Proposal(
                 agent="auditor", action="add-node", entity_id=aid,
                 detail=json.dumps(
                     {"kind": "Audit",
-                     "title": f"audit flags {hid}: {res.reason}",
+                     "title": f"audit flags {hid}: {reason}",
                      "props": {"target": hid, "verdict": "reject",
-                               "reason": res.reason, "mode": p["mode"]}}),
+                               "reason": reason, "mode": p["mode"]}}),
                 confidence=0.8))
             all_props.append(Proposal(
                 agent="auditor", action="add-edge", entity_id=aid,
                 detail=json.dumps({"src": aid, "dst": hid,
                                    "rel": "challenges"}),
                 confidence=0.8))
-    pairs = live_pairs
-    for p in pairs:
+    inv_llm = resolve_model(model, role="investigator") if model else None
+    pairs = [p for p, _, _ in live_pairs]
+    for p, dtitle, dconf in live_pairs:
         pair_terms = sorted(
             {term for t in topics if t["event_ticker"] in (p["a"], p["b"])
              for term in t["terms"]})
@@ -536,13 +550,15 @@ def run_cycle(graph_url: str, kalshi_url: str, cycle: int = 0,
                     all_props.append(prop)
         hid = f"hypothesis:loop-{_slug(p['a'])}-{_slug(p['b'])}"
         ev_arts = [url_kept[u] for u in p["urls"][:3] if u in url_kept]
-        llm = resolve_model(model, role="investigator")
-        if llm is not None:
-            llm_calls += 1
-        title, conf = hypothesis_title(
-            p["a"], p["b"], p["urls"],
-            [type("A", (), {"title": k["title"]}) for k in ev_arts],
-            llm)
+        if deliberate and dtitle:
+            title, conf = dtitle, dconf
+        else:
+            if inv_llm is not None:
+                llm_calls += 1
+            title, conf = hypothesis_title(
+                p["a"], p["b"], p["urls"],
+                [type("A", (), {"title": k["title"]}) for k in ev_arts],
+                inv_llm)
         all_props.append(Proposal(
             agent="investigator", action="add-node", entity_id=hid,
             detail=json.dumps({"kind": "Hypothesis", "title": title,
@@ -702,10 +718,13 @@ def _odds_cycle(graph_url: str, kalshi_url: str, topics: list[dict],
 @click.option("--history-stride-hours", type=float, default=6,
               help="spacing between history snapshots (skips the rest)")
 @click.option("--langsmith-project", default=None)
+@click.option("--deliberate", is_flag=True, default=False,
+              help="multi-turn propose->audit->revise per pair "
+              "(experiment; costs ~3x model calls)")
 def main(graph_url, kalshi_url, interval_min, event, max_pairs, mode,
          model, once, loop, max_cycles, event_limit, history_snaps,
          history_hours, history_stride_hours,
-         langsmith_project) -> None:
+         langsmith_project, deliberate) -> None:
     from services.auth import load_dotenv  # noqa: E402
     from squad.tracing import setup_langsmith, squad_span  # noqa: E402
 
@@ -723,7 +742,7 @@ def main(graph_url, kalshi_url, interval_min, event, max_pairs, mode,
                 summary = run_cycle(graph_url, kalshi_url, cycle,
                                     tuple(event), max_pairs, mode, model,
                                     event_limit, history_snaps, history_hours,
-                                    history_stride_hours)
+                                    history_stride_hours, deliberate)
             except Exception as e:  # keep the loop alive; record and retry
                 summary = {"ok": False,
                            "reason": f"{type(e).__name__}: {e}"}

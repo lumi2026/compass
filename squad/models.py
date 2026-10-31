@@ -2,11 +2,12 @@
 the squad uses. Returns None when no key is configured so agents fall
 back to their offline implementations (and tests stay network-free).
 
-All bundled providers speak the OpenAI chat API, so one ChatOpenAI
-class covers them — only base_url / key / model id change. The agent
-tools (`llm_relevant`, `llm_summarize`) only call `model.invoke` with
-plain System/Human messages, so any LangChain chat model also works
-when passed directly as `NewsAgent(model=...)`.
+All bundled providers speak the OpenAI chat API, so one
+OpenAI-compatible client covers them — only base_url / key / model
+id change. The agent tools (`llm_relevant`, `llm_summarize`) only
+call `model.invoke` with plain System/Human messages, so any
+LangChain chat model also works when passed directly as
+`NewsAgent(model=...)`.
 
 Env:
   MODEL_PROVIDER — meta (default) | openai | deepseek | custom.
@@ -97,9 +98,11 @@ def make_chat_model(provider: str | None = None,
     api_key = next((os.environ[k] for k in key_envs if os.environ.get(k)), "")
     if not api_key:
         return None
-    from langchain_openai import ChatOpenAI
+    # Generic name on purpose: this is the OpenAI-compatible chat
+    # client, not necessarily OpenAI itself (see MODEL_PROVIDER).
+    from langchain_openai import ChatOpenAI as ChatModel
 
-    return ChatOpenAI(
+    return ChatModel(
         base_url=base_url,
         api_key=api_key,
         model=model or os.environ.get("COMPASS_MODEL")
