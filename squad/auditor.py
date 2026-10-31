@@ -93,12 +93,24 @@ def audit_pair(topic_a: str, title_a: str, topic_b: str, title_b: str,
 def deliberate_pair(topic_a: str, title_a: str, topic_b: str, title_b: str,
                     evidence_titles: list[str], mode: str,
                     model=None) -> DeliberationResult:
-    """One shared session: propose, audit in-context, revise or drop.
+    """Multi-turn alternative to propose-then-audit for one topic pair.
 
-    Turn 1 proposes the hypothesis; turn 2 audits it with the proposal
-    in context (it can quote and challenge its own claims instead of
-    re-reading cold evidence); turn 3 salvages a narrower true claim
-    or confirms the drop. Fail-open throughout.
+    What it is for: testing whether letting the model argue with
+    itself in one shared session produces better links than the
+    default pipeline (hypothesis_title proposes cold, audit_pair
+    vetoes cold). The shared context lets turn 2 quote and challenge
+    turn 1's own claims instead of re-reading cold evidence.
+
+    Turns: 1 proposes the link; 2 audits that proposal in-context;
+    3 salvages a narrower true claim or confirms the drop.
+    Fail-open throughout (errors and no-model keep the pair).
+
+    Cost: up to 3 model calls per pair vs 2 for single-shot
+    (propose + audit). Measured 2026-10-31 on 11 labeled fixtures:
+    identical verdicts both arms (precision=recall=1.00), 32 calls
+    vs 22 — no gain, so single-shot stays the default and this
+    remains opt-in (news_loop --deliberate) for future tests on
+    harder near-miss fixtures.
     """
     if model is None:
         head = "; ".join(evidence_titles[:2]) or "no evidence"

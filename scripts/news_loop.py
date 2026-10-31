@@ -720,7 +720,9 @@ def _odds_cycle(graph_url: str, kalshi_url: str, topics: list[dict],
 @click.option("--langsmith-project", default=None)
 @click.option("--deliberate", is_flag=True, default=False,
               help="multi-turn propose->audit->revise per pair "
-              "(experiment; costs ~3x model calls)")
+              "(experiment, opt-in only: measured 2026-10-31, no "
+              "gain over single-shot on 11 fixtures, ~45% more "
+              "calls; kept for future harder-fixture tests)")
 def main(graph_url, kalshi_url, interval_min, event, max_pairs, mode,
          model, once, loop, max_cycles, event_limit, history_snaps,
          history_hours, history_stride_hours,

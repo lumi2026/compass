@@ -626,3 +626,30 @@ market tickers via the new `GET /markets?event=`. 131/131 green.
   one-sentence reply), 1 snapshot scan per term-set, 1 graph POST
   per cycle + 1 for derive. Token-level accounting lives in
   LangSmith under `compass-dev`.
+
+## 2026-10-31 ~01:30 UTC — Item 1 deliberation experiment: verdict DROP
+
+- Live both-arms measurement on all 11 PAIR_FIXTURES
+  (`/tmp/measure_deliberation.py`, 54 sequential reasoning-model
+  calls, ~1h wall — the "hang" was real work, not a stall; output
+  was hidden behind the `| tail -30` pipe, now known).
+- single-shot: precision=1.00 recall=1.00, 22 calls
+  (tp=1 tn=10 fp=0 fn=0).
+- deliberated (multi-turn + audit, 3 turns on vetoes):
+  precision=1.00 recall=1.00, 32 calls (same confusion matrix).
+- Verdict: DROP — deliberation adds ~45% more calls with zero
+  accuracy gain on these fixtures. Single-shot stays the default;
+  `--deliberate` remains an opt-in experiment flag only. Fixtures
+  are ceilinged (10/11 are obvious negatives); revisit only with
+  harder near-miss fixtures.
+- Tracing note: measurement-script calls DID land in LangSmith
+  (`compass-dev`, verified via API — `00:22 UTC` batch of `llm
+  ChatOpenAI` runs) through env auto-instrumentation, even though
+  the throwaway script never called `setup_langsmith()`. Smoke
+  test just now confirmed a fresh traced call appears
+  (`01:23 UTC`). If the dashboard looks empty, check project
+  `compass-dev`, not the default project.
+- Usage note: model calls bill to the Meta key (`MODEL_API_KEY`
+  → `api.meta.ai/v1`, provider `meta`), so they show on the Meta
+  dashboard — not on any OpenAI/LangSmith usage page. Tonight:
+  54 measurement calls + 2 probes.
