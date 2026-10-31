@@ -559,6 +559,18 @@ market tickers via the new `GET /markets?event=`. 131/131 green.
 7. **Later migrations (explicit non-goals now).** SQLite central
    store when JSONL replay gets slow; multi-machine writers;
    snapshot compaction/retention; webhook push graph → agents.
+8. **Experiment: multi-turn pair deliberation (next, planned
+   2026-10-31).** Question: does folding propose + audit into one
+   multi-turn chat raise the pair success rate vs today's
+   single-shot calls? One chat session per pair — turn 1 proposes
+   the hypothesis with evidence, turn 2 audits it in the same
+   context, optional turn 3 revises or drops. Measured on a fixed
+   fixture set labeled from the 11 live pairs (known-good GDP
+   same-story vs known-bad Mexico-article): veto precision + keep
+   recall vs single-shot, challenge rate, tokens per pair (~3×
+   today). Adopt behind a `--deliberate` flag only if precision
+   rises without recall loss; otherwise keep single-shot propose
+   + separate audit.
 
 ## 2026-10-31 ~00:30 UTC — Auditor agent (third review role)
 
