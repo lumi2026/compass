@@ -525,12 +525,18 @@ market tickers via the new `GET /markets?event=`. 131/131 green.
 
 ## Next (ordered)
 
-1. **Live interconnect proof.** The loop's commit path is proven
-   offline, but no live cycle has found shared coverage yet (quiet
-   windows verified genuine twice). Run `news_loop --loop` with a
-   short interval across snapshot turns until a pair lands, then
-   confirm the Hypothesis + derived link + followups in `/graph`.
-   This closes the last unverified line in step 4.
+1. **Live interconnect proof — DONE 23:43 UTC.** 50 events ×
+   newest snapshot → 10 pairs, 482 proposals, rev 22, 20 followups.
+   Graph now holds 10 LLM-written Hypotheses (GDP cluster cites the
+   INEGI Q3 report; Mars × Mamdani via Musk), 34 derived
+   `shares-subject-with` edges, `supports` evidence edges. LLM and
+   tracing gaps closed the same night: the loop never called
+   `setup_langsmith` (so zero runs despite the opt-in flag) and only
+   calls the model when pairs exist (all earlier cycles had none —
+   correct, not a bug). Now: per-cycle `news-loop-cycle` spans,
+   `langsmith=on project=compass-dev` at startup, and flushed
+   stage logs (topics/terms → hits → pairs → posted/rev/followups)
+   to stdout.
 2. **Step 5 — React view** (`view/`): `react-force-graph-3d`
    polling `GET /graph` (+`?at=` slider), same color/shape language,
    empty/stale states (never a blank page). Highest-risk check stays

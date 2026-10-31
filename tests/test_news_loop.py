@@ -280,6 +280,63 @@ def test_followups_fan_out_on_new_links(tmp_path, monkeypatch):
         ("kalshi:EA", "kalshi:EB"), ("kalshi:EB", "kalshi:EA")}
 
 
+def test_scan_history_merges_stride_snapshots(tmp_path, monkeypatch):
+    import gzip as _gzip
+
+    def _write(path, rows):
+        with _gzip.open(str(path), "wt") as f:
+            for r in rows:
+                f.write(json.dumps(r) + "\n")
+
+    gz1 = tmp_path / "n1.json.gz"
+    gz2 = tmp_path / "n2.json.gz"
+    _write(gz1, [{"ngram": "alpha", "type": 1, "lang": "en",
+                  "pre": "x", "post": "beta one",
+                  "url": "http://loop.test/shared"},
+                 {"ngram": "alpha", "type": 1, "lang": "en",
+                  "pre": "x", "post": "beta solo",
+                  "url": "http://loop.test/only1"}])
+    _write(gz2, [{"ngram": "alpha", "type": 1, "lang": "en",
+                  "pre": "x", "post": "beta two",
+                  "url": "http://loop.test/shared"},
+                 {"ngram": "alpha", "type": 1, "lang": "en",
+                  "pre": "x", "post": "beta other",
+                  "url": "http://loop.test/only2"}])
+    monkeypatch.setattr(nl, "_snapshot_stride_list",
+                        lambda *a, **k: [("t1", str(gz1)), ("t2", str(gz2))])
+    merged, per = nl.scan_history(["alpha beta"], hours_back=48,
+                                  stride_hours=6)
+    assert merged["alpha beta"]["count"] == 4
+    assert merged["alpha beta"]["urls"] == ["http://loop.test/only1",
+                                            "http://loop.test/only2",
+                                            "http://loop.test/shared"]
+    assert [ts for ts, _ in per] == ["t1", "t2"]
+
+
+def test_stride_list_spacing_and_bound(tmp_path, monkeypatch):
+    import datetime
+
+    base = datetime.datetime(2026, 10, 30, 12, 0)
+    marks = [(base - datetime.timedelta(minutes=15 * i)).strftime(
+        "%Y%m%d%H%M%S") for i in range(53)]  # 13h of marks
+    monkeypatch.setattr(nl, "snapshot_candidates", lambda *a, **k: marks)
+
+    import sources.ngrams as ng
+
+    def fake_download(ts, dest):
+        with open(dest, "wb") as f:
+            f.write(b"")
+        return dest
+
+    monkeypatch.setattr(ng, "download_snapshot", fake_download)
+    out = nl._snapshot_stride_list(hours_back=13, stride_hours=6,
+                                   dest_dir=str(tmp_path), max_snaps=12)
+    assert [ts for ts, _ in out] == [marks[0], marks[24], marks[48]]
+    out = nl._snapshot_stride_list(hours_back=13, stride_hours=6,
+                                   dest_dir=str(tmp_path), max_snaps=2)
+    assert len(out) == 2
+
+
 def test_cycle_needs_two_topics(monkeypatch):
     assert nl.run_cycle("http://127.0.0.1:1", "http://127.0.0.1:1",
                         model=None)["ok"] is False

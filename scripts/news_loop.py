@@ -56,9 +56,10 @@ def _post_json(url: str, payload: dict, timeout: int = 30) -> dict:
         return json.loads(resp.read() or b"{}")
 
 
-def discover_topics(kalshi_url: str, event_slice: tuple = ()) -> list[dict]:
+def discover_topics(kalshi_url: str, event_slice: tuple = (),
+                    limit: int = 30) -> list[dict]:
     """Kalshi events -> [{event_ticker, title, terms}]. Slice restricts."""
-    data = _get_json(kalshi_url.rstrip("/") + "/events?limit=30")
+    data = _get_json(kalshi_url.rstrip("/") + f"/events?limit={limit}")
     topics = []
     for e in data.get("events", []):
         ticker = e.get("event_ticker", "")
@@ -74,6 +75,11 @@ def next_mode(cycle: int, pinned: str | None = None) -> str:
     if pinned and pinned in MODES:
         return pinned
     return MODES[cycle % len(MODES)]
+
+
+def log(msg: str) -> None:
+    """Stage log, always to stdout (the loop's only log sink)."""
+    print(f"[news-loop] {msg}", flush=True)
 
 
 def _topic_urls(topics: list[dict], mentions: dict) -> dict[str, set[str]]:
@@ -266,6 +272,70 @@ def _kept_from_articles(arts, snapshot_ts: str, topics: list[dict]) -> list[dict
     return kept
 
 
+def _snapshot_stride_list(hours_back: float = 48, stride_hours: float = 6,
+                          dest_dir: str = "/tmp",
+                          max_snaps: int = 12) -> list[tuple[str, str]]:
+    """Newest-first (ts, path) snapshots spaced ~stride_hours apart.
+
+    Walks back hours_back, downloading what hasn't landed and skipping
+    failures, so one late publish never blocks the dig. Bounded: at most
+    max_snaps files no matter how wide the window.
+    """
+    from sources.ngrams import download_snapshot
+
+    step = max(1, round(stride_hours * 60 / 15))
+    cands = snapshot_candidates(time.time(),
+                                lookback_min=int(hours_back * 60) + 30)
+    out: list[tuple[str, str]] = []
+    for ts in cands[::step]:
+        if len(out) >= max_snaps:
+            break
+        dest = os.path.join(dest_dir, f"ngram_{ts}.json.gz")
+        if not os.path.exists(dest):
+            try:
+                download_snapshot(ts, dest)
+            except Exception:
+                continue
+        out.append((ts, dest))
+    if not out:
+        raise RuntimeError("no downloadable webngrams snapshot")
+    return out
+
+
+def scan_history(terms: list[str], hours_back: float = 48,
+                 stride_hours: float = 6, dest_dir: str = "/tmp",
+                 per_term_cap: int = 30) -> tuple[dict, list]:
+    """Union-term counts merged over stride-spaced snapshots, newest first.
+
+    Returns (merged_mentions, [(ts, mentions)]) so burst mode can compare
+    the newest window against the oldest one.
+    """
+    used = _snapshot_stride_list(hours_back, stride_hours, dest_dir)
+    counts: dict[str, int] = {}
+    urls: dict[str, set[str]] = {}
+    samples: dict[str, list] = {}
+    per: list[tuple[str, dict]] = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+        futs = {ts: ex.submit(ngram_mentions, terms, path, "en",
+                              per_term_cap)
+                for ts, path in used}
+        for ts, _ in used:
+            try:
+                m = futs[ts].result()
+            except Exception:
+                continue
+            per.append((ts, m))
+            for t, mm in m.items():
+                counts[t] = counts.get(t, 0) + mm["count"]
+                urls.setdefault(t, set()).update(mm["urls"])
+                have = samples.setdefault(t, [])
+                have.extend(mm["samples"][: max(0, per_term_cap - len(have))])
+    merged = {t: {"count": counts.get(t, 0),
+                  "urls": sorted(urls.get(t, set())),
+                  "samples": samples.get(t, [])} for t in terms}
+    return merged, per
+
+
 def _snapshot_pair(dest_dir: str = "/tmp") -> tuple[str, str, str, str]:
     """(new_ts, new_path, old_ts, old_path): newest + ~1h-older snapshots.
 
@@ -326,27 +396,48 @@ def _kalshi_history(kalshi_url: str, ticker: str) -> list[dict]:
 
 def run_cycle(graph_url: str, kalshi_url: str, cycle: int = 0,
               event_slice: tuple = (), max_pairs: int = 10,
-              mode_pin: str | None = None, model="auto") -> dict:
+              mode_pin: str | None = None, model="auto",
+              event_limit: int = 30, history_snaps: int = 1,
+              history_hours: float = 48,
+              history_stride_hours: float = 6) -> dict:
     """One full explore -> propose -> commit cycle. Returns a summary."""
     mode = next_mode(cycle, mode_pin)
     try:
-        topics = discover_topics(kalshi_url, event_slice)
+        topics = discover_topics(kalshi_url, event_slice, event_limit)
     except Exception as e:
         return {"ok": False, "reason": f"kalshi unreachable: {e}"}
     if len(topics) < 2:
         return {"ok": False, "reason": f"need 2+ topics, have {len(topics)}"}
-    try:
-        new_ts, new_snap, old_ts, old_snap = _snapshot_pair()
-    except RuntimeError as e:
-        return {"ok": False, "reason": f"no snapshot: {e}"}
 
     union = sorted({t for topic in topics for t in topic["terms"]})
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
-        fut_new = ex.submit(ngram_mentions, union, new_snap, "en", 30)
-        fut_old = (ex.submit(ngram_mentions, union, old_snap, "en", 30)
-                   if mode == "burst" else None)
-        new_m = fut_new.result()
-        old_m = fut_old.result() if fut_old else {}
+    log(f"cycle={cycle} mode={mode} topics={len(topics)} "
+        f"terms={len(union)}")
+    if history_snaps > 1:
+        try:
+            new_m, per = scan_history(union, history_hours,
+                                      history_stride_hours)
+        except RuntimeError as e:
+            return {"ok": False, "reason": f"no snapshot: {e}"}
+        new_ts = per[0][0] if per else ""
+        burst_new = per[0][1] if per else {}
+        burst_old = per[-1][1] if len(per) > 1 else {}
+    else:
+        try:
+            new_ts, new_snap, old_ts, old_snap = _snapshot_pair()
+        except RuntimeError as e:
+            return {"ok": False, "reason": f"no snapshot: {e}"}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
+            fut_new = ex.submit(ngram_mentions, union, new_snap, "en", 30)
+            fut_old = (ex.submit(ngram_mentions, union, old_snap, "en", 30)
+                       if mode == "burst" else None)
+            new_m = fut_new.result()
+            old_m = fut_old.result() if fut_old else {}
+        burst_new, burst_old = new_m, old_m
+
+    hit_terms = sum(1 for t in union if new_m.get(t, {}).get("count"))
+    total_hits = sum(new_m.get(t, {}).get("count", 0) for t in union)
+    log(f"cycle={cycle} scan hits: {hit_terms}/{len(union)} terms, "
+        f"{total_hits} mentions")
 
     pairs: list[dict] = []
     if mode == "co-mention":
@@ -355,7 +446,7 @@ def run_cycle(graph_url: str, kalshi_url: str, cycle: int = 0,
         pairs = shared_subject_pairs(topics, new_m, max_pairs)
     elif mode == "burst":
         bursting = {b["event_ticker"]: b for b in
-                    burst_topics(topics, new_m, old_m)}
+                    burst_topics(topics, burst_new, burst_old)}
         bt = [t for t in topics if t["event_ticker"] in bursting]
         pairs = shared_url_pairs(bt, new_m, max_pairs)
         for p in pairs:
@@ -367,6 +458,9 @@ def run_cycle(graph_url: str, kalshi_url: str, cycle: int = 0,
     elif mode == "odds-correlation":
         return _odds_cycle(graph_url, kalshi_url, topics, max_pairs, model)
 
+    log(f"cycle={cycle} pairs={len(pairs)} " +
+        (", ".join(f"{p['a']}x{p['b']}:{len(p['urls'])}" for p in pairs[:5])
+         if pairs else "none"))
     if not pairs:
         _post_json(graph_url.rstrip("/") + "/findings",
                    {"finding": {"loop": "news", "mode": mode,
@@ -451,6 +545,9 @@ def run_cycle(graph_url: str, kalshi_url: str, cycle: int = 0,
                             "revision": posted.get("revision"),
                             "derived_fresh": fresh,
                             "followups": followups}})
+    log(f"cycle={cycle} posted {len(approved)} proposals "
+        f"rev={posted.get('revision')} derived_fresh={fresh} "
+        f"followups={len(followups)}")
     return {"ok": True, "mode": mode, "pairs": len(pairs),
             "proposals": len(approved),
             "revision": posted.get("revision"),
@@ -531,17 +628,41 @@ def _odds_cycle(graph_url: str, kalshi_url: str, topics: list[dict],
 @click.option("--loop", is_flag=True, default=False)
 @click.option("--max-cycles", type=int, default=0,
               help="stop after N loop cycles (0 = run forever)")
+@click.option("--event-limit", type=int, default=30,
+              help="Kalshi events to explore per cycle")
+@click.option("--history-snaps", type=int, default=1,
+              help="snapshots per cycle, stride-spaced (1 = newest only)")
+@click.option("--history-hours", type=float, default=48,
+              help="how far back the history dig walks")
+@click.option("--history-stride-hours", type=float, default=6,
+              help="spacing between history snapshots (skips the rest)")
+@click.option("--langsmith-project", default=None)
 def main(graph_url, kalshi_url, interval_min, event, max_pairs, mode,
-         model, once, loop, max_cycles) -> None:
+         model, once, loop, max_cycles, event_limit, history_snaps,
+         history_hours, history_stride_hours,
+         langsmith_project) -> None:
+    from services.auth import load_dotenv  # noqa: E402
+    from squad.tracing import setup_langsmith, squad_span  # noqa: E402
+
+    load_dotenv()
+    ls = setup_langsmith(project=langsmith_project)
+    log(f"langsmith={'on' if ls['enabled'] else 'off'} "
+        f"project={ls['project']}")
     if model == "None":
         model = None
     cycle = 0
     while True:
-        try:
-            summary = run_cycle(graph_url, kalshi_url, cycle,
-                                tuple(event), max_pairs, mode, model)
-        except Exception as e:  # keep the loop alive; record and retry
-            summary = {"ok": False, "reason": f"{type(e).__name__}: {e}"}
+        with squad_span("news-loop-cycle",
+                        {"cycle": cycle, "mode": mode or "rotate"}) as span:
+            try:
+                summary = run_cycle(graph_url, kalshi_url, cycle,
+                                    tuple(event), max_pairs, mode, model,
+                                    event_limit, history_snaps, history_hours,
+                                    history_stride_hours)
+            except Exception as e:  # keep the loop alive; record and retry
+                summary = {"ok": False,
+                           "reason": f"{type(e).__name__}: {e}"}
+            span.outputs = summary
         stamp = datetime.datetime.now(datetime.timezone.utc).strftime(
             "%Y-%m-%dT%H:%M:%SZ")
         print(f"[news-loop] {stamp} cycle={cycle} {summary}", flush=True)
