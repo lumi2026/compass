@@ -559,3 +559,58 @@ market tickers via the new `GET /markets?event=`. 131/131 green.
 7. **Later migrations (explicit non-goals now).** SQLite central
    store when JSONL replay gets slow; multi-machine writers;
    snapshot compaction/retention; webhook push graph → agents.
+
+## 2026-10-31 ~00:30 UTC — Auditor agent (third review role)
+
+- New `squad/auditor.py`: `audit_pair()` judges one linked pair
+  against its shared evidence. Veto ONLY on clear country/market/
+  entity mismatch (Mexico article linking US GDP markets); same
+  office/type across countries is a keep. Fail-open everywhere
+  (no model or unparseable reply keeps the link).
+- Gate: `ROLE_ACTIONS["auditor"] = ("add-node", "add-edge")`;
+  new `Audit` node kind (red in the viewer); `challenges` is now
+  `Audit -> Hypothesis`. Bad links are flagged, never deleted —
+  hard removal (tombstones) stays a later migration.
+- Loop: every pair audited pre-commit (veto = skip, logged with
+  reason); vetoed pairs with an already-committed hypothesis get
+  an Audit node + `challenges` edge; `vetoed` count in summary,
+  findings, and logs.
+- Live: 3 pairs → 2 vetoes with exactly the reported failure
+  ("Shared article is only about U.S. GDP growth with no
+  Israel/Netanyahu succession content"), 1 genuine GDP pair kept;
+  0 audit nodes written (nothing pre-existing to challenge).
+- Backfill dry-run over 10 committed hypotheses (no posts): 4 VETO,
+  6 KEEP. Two caveats: (a) the auditor is inconsistent on the
+  GDP cluster — same INEGI story kept on 34×36, vetoed on 35×36;
+  (b) it vetoed the Israel×UK link you called fine, on evidence
+  grounds (shared snippet is about Modi's Canada visit, not either
+  succession race) — possibly righter than first impressions.
+- Open: posting `challenges` for the vetoed existing links awaits
+  your call; 136/136 green.
+
+## 2026-10-30 ~23:45 UTC — LLM + LangSmith verified working
+
+- Tiny direct probe: `resolve_model("auto", role="investigator")`
+  → `ChatOpenAI`, returned a real sentence + conf 0.8. Key is good.
+- Live loop cycle called the model 10× (one per pair); all 10
+  Hypotheses in the graph are LLM-written, evidence-grounded
+  (e.g. INEGI Q3 numbers appear in both articles and hypotheses).
+- LangSmith: `news-loop-cycle` spans landing in `compass-dev`
+  (setup + span added to `news_loop.py`; startup prints
+  `langsmith=on`). Prior silence explained: no setup call, and no
+  pairs to hypothesize about — both closed, no key/flag changes
+  needed (flag was already `true`, key present in `.env`).
+
+## Usage log (loop + LLM, running tally)
+
+- 2026-10-30 ~23:45 UTC: 11 model calls total (1 direct probe +
+  10 in the first interconnect cycle, one per pair). Cycle
+  summaries and findings now carry `llm_calls` (0 when the model
+  is None or the mode is odds-correlation, which is pure math).
+- Same night: graph at 527 nodes / 159 edges / rev 40 after the
+  435-market sweep + 1 loop cycle (482 proposals); 46 commit-log
+  records; 12 snapshots cached locally (~250 MB, all re-usable).
+- Cost shape per cycle: 1 LLM call per pair (short prompt +
+  one-sentence reply), 1 snapshot scan per term-set, 1 graph POST
+  per cycle + 1 for derive. Token-level accounting lives in
+  LangSmith under `compass-dev`.

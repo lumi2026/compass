@@ -29,6 +29,7 @@ sys.path.insert(0, ".")
 
 from graph import article_id  # noqa: E402
 from scripts.cross_link import extract_terms  # noqa: E402
+from squad.auditor import audit_pair  # noqa: E402
 from sources.ngrams import (  # noqa: E402
     articles_from_mentions,
     ngram_mentions,
@@ -187,6 +188,16 @@ def entity_overlap_pairs(topics: list[dict], kept: list[dict],
                               "mode": "entity-overlap", "entity": e})
                 break
     return pairs[:max_pairs]
+
+
+def _existing_hypotheses(graph_url: str) -> set[str]:
+    """Hypothesis node ids already committed (best-effort, for challenges)."""
+    try:
+        data = _get_json(graph_url.rstrip("/") + "/graph")
+        return {e["data"]["id"] for e in data.get("elements", [])
+                if e.get("data", {}).get("kind") == "Hypothesis"}
+    except Exception:
+        return set()
 
 
 def pearson(xs: list[float], ys: list[float]) -> float | None:
@@ -473,6 +484,44 @@ def run_cycle(graph_url: str, kalshi_url: str, cycle: int = 0,
     agent = NewsAgent()
     skeptic = Skeptic()
     all_props: list[Proposal] = []
+    llm_calls = 0
+    # Third-agent audit: veto spurious pairs pre-commit; challenge the
+    # ones that already committed (reversible flag, never deletion).
+    title_of = {t["event_ticker"]: t["title"] for t in topics}
+    existing_hids = _existing_hypotheses(graph_url)
+    audit_llm = resolve_model(model, role="auditor") if model else None
+    live_pairs: list[dict] = []
+    vetoed = 0
+    for p in pairs:
+        ev_titles = [url_kept[u]["title"] for u in p["urls"][:3]
+                     if u in url_kept]
+        if audit_llm is not None:
+            llm_calls += 1
+        res = audit_pair(p["a"], title_of.get(p["a"], p["a"]),
+                         p["b"], title_of.get(p["b"], p["b"]),
+                         ev_titles, p["mode"], audit_llm)
+        if res.keep:
+            live_pairs.append(p)
+            continue
+        vetoed += 1
+        log(f"cycle={cycle} veto {p['a']}x{p['b']}: {res.reason}")
+        hid = f"hypothesis:loop-{_slug(p['a'])}-{_slug(p['b'])}"
+        if hid in existing_hids:
+            aid = f"audit:{hid}"
+            all_props.append(Proposal(
+                agent="auditor", action="add-node", entity_id=aid,
+                detail=json.dumps(
+                    {"kind": "Audit",
+                     "title": f"audit flags {hid}: {res.reason}",
+                     "props": {"target": hid, "verdict": "reject",
+                               "reason": res.reason, "mode": p["mode"]}}),
+                confidence=0.8))
+            all_props.append(Proposal(
+                agent="auditor", action="add-edge", entity_id=aid,
+                detail=json.dumps({"src": aid, "dst": hid,
+                                   "rel": "challenges"}),
+                confidence=0.8))
+    pairs = live_pairs
     for p in pairs:
         pair_terms = sorted(
             {term for t in topics if t["event_ticker"] in (p["a"], p["b"])
@@ -487,10 +536,13 @@ def run_cycle(graph_url: str, kalshi_url: str, cycle: int = 0,
                     all_props.append(prop)
         hid = f"hypothesis:loop-{_slug(p['a'])}-{_slug(p['b'])}"
         ev_arts = [url_kept[u] for u in p["urls"][:3] if u in url_kept]
+        llm = resolve_model(model, role="investigator")
+        if llm is not None:
+            llm_calls += 1
         title, conf = hypothesis_title(
             p["a"], p["b"], p["urls"],
             [type("A", (), {"title": k["title"]}) for k in ev_arts],
-            resolve_model(model, role="investigator"))
+            llm)
         all_props.append(Proposal(
             agent="investigator", action="add-node", entity_id=hid,
             detail=json.dumps({"kind": "Hypothesis", "title": title,
@@ -544,15 +596,20 @@ def run_cycle(graph_url: str, kalshi_url: str, cycle: int = 0,
                             "pairs": len(pairs),
                             "revision": posted.get("revision"),
                             "derived_fresh": fresh,
-                            "followups": followups}})
+                            "followups": followups,
+                            "llm_calls": llm_calls,
+                            "vetoed": vetoed}})
     log(f"cycle={cycle} posted {len(approved)} proposals "
         f"rev={posted.get('revision')} derived_fresh={fresh} "
-        f"followups={len(followups)}")
+        f"followups={len(followups)} llm_calls={llm_calls} "
+        f"vetoed={vetoed}")
     return {"ok": True, "mode": mode, "pairs": len(pairs),
             "proposals": len(approved),
             "revision": posted.get("revision"),
             "derived_fresh": fresh,
-            "followups": len(followups)}
+            "followups": len(followups),
+            "llm_calls": llm_calls,
+            "vetoed": vetoed}
 
 
 def _odds_cycle(graph_url: str, kalshi_url: str, topics: list[dict],
@@ -609,8 +666,16 @@ def _odds_cycle(graph_url: str, kalshi_url: str, topics: list[dict],
         {"proposals": [{"agent": pr.agent, "action": pr.action,
                         "entity_id": pr.entity_id, "detail": pr.detail,
                         "confidence": pr.confidence} for pr in approved]})
+    log("odds-correlation pairs=%d proposals=%d rev=%s llm_calls=0"
+        % (len(pairs), len(approved), posted.get("revision")))
+    _post_json(graph_url.rstrip("/") + "/findings",
+               {"finding": {"loop": "news", "mode": "odds-correlation",
+                            "pairs": len(pairs),
+                            "revision": posted.get("revision"),
+                            "llm_calls": 0}})
     return {"ok": True, "mode": "odds-correlation", "pairs": len(pairs),
-            "proposals": len(approved), "revision": posted.get("revision")}
+            "proposals": len(approved), "revision": posted.get("revision"),
+            "llm_calls": 0}
 
 
 @click.command()

@@ -141,6 +141,7 @@ ROLE_ACTIONS = {
     "scout": ("add-node",),
     "news-agent": ("add-node", "add-edge"),
     "investigator": ("add-node", "add-edge"),
+    "auditor": ("add-node", "add-edge"),
     "connector": ("derive-links",),
 }
 

@@ -18,6 +18,7 @@ KIND_COLORS = {
     "Subject": "#d97706",
     "Hypothesis": "#7c3aed",
     "Happening": "#0e7490",
+    "Audit": "#dc2626",
 }
 
 EDGE_COLORS = {

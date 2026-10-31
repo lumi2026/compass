@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 NODE_KINDS = ("Event", "Market", "Article", "Subject", "Hypothesis",
-              "Happening")
+              "Happening", "Audit")
 
 EDGE_RELS = ("mentions", "about", "shares-subject-with", "supports",
              "challenges", "relates-to")

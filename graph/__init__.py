@@ -15,6 +15,8 @@ ID scheme (stable URIs, shared by every agent):
   article:{url-sha1-12}   Article  one node per canonical URL
   subject:{slug}          Subject  shared bridge, e.g. subject:spacex
   hypothesis:{slug}-{n}   Hypothesis  investigator claim, numbered per subject
+  happening:{slug}      Happening key dated event (market moves, etc.)
+  audit:{target}        Audit      auditor flag on a bad link (reversible)
 
 Edge vocabulary:
   mentions             Article -> Subject   (article covers the subject)
@@ -22,7 +24,7 @@ Edge vocabulary:
   shares-subject-with  Event <-> Event      (DERIVED by Connector only,
     via a shared Subject; never hand-written)
   supports             Hypothesis -> Market | Article
-  challenges           Hypothesis -> Market | Article
+  challenges           Audit -> Hypothesis  (auditor flags a bad link)
   relates-to           fallback for anything unclassified
 """
 

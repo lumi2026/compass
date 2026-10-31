@@ -6,7 +6,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import scripts.news_loop as nl
-from graph import GraphStore, GraphUpdateAPI, commit_batch
+from graph import GraphStore, GraphUpdateAPI, Node, commit_batch
 
 
 def _rows():
@@ -127,6 +127,12 @@ def _serve_graph(api):
             self.end_headers()
             self.wfile.write(body)
 
+        def do_GET(self):
+            els = [{"data": {"id": n.id, "label": n.title,
+                             "kind": n.kind}}
+                   for n in holder.api.store.nodes.values()]
+            self._ok({"elements": els})
+
         def do_POST(self):
             length = int(self.headers.get("Content-Length") or 0)
             payload = json.loads(self.rfile.read(length) or b"{}")
@@ -195,6 +201,7 @@ def test_offline_cycle_posts_hypothesis(tmp_path, monkeypatch):
         kt.join(timeout=10)
     assert summary["ok"] and summary["mode"] == "co-mention"
     assert summary["pairs"] == 1 and summary["proposals"] > 0
+    assert summary["llm_calls"] == 0  # model=None: extractive fallback
     assert "hypothesis:loop-ea-eb" in api.store.nodes
     from graph import article_id
 
@@ -246,6 +253,7 @@ def test_odds_cycle_correlated_pair_posts(monkeypatch):
         gt.join(timeout=10)
     assert summary["ok"] and summary["pairs"] == 1
     assert summary["mode"] == "odds-correlation"
+    assert summary["llm_calls"] == 0
     assert "hypothesis:odds-ea-eb" in holder.api.store.nodes
 
 
@@ -335,6 +343,99 @@ def test_stride_list_spacing_and_bound(tmp_path, monkeypatch):
     out = nl._snapshot_stride_list(hours_back=13, stride_hours=6,
                                    dest_dir=str(tmp_path), max_snaps=2)
     assert len(out) == 2
+
+
+def test_auditor_fallback_keeps_and_parses():
+    from squad.auditor import audit_pair
+
+    kept = audit_pair("EA", "t", "EB", "t", ["x"], "co-mention", None)
+    assert kept.keep and kept.confidence == 0.5
+
+    class FakeMsg:
+        content = "NO\nMexico article, US markets\n0.2"
+
+    class FakeModel:
+        def invoke(self, messages):
+            assert len(messages) == 2
+            return FakeMsg()
+
+    veto = audit_pair("EA", "t", "EB", "t", ["x"], "co-mention",
+                      FakeModel())
+    assert veto.keep is False and veto.reason.startswith("Mexico")
+    assert veto.confidence == 0.2
+
+    class YesModel:
+        def invoke(self, messages):
+            return type("R", (), {
+                "content": "YES\nsame race\n0.9"})()
+
+    yes = audit_pair("EA", "t", "EB", "t", ["x"], "co-mention",
+                     YesModel())
+    assert yes.keep and yes.confidence == 0.9
+
+    class BrokenModel:
+        def invoke(self, messages):
+            raise RuntimeError("down")
+
+    broken = audit_pair("EA", "t", "EB", "t", ["x"], "co-mention",
+                        BrokenModel())
+    assert broken.keep  # fail-open
+
+
+def test_auditor_lane_commits_challenges():
+    from graph import proposals_to_commit
+
+    api = GraphUpdateAPI(GraphStore())
+    hid = "hypothesis:loop-ea-eb"
+    api.commit(Node(id=hid, kind="Hypothesis", title="H"))
+    good = proposals_to_commit(
+        api, "auditor", "add-node", f"audit:{hid}",
+        json.dumps({"kind": "Audit", "title": "audit flags",
+                     "props": {"target": hid, "verdict": "reject"}}))
+    assert good.committed
+    edge = proposals_to_commit(
+        api, "auditor", "add-edge", f"audit:{hid}",
+        json.dumps({"src": f"audit:{hid}", "dst": hid,
+                    "rel": "challenges"}))
+    assert edge.committed
+    assert api.store.nodes[f"audit:{hid}"].kind == "Audit"
+
+
+def test_cycle_veto_skips_pair_and_challenges_existing(tmp_path,
+                                                        monkeypatch):
+    from squad.auditor import AuditResult
+
+    gz = tmp_path / "s.json.gz"
+    _snap(gz)
+    monkeypatch.setattr(nl, "_snapshot_pair",
+                        lambda *a, **k: ("20261030T000000Z", str(gz),
+                                         "20261029T000000Z", str(gz)))
+    monkeypatch.setattr(
+        nl, "audit_pair",
+        lambda *a, **k: AuditResult(False, "Mexico article, US markets",
+                                    0.2))
+    api = GraphUpdateAPI(GraphStore())
+    api.commit(Node(id="hypothesis:loop-ea-eb", kind="Hypothesis",
+                    title="old bad link"))
+    gsrv, gt, holder = _serve_graph(api)
+    ksrv, kt = _serve_kalshi()
+    try:
+        summary = nl.run_cycle(
+            f"http://127.0.0.1:{gsrv.server_address[1]}",
+            f"http://127.0.0.1:{ksrv.server_address[1]}",
+            cycle=0, model=None)
+    finally:
+        gsrv.shutdown()
+        ksrv.shutdown()
+        gt.join(timeout=10)
+        kt.join(timeout=10)
+    assert summary["ok"] and summary["pairs"] == 0
+    assert summary["vetoed"] == 1 and summary["llm_calls"] == 0
+    assert "audit:hypothesis:loop-ea-eb" in api.store.nodes
+    flagged = [e for e in api.store.edges if e.rel == "challenges"]
+    assert [(e.src, e.dst) for e in flagged] == [
+        ("audit:hypothesis:loop-ea-eb", "hypothesis:loop-ea-eb")]
+    assert holder.findings and holder.findings[0]["vetoed"] == 1
 
 
 def test_cycle_needs_two_topics(monkeypatch):
