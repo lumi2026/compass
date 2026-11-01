@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import ForceGraph3D from '3d-force-graph'
 import SpriteText from 'three-spritetext'
+import * as THREE from 'three'
 import { SKELETON_KINDS } from './graph'
 
 function escapeHtml(s) {
@@ -51,7 +52,15 @@ export default function GraphCanvas({ nodes, links, showAll, onSelect }) {
         onSelectRef.current?.({ type: 'link', source: s, target: t, rel: l.rel })
       })
       .onBackgroundClick(() => onSelectRef.current?.(null))
-    Graph.controls().enableDamping = true
+    const controls = Graph.controls()
+    controls.enableDamping = true
+    // Left-drag pans the graph in any direction; right-drag rotates.
+    controls.mouseButtons = {
+      LEFT: THREE.MOUSE.PAN,
+      MIDDLE: THREE.MOUSE.DOLLY,
+      RIGHT: THREE.MOUSE.ROTATE,
+    }
+    controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE }
     graphRef.current = Graph
     const onResize = () => {
       Graph.width(el.clientWidth).height(el.clientHeight)

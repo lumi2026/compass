@@ -69,7 +69,7 @@ export default function App() {
           {view.nodes.length} nodes, {view.links.length} links (rev {revision})
           {view.capped ? ` — showing 200 of ${view.totalNodes}` : ''}
         </span>
-        <span className="dim">blue=Event grey=Market green=Article amber=Subject purple=Hypothesis</span>
+        <span className="dim">blue=Event grey=Market green=Article amber=Subject purple=Hypothesis — drag moves, right-drag rotates, scroll zooms</span>
         <label>
           <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} /> all
           labels
