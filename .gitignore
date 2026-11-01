@@ -229,3 +229,5 @@ data/graph_snapshot.json
 data/graph_log.jsonl
 data/findings.jsonl
 /tmp/
+view/node_modules/
+view/dist/

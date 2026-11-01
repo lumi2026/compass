@@ -1,0 +1,25 @@
+body { margin: 0; font-family: system-ui, -apple-system, sans-serif; }
+#bar { padding: 10px 14px; border-bottom: 1px solid #e2e2e2; display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
+#bar h1 { font-size: 15px; margin: 0; font-weight: 600; }
+#bar span { font-size: 12px; color: #555; }
+#bar .dim { color: #777; }
+#bar .warn { color: #b45309; }
+#bar label { font-size: 12px; color: #333; }
+#bar input[type="text"], #bar input:not([type]) { font-size: 12px; padding: 2px 6px; }
+#wrap { display: flex; height: calc(100vh - 42px); }
+#view3d { flex: 1; min-width: 0; position: relative; }
+#view3d .pad { padding: 24px; font-size: 14px; color: #333; max-width: 560px; }
+#info { width: 300px; border-left: 1px solid #e2e2e2; padding: 12px 14px; font-size: 13px; overflow-y: auto; }
+#info h2 { font-size: 13px; margin: 0 0 6px; overflow-wrap: break-word; }
+#info .kind { font-size: 11px; color: #555; margin-bottom: 8px; }
+#info .nid { font-size: 11px; color: #777; word-break: break-all; margin-top: 8px; }
+#info .meta { margin-top: 12px; font-size: 11px; color: #777; }
+#info ul { margin: 6px 0; padding-left: 18px; }
+@media (max-width: 700px) {
+  #wrap { flex-direction: column; height: auto; }
+  #view3d { height: 60vh; }
+  #info { width: auto; border-left: none; border-top: 1px solid #e2e2e2; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}

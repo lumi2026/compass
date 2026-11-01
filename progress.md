@@ -659,3 +659,18 @@ market tickers via the new `GET /markets?event=`. 131/131 green.
   reads), deliberate-mode docs, and this commit. Model calls this
   session: 54 measurement + ~4 probes/smoke (all Meta key,
   `compass-dev` traces).
+
+## 2026-11-01 — Step 5 React view (view/)
+
+Built `view/` (Vite + React, vanilla `3d-force-graph@1.80.1` mounted
+via ref — same pinned lib as the standalone viewer, no wrapper peer
+risk): dev proxy `/graph`+`/health` → `:8090` (no CORS change, no
+auth yet), 5s poll with `If-None-Match` skipped when `at` is set
+(ETag is global-revision only), client cap 200 by degree with
+"showing X of Y", positions preserved across polls, Market/Happening
+`props` in the details panel. As-of box is honestly labeled
+`valid_at` filter — odds stay live until replay lands.
+Verified: `npm run build` clean, 141/141 green, live API rev 80
+(529 nodes / 168 edges) serving through the dev proxy (`/health` +
+`/graph` 200). No Chromium on PATH — canvas pixels unverified,
+reachability only. Next: replay, wiring demo, auth gate.

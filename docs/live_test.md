@@ -26,6 +26,14 @@ Known gaps: `KXTOPLLMGENERAL-30` has zero markets (expect conf floor, no crash).
 - Open `demo/mvp_graph.html` in a browser (standalone Cytoscape page, no server).
 - Offline check: `uv run python scripts/graph_poc.py --out /tmp/graph_poc.json` then render the HTML the same way `run_mvp.py` does.
 
+## View (React 3D over live graph API)
+- Terminal 1: `uv run python -m services.graph_server --port 8090`
+- Terminal 2: `cd view && npm install && npm run dev`
+- Open http://localhost:5173 in a browser.
+- Expect counts + `rev` in the bar, click node for details + neighbours.
+- Kill the API mid-session: view shows a stale banner and recovers on restart.
+- The as-of box filters by world time (`valid_at`); odds stay live until replay lands.
+
 ## LangSmith
 - Key lives in `.env` as `LANGSMITH_API_KEY`. Tracing is opt-in: set `LANGSMITH_TRACING=true`. Runners print `langsmith=on project=...` (key never printed).
 - Override: `LANGSMITH_PROJECT=demo-1 uv run python scripts/run_squad.py ...` or `--langsmith-project demo-1`.
