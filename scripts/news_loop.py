@@ -72,6 +72,27 @@ def discover_topics(kalshi_url: str, event_slice: tuple = (),
     return [t for t in topics if t["terms"]]
 
 
+def sync_watchlist(kalshi_url: str, topics: list[dict]) -> dict:
+    """Push the discovered events to the kalshi service watchlist.
+
+    Fail-open: a down or stub kalshi service must never kill the cycle —
+    odds-correlation reads REST directly, the watchlist only feeds
+    ticks/sweeps/snapshots.
+    """
+    tickers = [t["event_ticker"] for t in topics if t.get("event_ticker")]
+    if not tickers:
+        return {"synced": False, "reason": "no topics"}
+    try:
+        resp = _post_json(kalshi_url.rstrip("/") + "/topics",
+                          {"events": tickers})
+    except Exception as e:
+        return {"synced": False,
+                "reason": f"kalshi unreachable: {e}"}
+    watching = resp.get("tickers", tickers)
+    log(f"watchlist synced: {len(watching)} tickers")
+    return {"synced": True, "tickers": len(watching)}
+
+
 def next_mode(cycle: int, pinned: str | None = None) -> str:
     if pinned and pinned in MODES:
         return pinned
@@ -411,7 +432,8 @@ def run_cycle(graph_url: str, kalshi_url: str, cycle: int = 0,
               event_limit: int = 30, history_snaps: int = 1,
               history_hours: float = 48,
               history_stride_hours: float = 6,
-              deliberate: bool = False) -> dict:
+              deliberate: bool = False,
+              sync_topics: bool = True) -> dict:
     """One full explore -> propose -> commit cycle. Returns a summary."""
     mode = next_mode(cycle, mode_pin)
     try:
@@ -420,6 +442,7 @@ def run_cycle(graph_url: str, kalshi_url: str, cycle: int = 0,
         return {"ok": False, "reason": f"kalshi unreachable: {e}"}
     if len(topics) < 2:
         return {"ok": False, "reason": f"need 2+ topics, have {len(topics)}"}
+    watch = sync_watchlist(kalshi_url, topics) if sync_topics else {"synced": False, "reason": "disabled"}
 
     union = sorted({t for topic in topics for t in topic["terms"]})
     log(f"cycle={cycle} mode={mode} topics={len(topics)} "
@@ -723,10 +746,13 @@ def _odds_cycle(graph_url: str, kalshi_url: str, topics: list[dict],
               "(experiment, opt-in only: measured 2026-10-31, no "
               "gain over single-shot on 11 fixtures, ~45% more "
               "calls; kept for future harder-fixture tests)")
+@click.option("--sync-topics/--no-sync-topics", default=True,
+              help="push discovered events to the kalshi service "
+              "watchlist each cycle (fail-open)")
 def main(graph_url, kalshi_url, interval_min, event, max_pairs, mode,
          model, once, loop, max_cycles, event_limit, history_snaps,
          history_hours, history_stride_hours,
-         langsmith_project, deliberate) -> None:
+         langsmith_project, deliberate, sync_topics) -> None:
     from services.auth import load_dotenv  # noqa: E402
     from squad.tracing import setup_langsmith, squad_span  # noqa: E402
 
@@ -744,7 +770,8 @@ def main(graph_url, kalshi_url, interval_min, event, max_pairs, mode,
                 summary = run_cycle(graph_url, kalshi_url, cycle,
                                     tuple(event), max_pairs, mode, model,
                                     event_limit, history_snaps, history_hours,
-                                    history_stride_hours, deliberate)
+                                    history_stride_hours, deliberate,
+                                    sync_topics)
             except Exception as e:  # keep the loop alive; record and retry
                 summary = {"ok": False,
                            "reason": f"{type(e).__name__}: {e}"}

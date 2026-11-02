@@ -94,6 +94,39 @@ def test_entity_overlap_pairs():
     assert pairs[0]["urls"]
 
 
+def test_sync_watchlist_posts_events_and_fails_open():
+    seen = {}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length") or 0)
+            seen.update(json.loads(self.rfile.read(length) or b"{}"))
+            body = json.dumps({"tickers": ["EA-M1", "EB-M1"]}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    try:
+        out = nl.sync_watchlist(
+            f"http://127.0.0.1:{srv.server_address[1]}", _topics())
+    finally:
+        srv.shutdown()
+        t.join(timeout=10)
+    assert out == {"synced": True, "tickers": 2}
+    assert seen == {"events": ["EA", "EB"]}
+    # down kalshi service: fail-open, never raises
+    down = nl.sync_watchlist("http://127.0.0.1:9", _topics())
+    assert down["synced"] is False and "reason" in down
+
+
 def test_pearson_and_closes():
     assert nl.pearson([1.0, 2.0, 3.0], [2.0, 4.0, 6.0]) == 1.0
     assert nl.pearson([5.0, 5.0, 5.0], [1.0, 2.0, 3.0]) is None
