@@ -721,19 +721,130 @@ culture / sports. `data/seed.json` untouched (POC pins it).
 Verified: new tests + suite 144/144 green, wide seed loads offline
 (22 tickers).
 
-## 2026-11-03 — Events-first view (graph display fix)
+## 2026-11-02 — Events-first view (graph display fix)
 
-Report: 3D view looked misleading — expected Event nodes linked by news,
-saw a grey cloud. Grounded: live graph is 435 Markets / 50 Events /
+Achievement: the 3D view now opens on the news story — blue Events
+linked through articles/subjects/hypotheses — instead of a grey
+market cloud. Shipped: `view/src/graph.js` hides Market nodes by
+default, keeps all Events (even unlinked controls), recomputes
+degree/size/cap on the visible subgraph, pins Events first under
+the cap, reports the hidden count; `view/src/App.jsx` gains a
+`markets` toggle, hidden-count bar text, and a complete legend
+(Happening + Audit added).
+Diagnosis that drove it: live graph is 435 Markets / 50 Events /
 22 Articles / 20 Subjects / 12 Hypotheses; no direct Event–Event
 article edges exist (Article `about` Event + `mentions` Subject;
 Event–Event only via derived red `shares-subject-with`, doubled
-bidirectionally); node size = degree = market count; legend omitted
-Happening/Audit/`challenges`.
-Fix (chosen option): `view/src/graph.js` hides Markets by default,
-keeps all Events (even unlinked), recomputes degree/size/cap on the
-visible subgraph, pins Events first under the cap, reports hidden
-count; `view/src/App.jsx` gains a `markets` toggle, hidden-count bar
-text, full legend. `view/test/graph.test.mjs` (node:test stdlib) +
-`npm test` script: 5/5 green; `npm run build` clean. Standalone
-`demo/*.html` viewer untouched.
+bidirectionally); node size was degree = market count; legend
+omitted Happening/Audit/`challenges`.
+Verified: new `view/test/graph.test.mjs` (node:test stdlib) +
+`npm test` script 5/5 green; `npm run build` clean; Python suite
+144/144 green. Standalone `demo/*.html` viewer untouched.
+
+## 2026-11-02 — Live demo run + push
+
+Stack up detached, all re-verified then killed: graph API :8090
+(booted prior state, rev 88, 540 nodes / 203 edges), kalshi :8080
+bare (`live_ws=true`), view :5173 + `/graph` proxy 200. Ports
+8090/8080/5173 confirmed closed after.
+`demo_interconnect.py --cycles 2` on discovered topics (Elon Mars /
+NATO / Pope): 0 pairs both cycles, rev steady — disjoint slice,
+correct empty. Fixed its empty-cycle `None` printing on the spot.
+Follow-up cycles: burst 0 pairs; entity-overlap 1 pair (Elon×NATO)
+vetoed; odds-correlation 0; wide 30-event entity-overlap 2 pairs,
+both vetoed; wide co-mention 1 pair (Elon×Israel), vetoed. Auditor
+reasons all sound (UN-vs-NATO, Musk-philanthropy noise, NFL vs
+labor-data with no shared article) — Day-2 unigram-noise gap live,
+gate holding, no junk committed. Rev 88 → 94 is derive bookkeeping.
+`/commit-push`: `d01b7d3` on `main`, 11 files (wiring, wide seed,
+demo script, events-first view + tests, docs).
+
+## 2026-11-03 — Event descriptions in the view
+
+Achievement: clicking a blue Event now says what the topic is about —
+category · series · qualifier, lead market + live price, market /
+article / hypothesis counts, top article titles; hover shows category
++ lead price. Kalshi `sub_title` turned out to be a date qualifier
+("Before 2099"), so the description is assembled from event meta +
+graph neighbours instead.
+Shipped: `services/server.py` keeps `event_meta` from discovery raw
+and puts it on Scout Event props; `view/src/graph.js` gains a
+full-graph market rollup (`marketInfo`, survives hiding) + pure
+`eventSummary`; `App.jsx` renders an `EventAbout` block;
+hover extended. `scripts/backfill_event_meta.py` (new): all 50 live
+events refreshed with meta, 0 skipped, rev 94 → 96.
+Verified: 3 new Python tests + 3 new view tests; `npm test` 8/8,
+`npm run build` clean, suite 147/147 green. Server stopped after.
+
+## 2026-11-03 — dead nodes + market linking
+
+Report: stale-looking nodes in the view. Inspection: all 50 events
+listed live and all 435 markets still open (an early 173-dead count
+was Kalshi 429 throttle artifact — fetches failed silently, so live
+looked empty; fail-open in the prune script made a throttled run
+retire nothing, which saved us). Real defect: all 435 Market nodes
+were completely edgeless — the publish path never linked markets to
+their events — so the new Event sidebar showed 0 markets everywhere.
+Nothing to remove; the fix is linking, not pruning.
+Shipped: derived `has-market` rel (Event → Market, Connector-only,
+from `event_ticker` prop with ticker-prefix/exact fallback) in
+`graph/derive.py` + vocab + `EDGE_RELS`/`DERIVED_RELS`; publish
+writes `event_ticker` into Market props; view color entry.
+Materialized offline: 435/435 markets linked, rev 96 → 98, 638
+edges. Sidebar verified end to end on real snapshot data (Pope: 7
+markets lead 9¢; Elon Mars: exact-ticker fallback fixed after it
+showed 0). Retire machinery (`retire_node`, `commit_retire`,
+replay-safe, `prune_dead.py`) kept + tested for genuinely delisted
+markets later.
+Verified: full suite 154/154 (one MVP count assertion updated to
+the intended new contract — derived 4 with exact edge composition,
+not just the count); `npm test` 8/8, `npm run build` clean.
+
+## 2026-11-03 — hypotheses as edges
+
+Achievement: the graph now shows what you asked — Event nodes joined
+by hypothesis edges, each backed by its news articles. Display-level
+only (reversible, lossless): the model keeps reified Hypothesis
+nodes (audit trail intact); `view/src/graph.js` collapses a
+Hypothesis with exactly two Event endpoints into one purple
+`hypothesizes` link carrying title + evidence + audit challenge, and
+prunes nodes left neighbourless by hiding/collapse (spent audits).
+Sidebar: clicking a purple link shows the claim, its evidence
+articles, and any challenge flag; Event counts include collapsed
+links. All 12 real hypotheses collapse (1 flagged challenged);
+92 nodes shown, 0 dangling dots.
+Verified: 4 new view tests 12/12 green; real-snapshot probe;
+`npm run build` clean; suite 154/154 green.
+
+## 2026-11-03 — subjects hidden
+
+Same treatment as markets: Subject nodes ("growth 2034" etc.) are
+internal matching logic, hidden by default behind a `subjects`
+toggle; the red Event–Event links they justify stay visible. Bar
+shows both hidden counts. Real data: 72 nodes shown (50 Events +
+22 Articles), 435 markets + 20 subjects hidden.
+Verified: new view test 13/13 green, build clean, real-data probe.
+
+## 2026-11-03 — bar cleanup + zoom buttons
+
+As-of input removed (`?at=` plumbing stays for replay); legend
+rebuilt as color dots + one hint line; +/− zoom buttons over the
+canvas (camera steps toward/away from the orbit target, clamped).
+Zoom math lives in tested `zoomCamera` (`view/src/graph.js`).
+Verified: view tests 16/16, build clean.
+
+## 2026-11-03 — legend out, hypotheses in details, reset
+
+Legend removed (it listed hidden/absent kinds; kinds show in
+details). Event sidebar now lists hypothesis titles; purple-link
+click still carries title + evidence + challenge flag. New Reset
+button refits the camera (`zoomToFit`) and clears selection.
+Verified: view tests 16/16, build clean, real-data probe (GDP-34:
+5 hypotheses titled).
+
+## 2026-11-03 — new day
+
+Carried over: replay (`?at=` odds scrub so the time slider moves
+prices too), pre-public auth gate (shared-secret header), then a live wiring re-run against the events-first
+view. Polish backlog unchanged (heuristic pre-filter, mamdani
+widening, `KXTOPLLMGENERAL-30` gap, feedback loop).

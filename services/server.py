@@ -83,6 +83,7 @@ class Service:
         self.move_threshold_cents = DEFAULT_MOVE_THRESHOLD_CENTS
         self.ticker_event: dict[str, str] = {}
         self.event_titles: dict[str, str] = {}
+        self.event_meta: dict[str, dict] = {}
         self._last_pub_price: dict[str, int] = {}
         self._pub_lock = threading.Lock()
         self._pub_busy = False
@@ -113,6 +114,16 @@ class Service:
         return [{"event_ticker": e.external_id, "title": e.title}
                 for e in self.src.fetch_normalized(limit=limit)]
 
+    @staticmethod
+    def _event_meta(raw: dict) -> dict:
+        """Keep the display-worthy bits of a raw event dict."""
+        meta = {}
+        for key in ("category", "series_ticker", "sub_title"):
+            v = (raw or {}).get(key)
+            if v:
+                meta[key] = str(v)
+        return meta
+
     def auto_topics(self, top_k: int = 5, scan_limit: int = 10) -> list[str]:
         """Watch the top-K open events by summed 24h market volume.
 
@@ -120,9 +131,9 @@ class Service:
         delisted event never blocks the rotation.
         """
         scored: list[tuple[int, dict, list]] = []
-        for ev in self.discover_events(scan_limit):
+        for ev in self.src.fetch_normalized(limit=scan_limit):
             try:
-                markets = self.src.fetch_markets(ev["event_ticker"])
+                markets = self.src.fetch_markets(ev.external_id)
             except Exception:
                 continue
             vol = sum(m.volume_24h or 0 for m in markets)
@@ -130,9 +141,12 @@ class Service:
         scored.sort(key=lambda t: -t[0])
         tickers: list[str] = []
         for _, ev, markets in scored[:max(0, top_k)]:
-            self.event_titles[ev["event_ticker"]] = ev["title"]
+            self.event_titles[ev.external_id] = ev.title
+            meta = self._event_meta(ev.raw or {})
+            if meta:
+                self.event_meta[ev.external_id] = meta
             for m in markets:
-                self.ticker_event[m.ticker] = ev["event_ticker"]
+                self.ticker_event[m.ticker] = ev.external_id
                 tickers.append(m.ticker)
         tickers = sorted(set(tickers))
         self.listener.watch(tickers)
@@ -204,7 +218,7 @@ class Service:
         title = last.get("title") or ticker
         event_title = self.event_titles.get(event, event)
         odds_at = _world_ts(ts_ms)
-        market_props: dict = {"odds_at": odds_at}
+        market_props: dict = {"odds_at": odds_at, "event_ticker": event}
         now = price_cents(last)
         if now is not None:
             market_props["price_cents"] = now
@@ -215,10 +229,14 @@ class Service:
             v = as_cents(last.get(key))
             if v is not None:
                 market_props[prop] = v
+        event_detail: dict = {"kind": "Event", "title": event_title}
+        meta = self.event_meta.get(event)
+        if meta:
+            event_detail["props"] = dict(meta)
         props = [
             {"agent": "scout", "action": "add-node",
              "entity_id": f"kalshi:{event}",
-             "detail": json.dumps({"kind": "Event", "title": event_title}),
+             "detail": json.dumps(event_detail),
              "confidence": 0.85},
             {"agent": "scout", "action": "add-node",
              "entity_id": f"market:{ticker}",

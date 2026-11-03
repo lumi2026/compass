@@ -34,12 +34,34 @@ Known gaps: `KXTOPLLMGENERAL-30` has zero markets (expect conf floor, no crash).
 - Terminal 2: `cd view && npm install && npm run dev`
 - Open http://localhost:5173 in a browser.
 - Expect counts + `rev` in the bar, click node for details + neighbours.
-- Events-first: Market odds nodes are hidden by default (bar shows the
-  hidden count); tick `markets` to show the full graph. Events always
-  stay, even unlinked; size/cap use the visible subgraph only.
+- Events-first: Market odds nodes and Subject match-logic nodes are
+  hidden by default (bar shows both hidden counts); tick `markets` /
+  `subjects` to reveal each layer. Events always stay, even unlinked;
+  size/cap use the visible subgraph only.
+- Hypotheses render as purple edges between their two events (title +
+  evidence articles + audit flag on click), never as nodes; anything
+  uncollapsible keeps its node so nothing is dropped.
 - Kill the API mid-session: view shows a stale banner and recovers on restart.
-- The as-of box filters by world time (`valid_at`); odds stay live until replay lands.
-- Checks: `cd view && npm test` (transform, stdlib only), `npm run build`.
+- Bar: counts + `rev`, layer toggles, one controls hint (no legend —
+  kinds show in details). +/− buttons zoom the camera, Reset refits
+  it and clears the selection (scroll still zooms, right-drag
+  rotates). The as-of input is removed; `GET /graph?at=` stays in
+  the API for replay.
+- Checks: `cd view && npm test` (transform + zoom math, stdlib only),
+  `npm run build`.
+- Event descriptions: clicking a blue Event shows category · series ·
+  qualifier, the lead market + price, market/article/hypothesis counts,
+  and top article titles; hover shows category + lead price. Meta flows
+  from Kalshi (`auto_topics` keeps `event_meta`, Scout Event proposals
+  carry it as props); existing graphs catch up via
+  `uv run python scripts/backfill_event_meta.py` (idempotent —
+  duplicates merge to `refreshed`).
+- Pruning dead markets: `uv run python scripts/prune_dead.py` (dry run)
+  then `--apply`. Retires closed/settled markets as one logged batch
+  (`commit_retire`, replay-safe); events are never retired. Stop the
+  graph API first — the script refuses `--apply` while `:8090`
+  answers. Kalshi throttles burst queries (429): per-event failures
+  keep their markets, so a throttled run retires nothing.
 
 ## LangSmith
 - Key lives in `.env` as `LANGSMITH_API_KEY`. Tracing is opt-in: set `LANGSMITH_TRACING=true`. Runners print `langsmith=on project=...` (key never printed).

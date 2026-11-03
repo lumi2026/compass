@@ -212,6 +212,46 @@ def test_refresh_derived_links_idempotent():
     assert len(api.store.edges) == 3 + 2
 
 
+def test_derive_market_links_props_prefix_orphan():
+    from graph import derive_market_links
+
+    api = GraphUpdateAPI(GraphStore())
+    for n in [Node(id="kalshi:E1", kind="Event", title="E1"),
+              Node(id="market:E1-A", kind="Market", title="A",
+                   props={"event_ticker": "E1"}),
+              Node(id="market:E1-B", kind="Market", title="B"),
+              Node(id="market:ZZZ", kind="Market", title="Z")]:
+        api.commit(n)
+    links = derive_market_links(api.store, "t")
+    assert {(e.src, e.dst) for e in links} == {
+        ("kalshi:E1", "market:E1-A"), ("kalshi:E1", "market:E1-B")}
+    assert all(e.rel == "has-market" for e in links)
+
+
+def test_derive_market_links_exact_ticker_match():
+    from graph import derive_market_links
+
+    api = GraphUpdateAPI(GraphStore())
+    for n in [Node(id="kalshi:E1", kind="Event", title="E1"),
+              Node(id="market:E1", kind="Market", title="E1")]:
+        api.commit(n)
+    links = derive_market_links(api.store, "t")
+    assert [(e.src, e.dst) for e in links] == [("kalshi:E1", "market:E1")]
+
+
+def test_refresh_records_market_links_once():
+    from graph import refresh_derived_links
+
+    api = GraphUpdateAPI(GraphStore())
+    for n in [Node(id="kalshi:E1", kind="Event", title="E1"),
+              Node(id="market:E1-A", kind="Market", title="A")]:
+        api.commit(n)
+    assert refresh_derived_links(api) == 1
+    assert refresh_derived_links(api) == 0
+    [e] = [e for e in api.store.edges if e.rel == "has-market"]
+    assert (e.src, e.dst) == ("kalshi:E1", "market:E1-A")
+
+
 def test_api_save_load_roundtrip(tmp_path):
     out = str(tmp_path / "g.json")
     api = _linked_pair()

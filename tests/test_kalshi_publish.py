@@ -20,13 +20,15 @@ def _market(ticker, event, vol, price=50):
 
 
 class _StubSrc:
-    def __init__(self, events, markets):
+    def __init__(self, events, markets, raws=None):
         self._events = events
         self._markets = markets
+        self._raws = raws or {}
         self.fail_events = set()
 
     def fetch_normalized(self, limit=5):
-        return [MarketEvent(source="kalshi", external_id=e, title=f"Event {e}")
+        return [MarketEvent(source="kalshi", external_id=e, title=f"Event {e}",
+                            raw=self._raws.get(e, {}))
                 for e in self._events[:limit]]
 
     def fetch_markets(self, event_ticker, limit=20):
@@ -71,6 +73,49 @@ def test_auto_topics_ranks_by_volume():
     svc2, stub = _service()
     stub.fail_events.add("E1")
     assert svc2.auto_topics(top_k=5) == ["E2-A"]
+
+
+def test_auto_topics_records_event_meta():
+    svc, stub = _service()
+    stub._raws = {"E1": {"category": "Elections", "series_ticker": "KXE1",
+                         "sub_title": "Before 2040", "junk": [1]}}
+    assert svc.auto_topics(top_k=1) == ["E1-A", "E1-B"]
+    assert svc.event_meta["E1"] == {"category": "Elections",
+                                   "series_ticker": "KXE1",
+                                   "sub_title": "Before 2040"}
+    assert "E2" not in svc.event_meta
+
+
+def test_proposals_for_event_carries_meta_props():
+    svc, _ = _service()
+    svc.event_titles["E1"] = "Event E1"
+    svc.event_meta["E1"] = {"category": "Elections"}
+    svc.ticker_event["E1-A"] = "E1"
+    props = svc._proposals_for(
+        "E1-A", {"title": "Title E1-A", "last_price": 55}, 0)
+    assert props[0]["entity_id"] == "kalshi:E1"
+    assert json.loads(props[0]["detail"]) == {
+        "kind": "Event", "title": "Event E1",
+        "props": {"category": "Elections"}}
+
+
+def test_proposals_for_market_carries_event_ticker():
+    svc, _ = _service()
+    svc.ticker_event["E1-A"] = "E1"
+    props = svc._proposals_for(
+        "E1-A", {"title": "Title E1-A", "last_price": 55}, 0)
+    market = json.loads(props[1]["detail"])
+    assert market["props"]["event_ticker"] == "E1"
+    assert market["props"]["price_cents"] == 55
+
+
+def test_proposals_for_event_without_meta_has_no_props():
+    svc, _ = _service()
+    svc.ticker_event["E1-A"] = "E1"
+    props = svc._proposals_for(
+        "E1-A", {"title": "Title E1-A", "last_price": 55}, 0)
+    assert json.loads(props[0]["detail"]) == {
+        "kind": "Event", "title": "E1"}
 
 
 def test_set_topics_records_mapping():

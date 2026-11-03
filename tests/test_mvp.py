@@ -45,7 +45,13 @@ def test_mvp_two_events_share_subject_link():
     (intent,) = Connector().run(tasks[0])
     r = proposals_to_commit(api, intent.agent, intent.action,
                             intent.entity_id, intent.detail)
-    assert r.committed and "derived 2" in r.reason
+    assert r.committed and "derived 4" in r.reason
+    assert {(e.src, e.dst, e.rel) for e in api.store.edges
+            if e.rel in ("shares-subject-with", "has-market")} == {
+        ("kalshi:KXEVA-1", "kalshi:KXEVB-2", "shares-subject-with"),
+        ("kalshi:KXEVB-2", "kalshi:KXEVA-1", "shares-subject-with"),
+        ("kalshi:KXEVA-1", "market:KXEVA-1-M", "has-market"),
+        ("kalshi:KXEVB-2", "market:KXEVB-2-M", "has-market")}
 
     payload = to_cytoscape(list(api.store.nodes.values()), api.store.edges)
     assert len(payload["elements"]) > 0

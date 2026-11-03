@@ -46,6 +46,31 @@ def derive_shared_subject_links(store: GraphStore, at: str) -> list[Edge]:
     return out
 
 
+def derive_market_links(store: GraphStore, at: str) -> list[Edge]:
+    """Connector derivation: every market links to its event.
+
+    Attribution reads the market's `event_ticker` prop (written by the
+    Kalshi publish path); legacy markets without it fall back to the
+    ticker prefix (`{event}-*`). Unattributable tickers stay unlinked.
+    Pure: caller records them.
+    """
+    events = {nid.removeprefix("kalshi:")
+              for nid, n in store.nodes.items() if n.kind == "Event"}
+    out = []
+    for nid, n in store.nodes.items():
+        if n.kind != "Market":
+            continue
+        ev = (n.props or {}).get("event_ticker")
+        if ev is None:
+            t = nid.removeprefix("market:")
+            ev = next((e for e in events
+                       if t == e or t.startswith(e + "-")), None)
+        if ev and f"kalshi:{ev}" in store.nodes:
+            out.append(Edge(src=f"kalshi:{ev}", dst=nid,
+                            rel="has-market", at=at))
+    return out
+
+
 def followup_tasks(store: GraphStore, event_id: str) -> list[dict]:
     """Connector dispatch: investigate tasks for events related to event_id.
 
@@ -75,7 +100,9 @@ def refresh_derived_links(api: "GraphUpdateAPI") -> int:
     count as new).
     """
     fresh = 0
-    for e in derive_shared_subject_links(api.store, api.store.now()):
+    derived = derive_shared_subject_links(api.store, api.store.now())
+    derived += derive_market_links(api.store, api.store.now())
+    for e in derived:
         if api.record(e).reason == "recorded":
             fresh += 1
     return fresh

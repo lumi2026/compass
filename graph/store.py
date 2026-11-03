@@ -14,10 +14,10 @@ NODE_KINDS = ("Event", "Market", "Article", "Subject", "Hypothesis",
               "Happening", "Audit")
 
 EDGE_RELS = ("mentions", "about", "shares-subject-with", "supports",
-             "challenges", "relates-to")
+             "challenges", "relates-to", "has-market")
 
 # Edges only the Connector role may write (derived, recomputed on demand).
-DERIVED_RELS = ("shares-subject-with",)
+DERIVED_RELS = ("shares-subject-with", "has-market")
 
 
 def article_id(url: str) -> str:
@@ -89,6 +89,22 @@ class GraphStore:
 
     def add_edge(self, edge: Edge) -> None:
         self.edges.append(edge)
+
+    def retire_node(self, node_id: str) -> tuple[bool, int]:
+        """Remove a node and its incident edges (delisted markets etc.).
+
+        Returns (removed, dropped_edges). Idempotent: unknown ids
+        report (False, 0). Recorded in the commit log by
+        persist.commit_retire so replay reproduces the removal.
+        """
+        if node_id not in self.nodes:
+            return False, 0
+        del self.nodes[node_id]
+        kept = [e for e in self.edges
+                if e.src != node_id and e.dst != node_id]
+        dropped = len(self.edges) - len(kept)
+        self.edges = kept
+        return True, dropped
 
     def now(self) -> str:
         return datetime.now(timezone.utc).isoformat()

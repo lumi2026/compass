@@ -91,6 +91,37 @@ def commit_batch(api: GraphUpdateAPI, proposals: list[dict],
             "derived_fresh": fresh}
 
 
+def commit_retire(api: GraphUpdateAPI, node_ids: list[str],
+                  log_path: str | None = None,
+                  snapshot_path: str | None = None) -> dict:
+    """Retire dead nodes (delisted markets) as one logged batch.
+
+    Operator maintenance, not inference: no Skeptic gate (nothing is
+    claimed, only dropped). The retire record replays like any batch,
+    so pruned nodes stay pruned across snapshot+log boots. Returns
+    {revision, retired: [{entity_id, dropped_edges}]}.
+    """
+    retired = []
+    for nid in node_ids:
+        removed, dropped = api.store.retire_node(nid)
+        retired.append({"entity_id": nid, "removed": removed,
+                        "dropped_edges": dropped})
+    try:
+        fresh = refresh_derived_links(api)
+    except Exception:
+        fresh = 0
+    api.revision += 1
+    record = {"revision": api.revision, "recorded_at": _utcnow(),
+              "retired": [r["entity_id"] for r in retired],
+              "verdicts": retired, "derived_fresh": fresh}
+    if log_path:
+        append_jsonl(log_path, record)
+    if snapshot_path:
+        api.save(snapshot_path)
+    return {"revision": api.revision, "retired": retired,
+            "derived_fresh": fresh}
+
+
 def replay_log(api: GraphUpdateAPI, log_path: str,
                after_revision: int = 0) -> int:
     """Re-apply committed proposals from the log. Returns max revision."""
@@ -126,6 +157,11 @@ def replay_log(api: GraphUpdateAPI, log_path: str,
                             p.get("detail", ""))
                     except Exception:
                         continue
+            for nid in rec.get("retired", []):
+                try:
+                    api.store.retire_node(str(nid))
+                except Exception:
+                    continue
             try:
                 refresh_derived_links(api)
             except Exception:

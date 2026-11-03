@@ -23,12 +23,15 @@ Edge vocabulary:
   about                Article -> Market | Event  (LLM relevance passed)
   shares-subject-with  Event <-> Event      (DERIVED by Connector only,
     via a shared Subject; never hand-written)
+  has-market             Event -> Market      (DERIVED by Connector only,
+    from the market's event_ticker prop, ticker-prefix fallback)
   supports             Hypothesis -> Market | Article
   challenges           Audit -> Hypothesis  (auditor flags a bad link)
   relates-to           fallback for anything unclassified
 """
 
 from .derive import (
+    derive_market_links,
     derive_shared_subject_links,
     followup_tasks,
     refresh_derived_links,
