@@ -77,6 +77,12 @@ Start order matters: graph first, then kalshi, then the loops, then the view.
   `uv run python scripts/kalshi_service.py --port 8080`
 - Terminal 3 (news loop A, one slice):
   `uv run python scripts/news_loop.py --graph-url http://127.0.0.1:8090 --kalshi-url http://127.0.0.1:8080 --loop --interval-min 15`
+  (no `--event`: topics start from the graph's standing set, then up
+  to `--event-limit` newcomers; newcomers get Event nodes posted.
+  Each cycle is five deterministic subagent stages — discover, scan,
+  pair, propose, commit — dispatchable individually via
+  `run_stage(name, ctx)` for a future orchestrator; `run_cycle` is
+  the reference dispatcher.)
 - Terminal 4 (news loop B, a different `--event` slice, same graph):
   `uv run python scripts/news_loop.py --graph-url http://127.0.0.1:8090 --kalshi-url http://127.0.0.1:8080 --event KXSPACEXMARS-30 --loop --interval-min 15`
 - Terminal 5 (view):

@@ -57,19 +57,89 @@ def _post_json(url: str, payload: dict, timeout: int = 30) -> dict:
         return json.loads(resp.read() or b"{}")
 
 
+def _graph_events(graph_url: str) -> dict:
+    """ticker -> title for Event nodes already in the graph.
+
+    Fail-open: an unreachable graph looks like an empty graph, so the
+    cycle degrades to pure discovery instead of dying.
+    """
+    try:
+        data = _get_json(graph_url.rstrip("/") + "/graph")
+    except Exception:
+        return {}
+    out = {}
+    for el in data.get("elements", []):
+        d = el.get("data", {})
+        if d.get("id", "").startswith("kalshi:"):
+            t = d["id"].removeprefix("kalshi:")
+            out[t] = d.get("label") or t
+    return out
+
+
 def discover_topics(kalshi_url: str, event_slice: tuple = (),
-                    limit: int = 30) -> list[dict]:
-    """Kalshi events -> [{event_ticker, title, terms}]. Slice restricts."""
-    data = _get_json(kalshi_url.rstrip("/") + f"/events?limit={limit}")
-    topics = []
-    for e in data.get("events", []):
-        ticker = e.get("event_ticker", "")
-        if not ticker or (event_slice and ticker not in event_slice):
+                    limit: int = 30, graph_url: str | None = None) -> list[dict]:
+    """Kalshi events -> [{event_ticker, title, terms, new}]. Slice restricts.
+
+    Without a slice the standing graph set comes first, then open
+    events not yet graphed, up to `limit` newcomers. Titles always
+    come from Kalshi (graph titles can be bare tickers with no
+    searchable terms). An explicit slice behaves exactly as before.
+    """
+    if event_slice:
+        data = _get_json(kalshi_url.rstrip("/") + f"/events?limit={limit}")
+        open_evts = [e for e in data.get("events", [])
+                     if e.get("event_ticker")]
+        picked = [e for e in open_evts if e["event_ticker"] in event_slice]
+        topics = [{"event_ticker": e["event_ticker"],
+                   "title": e.get("title", e["event_ticker"]),
+                   "terms": extract_terms(e.get("title", e["event_ticker"])),
+                   "new": False} for e in picked]
+        return [t for t in topics if t["terms"]]
+    known = set(_graph_events(graph_url)) if graph_url else set()
+    # Newcomers are capped at `limit`; fetch past the standing set so a
+    # full head of known events cannot hide them.
+    data = _get_json(
+        kalshi_url.rstrip("/") + f"/events?limit={limit + len(known)}")
+    open_evts = [e for e in data.get("events", [])
+                 if e.get("event_ticker")]
+    standing, fresh = [], []
+    for e in open_evts:
+        ticker = e["event_ticker"]
+        terms = extract_terms(e.get("title", ticker))
+        if not terms:
             continue
-        topics.append({"event_ticker": ticker,
-                       "title": e.get("title", ticker),
-                       "terms": extract_terms(e.get("title", ticker))})
-    return [t for t in topics if t["terms"]]
+        topic = {"event_ticker": ticker,
+                 "title": e.get("title", ticker),
+                 "terms": terms, "new": ticker not in known}
+        (standing if ticker in known else fresh).append(topic)
+    return standing + fresh[:limit]
+
+
+def _ensure_event_nodes(graph_url: str, topics: list[dict]) -> int:
+    """Post Scout Event nodes for newcomers so discovery lands in the graph.
+
+    Fail-open: any error posts nothing and the cycle continues with the
+    in-memory topics. Duplicates merge in the gate, so a race with the
+    kalshi publish path is harmless.
+    """
+    fresh = [t for t in topics if t.get("new")]
+    if not fresh:
+        return 0
+    try:
+        resp = _post_json(
+            graph_url.rstrip("/") + "/proposals",
+            {"proposals": [
+                {"agent": "scout", "action": "add-node",
+                 "entity_id": f"kalshi:{t['event_ticker']}",
+                 "detail": json.dumps({"kind": "Event",
+                                       "title": t["title"]}),
+                 "confidence": 0.85} for t in fresh]})
+    except Exception as e:
+        log(f"new events: {len(fresh)} skipped ({type(e).__name__})")
+        return 0
+    n = sum(1 for v in resp.get("verdicts", []) if v.get("committed"))
+    log(f"new events: {len(fresh)} posted {n}")
+    return n
 
 
 def sync_watchlist(kalshi_url: str, topics: list[dict]) -> dict:
@@ -114,6 +184,14 @@ def _topic_urls(topics: list[dict], mentions: dict) -> dict[str, set[str]]:
     return out
 
 
+def _cap_pairs(pairs: list, max_pairs: int) -> list:
+    """Cap pairs per cycle; max_pairs <= 0 means no cap.
+
+    Matches the --max-audits / --max-cycles convention (0 = unbounded).
+    """
+    return pairs if max_pairs <= 0 else pairs[:max_pairs]
+
+
 def shared_url_pairs(topics: list[dict], mentions: dict,
                      max_pairs: int = 10) -> list[dict]:
     """Co-mention: topic pairs sharing article URLs in one snapshot."""
@@ -127,7 +205,7 @@ def shared_url_pairs(topics: list[dict], mentions: dict,
                 pairs.append({"a": a, "b": b, "urls": shared,
                               "mode": "co-mention"})
     pairs.sort(key=lambda p: -len(p["urls"]))
-    return pairs[:max_pairs]
+    return _cap_pairs(pairs, max_pairs)
 
 
 def shared_subject_pairs(topics: list[dict], mentions: dict,
@@ -151,7 +229,7 @@ def shared_subject_pairs(topics: list[dict], mentions: dict,
                                   "mode": "shared-subject",
                                   "subject": term})
     pairs.sort(key=lambda p: -len(p["urls"]))
-    return pairs[:max_pairs]
+    return _cap_pairs(pairs, max_pairs)
 
 
 def burst_topics(topics: list[dict], new_mentions: dict,
@@ -208,7 +286,7 @@ def entity_overlap_pairs(topics: list[dict], kept: list[dict],
                 pairs.append({"a": a, "b": b, "urls": urls,
                               "mode": "entity-overlap", "entity": e})
                 break
-    return pairs[:max_pairs]
+    return _cap_pairs(pairs, max_pairs)
 
 
 def _existing_hypotheses(graph_url: str) -> set[str]:
@@ -426,33 +504,57 @@ def _kalshi_history(kalshi_url: str, ticker: str) -> list[dict]:
     return data if isinstance(data, list) else []
 
 
-def run_cycle(graph_url: str, kalshi_url: str, cycle: int = 0,
-              event_slice: tuple = (), max_pairs: int = 10,
-              mode_pin: str | None = None, model="auto",
-              event_limit: int = 30, history_snaps: int = 1,
-              history_hours: float = 48,
-              history_stride_hours: float = 6,
-              deliberate: bool = False,
-              sync_topics: bool = True) -> dict:
-    """One full explore -> propose -> commit cycle. Returns a summary."""
-    mode = next_mode(cycle, mode_pin)
-    try:
-        topics = discover_topics(kalshi_url, event_slice, event_limit)
-    except Exception as e:
-        return {"ok": False, "reason": f"kalshi unreachable: {e}"}
-    if len(topics) < 2:
-        return {"ok": False, "reason": f"need 2+ topics, have {len(topics)}"}
-    watch = sync_watchlist(kalshi_url, topics) if sync_topics else {"synced": False, "reason": "disabled"}
+# -- Deterministic subagent stages -------------------------------------
+# Each stage is one step of the pipeline with an explicit ctx contract
+# (reads documented keys, returns values merged back into ctx), so a
+# future orchestrator can dispatch them individually via run_stage.
+# run_cycle below is the reference dispatcher: same order, same logs,
+# same summaries. No model reasoning lives here beyond the existing
+# propose/audit calls; spend is unchanged.
+STAGES = ("discover", "scan", "pair", "propose", "commit")
 
+
+def run_stage(name: str, ctx: dict) -> dict:
+    """Dispatch one STAGES step; merges its result into ctx, returns it."""
+    fn = {"discover": stage_discover, "scan": stage_scan,
+          "pair": stage_pair, "propose": stage_propose,
+          "commit": stage_commit}.get(name)
+    if fn is None:
+        raise KeyError(f"unknown stage: {name} (want one of {STAGES})")
+    res = fn(ctx)
+    ctx.update(res)
+    return res
+
+
+def stage_discover(ctx: dict) -> dict:
+    """ctx: graph_url, kalshi_url, event_slice, event_limit, sync_topics.
+    Returns {topics, watch}. Raises on unreachable kalshi."""
+    topics = discover_topics(ctx["kalshi_url"],
+                             ctx.get("event_slice", ()),
+                             ctx.get("event_limit", 30),
+                             ctx.get("graph_url"))
+    _ensure_event_nodes(ctx["graph_url"], topics)
+    watch = (sync_watchlist(ctx["kalshi_url"], topics)
+             if ctx.get("sync_topics", True)
+             else {"synced": False, "reason": "disabled"})
+    return {"topics": topics, "watch": watch}
+
+
+def stage_scan(ctx: dict) -> dict:
+    """ctx: topics, mode, cycle, history_snaps, history_hours,
+    history_stride_hours. Returns {mentions, snap_ts, burst_new,
+    burst_old}. Raises RuntimeError when no snapshot is available."""
+    topics, mode = ctx["topics"], ctx["mode"]
     union = sorted({t for topic in topics for t in topic["terms"]})
-    log(f"cycle={cycle} mode={mode} topics={len(topics)} "
-        f"terms={len(union)}")
-    if history_snaps > 1:
+    new_n = sum(1 for t in topics if t.get("new"))
+    log(f"cycle={ctx.get('cycle', 0)} mode={mode} topics={len(topics)} "
+        f"(new={new_n}) terms={len(union)}")
+    if ctx.get("history_snaps", 1) > 1:
         try:
-            new_m, per = scan_history(union, history_hours,
-                                      history_stride_hours)
+            new_m, per = scan_history(union, ctx.get("history_hours", 48),
+                                      ctx.get("history_stride_hours", 6))
         except RuntimeError as e:
-            return {"ok": False, "reason": f"no snapshot: {e}"}
+            raise RuntimeError(f"no snapshot: {e}")
         new_ts = per[0][0] if per else ""
         burst_new = per[0][1] if per else {}
         burst_old = per[-1][1] if len(per) > 1 else {}
@@ -460,7 +562,7 @@ def run_cycle(graph_url: str, kalshi_url: str, cycle: int = 0,
         try:
             new_ts, new_snap, old_ts, old_snap = _snapshot_pair()
         except RuntimeError as e:
-            return {"ok": False, "reason": f"no snapshot: {e}"}
+            raise RuntimeError(f"no snapshot: {e}")
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
             fut_new = ex.submit(ngram_mentions, union, new_snap, "en", 30)
             fut_old = (ex.submit(ngram_mentions, union, old_snap, "en", 30)
@@ -468,42 +570,64 @@ def run_cycle(graph_url: str, kalshi_url: str, cycle: int = 0,
             new_m = fut_new.result()
             old_m = fut_old.result() if fut_old else {}
         burst_new, burst_old = new_m, old_m
-
     hit_terms = sum(1 for t in union if new_m.get(t, {}).get("count"))
     total_hits = sum(new_m.get(t, {}).get("count", 0) for t in union)
-    log(f"cycle={cycle} scan hits: {hit_terms}/{len(union)} terms, "
-        f"{total_hits} mentions")
+    log(f"cycle={ctx.get('cycle', 0)} scan hits: {hit_terms}/{len(union)} "
+        f"terms, {total_hits} mentions")
+    return {"mentions": new_m, "snap_ts": new_ts,
+            "burst_new": burst_new, "burst_old": burst_old}
 
+
+def stage_pair(ctx: dict) -> dict:
+    """ctx: topics, mentions, burst_new, burst_old, snap_ts, mode,
+    max_pairs, kalshi_url, graph_url, model, cycle.
+    Returns {pairs} — or {pairs: [], done: summary} when the cycle
+    ends here (empty set, odds-correlation mode)."""
+    topics, mode = ctx["topics"], ctx["mode"]
+    max_pairs = ctx.get("max_pairs", 10)
     pairs: list[dict] = []
     if mode == "co-mention":
-        pairs = shared_url_pairs(topics, new_m, max_pairs)
+        pairs = shared_url_pairs(topics, ctx["mentions"], max_pairs)
     elif mode == "shared-subject":
-        pairs = shared_subject_pairs(topics, new_m, max_pairs)
+        pairs = shared_subject_pairs(topics, ctx["mentions"], max_pairs)
     elif mode == "burst":
         bursting = {b["event_ticker"]: b for b in
-                    burst_topics(topics, burst_new, burst_old)}
+                    burst_topics(topics, ctx["burst_new"],
+                                 ctx["burst_old"])}
         bt = [t for t in topics if t["event_ticker"] in bursting]
-        pairs = shared_url_pairs(bt, new_m, max_pairs)
+        pairs = shared_url_pairs(bt, ctx["mentions"], max_pairs)
         for p in pairs:
             p["mode"] = "burst"
     elif mode == "entity-overlap":
-        arts = articles_from_mentions(new_m, new_ts)
-        kept = _kept_from_articles(arts, new_ts, topics)
+        arts = articles_from_mentions(ctx["mentions"], ctx["snap_ts"])
+        kept = _kept_from_articles(arts, ctx["snap_ts"], topics)
         pairs = entity_overlap_pairs(topics, kept, max_pairs)
     elif mode == "odds-correlation":
-        return _odds_cycle(graph_url, kalshi_url, topics, max_pairs, model)
-
-    log(f"cycle={cycle} pairs={len(pairs)} " +
+        return {"pairs": [],
+                "done": _odds_cycle(ctx["graph_url"], ctx["kalshi_url"],
+                                    topics, max_pairs, ctx.get("model"))}
+    log(f"cycle={ctx.get('cycle', 0)} pairs={len(pairs)} " +
         (", ".join(f"{p['a']}x{p['b']}:{len(p['urls'])}" for p in pairs[:5])
          if pairs else "none"))
     if not pairs:
-        _post_json(graph_url.rstrip("/") + "/findings",
+        _post_json(ctx["graph_url"].rstrip("/") + "/findings",
                    {"finding": {"loop": "news", "mode": mode,
-                                "pairs": 0, "cycle": cycle}})
-        return {"ok": True, "mode": mode, "pairs": 0}
+                                "pairs": 0,
+                                "cycle": ctx.get("cycle", 0)}})
+        return {"pairs": [],
+                "done": {"ok": True, "mode": mode, "pairs": 0}}
+    return {"pairs": pairs}
 
-    arts = articles_from_mentions(new_m, new_ts)
-    kept = _kept_from_articles(arts, new_ts, topics)
+
+def stage_propose(ctx: dict) -> dict:
+    """ctx: topics, pairs, mentions, snap_ts, graph_url, model,
+    deliberate, cycle. Returns {all_props, pairs (live only),
+    vetoed, llm_calls}."""
+    topics, pairs = ctx["topics"], ctx["pairs"]
+    model, cycle = ctx.get("model"), ctx.get("cycle", 0)
+    deliberate = ctx.get("deliberate", False)
+    arts = articles_from_mentions(ctx["mentions"], ctx["snap_ts"])
+    kept = _kept_from_articles(arts, ctx["snap_ts"], topics)
     url_kept = {k["url"]: k for k in kept}
     agent = NewsAgent()
     skeptic = Skeptic()
@@ -512,7 +636,7 @@ def run_cycle(graph_url: str, kalshi_url: str, cycle: int = 0,
     # Third-agent audit: veto spurious pairs pre-commit; challenge the
     # ones that already committed (reversible flag, never deletion).
     title_of = {t["event_ticker"]: t["title"] for t in topics}
-    existing_hids = _existing_hypotheses(graph_url)
+    existing_hids = _existing_hypotheses(ctx["graph_url"])
     audit_llm = resolve_model(model, role="auditor") if model else None
     live_pairs: list[tuple] = []  # (pair, title|None, conf|None)
     vetoed = 0
@@ -558,7 +682,7 @@ def run_cycle(graph_url: str, kalshi_url: str, cycle: int = 0,
                                    "rel": "challenges"}),
                 confidence=0.8))
     inv_llm = resolve_model(model, role="investigator") if model else None
-    pairs = [p for p, _, _ in live_pairs]
+    live = [p for p, _, _ in live_pairs]
     for p, dtitle, dconf in live_pairs:
         pair_terms = sorted(
             {term for t in topics if t["event_ticker"] in (p["a"], p["b"])
@@ -602,8 +726,18 @@ def run_cycle(graph_url: str, kalshi_url: str, cycle: int = 0,
                 detail=json.dumps({"src": hid, "dst": article_id(u),
                                    "rel": "supports"}),
                 confidence=0.6))
+    return {"all_props": all_props, "pairs": live,
+            "vetoed": vetoed, "llm_calls": llm_calls}
 
-    approved, _ = skeptic.review(all_props)
+
+def stage_commit(ctx: dict) -> dict:
+    """ctx: all_props, pairs, topics, graph_url, mode, cycle,
+    llm_calls, vetoed. Posts, derives, fans out followups, and
+    returns the cycle summary."""
+    all_props, pairs = ctx["all_props"], ctx["pairs"]
+    topics, mode, cycle = ctx["topics"], ctx["mode"], ctx.get("cycle", 0)
+    graph_url = ctx["graph_url"]
+    approved, _ = Skeptic().review(all_props)
     posted = _post_json(
         graph_url.rstrip("/") + "/proposals",
         {"proposals": [{"agent": p.agent, "action": p.action,
@@ -636,19 +770,60 @@ def run_cycle(graph_url: str, kalshi_url: str, cycle: int = 0,
                             "revision": posted.get("revision"),
                             "derived_fresh": fresh,
                             "followups": followups,
-                            "llm_calls": llm_calls,
-                            "vetoed": vetoed}})
+                            "llm_calls": ctx.get("llm_calls", 0),
+                            "vetoed": ctx.get("vetoed", 0)}})
     log(f"cycle={cycle} posted {len(approved)} proposals "
         f"rev={posted.get('revision')} derived_fresh={fresh} "
-        f"followups={len(followups)} llm_calls={llm_calls} "
-        f"vetoed={vetoed}")
+        f"followups={len(followups)} llm_calls={ctx.get('llm_calls', 0)} "
+        f"vetoed={ctx.get('vetoed', 0)}")
     return {"ok": True, "mode": mode, "pairs": len(pairs),
             "proposals": len(approved),
             "revision": posted.get("revision"),
             "derived_fresh": fresh,
             "followups": len(followups),
-            "llm_calls": llm_calls,
-            "vetoed": vetoed}
+            "llm_calls": ctx.get("llm_calls", 0),
+            "vetoed": ctx.get("vetoed", 0)}
+
+
+def run_cycle(graph_url: str, kalshi_url: str, cycle: int = 0,
+              event_slice: tuple = (), max_pairs: int = 10,
+              mode_pin: str | None = None, model="auto",
+              event_limit: int = 30, history_snaps: int = 1,
+              history_hours: float = 48,
+              history_stride_hours: float = 6,
+              deliberate: bool = False,
+              sync_topics: bool = True) -> dict:
+    """One full explore -> propose -> commit cycle. Returns a summary.
+
+    Reference dispatcher over STAGES (discover -> scan -> pair ->
+    propose -> commit); an orchestrator may call run_stage directly.
+    """
+    ctx: dict = {
+        "graph_url": graph_url, "kalshi_url": kalshi_url,
+        "cycle": cycle, "event_slice": event_slice,
+        "max_pairs": max_pairs, "mode": next_mode(cycle, mode_pin),
+        "model": model, "event_limit": event_limit,
+        "history_snaps": history_snaps, "history_hours": history_hours,
+        "history_stride_hours": history_stride_hours,
+        "deliberate": deliberate, "sync_topics": sync_topics,
+    }
+    try:
+        run_stage("discover", ctx)
+    except Exception as e:
+        return {"ok": False, "reason": f"kalshi unreachable: {e}"}
+    if len(ctx["topics"]) < 2:
+        return {"ok": False,
+                "reason": f"need 2+ topics, have {len(ctx['topics'])}"}
+    try:
+        run_stage("scan", ctx)
+    except RuntimeError as e:
+        return {"ok": False, "reason": str(e)}
+    gated = run_stage("pair", ctx)
+    if "done" in gated:
+        return gated["done"]
+
+    run_stage("propose", ctx)
+    return run_stage("commit", ctx)
 
 
 def _odds_cycle(graph_url: str, kalshi_url: str, topics: list[dict],
@@ -678,7 +853,7 @@ def _odds_cycle(graph_url: str, kalshi_url: str, topics: list[dict],
                 pairs.append({"a": a, "b": b, "corr": round(corr, 3),
                               "mode": "odds-correlation", "urls": []})
     pairs.sort(key=lambda p: -abs(p["corr"]))
-    pairs = pairs[:max_pairs]
+    pairs = _cap_pairs(pairs, max_pairs)
     if not pairs:
         return {"ok": True, "mode": "odds-correlation", "pairs": 0}
     all_props = []
@@ -723,7 +898,8 @@ def _odds_cycle(graph_url: str, kalshi_url: str, topics: list[dict],
 @click.option("--interval-min", type=float, default=15)
 @click.option("--event", multiple=True, default=(),
               help="restrict to these event tickers (repeatable)")
-@click.option("--max-pairs", type=int, default=10)
+@click.option("--max-pairs", type=int, default=10,
+              help="pairs per cycle, 0 = no cap")
 @click.option("--mode", type=click.Choice(list(MODES)), default=None,
               help="pin one exploration mode (default: rotate)")
 @click.option("--model", default="auto",

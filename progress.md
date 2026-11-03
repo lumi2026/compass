@@ -858,9 +858,67 @@ from before: Oct-30 called one GDP link genuine, the loop vetoes
 its cousins — auditor inconsistency stands, hence flag-only.
 Verified: 7 new offline tests, suite 161/161 green. Server stopped.
 
+## 2026-11-03 — uncapped pairs
+
+`--max-pairs 0` now means no cap in `news_loop.py` (all four pair
+producers via `_cap_pairs`) + demo script help. Matches the existing
+0-means-unbounded idiom (`--max-audits`, `--max-cycles`). Previously
+0 silently explored nothing (`pairs[:0]`). For the long unattended
+run: time stays bounded (`--max-cycles`), breadth unbounded.
+Verified: new cap test, news-loop suite 24/24 green.
+
+## 2026-11-03 — wide background loop live
+
+Started detached: 50 events, `--max-pairs 0`, 15-min interval,
+12 cycles max, log `/tmp/loop-wide.log`, building on live rev 110.
+Cycle 0 already shows the payoff: 31 co-mention pairs (old cap
+would have kept 10), first veto on the known Modi-article link.
+
+## 2026-11-03 — graph-first discovery + newcomers land
+
+Loop now starts from the graph's standing set, then adds up to
+`--event-limit` open events not yet graphed (`new` flag, titles
+always from Kalshi after a ticker-title regression dropped live
+topics in test). `_ensure_event_nodes` posts Scout Event nodes for
+newcomers (fail-open, duplicates merge). Explicit `--event` slices
+behave exactly as before.
+Live restart: cycle 0 shows `topics=100 (new=50)`, 70 pairs
+uncapped — the background builder now grows the graph, not just
+re-scans it.
+Verified: 6 new tests, news-loop suite 30/30, full 168/168 green.
+
+## 2026-11-03 — news_loop as deterministic subagents
+
+Carved `run_cycle` into five typed stages (discover/scan/pair/
+propose/commit) with explicit ctx contracts + `run_stage(name, ctx)`
+dispatcher in `scripts/news_loop.py`; `run_cycle` keeps signature,
+order, logs, and summaries byte-identical. No model reasoning added,
+spend unchanged — the orchestrator story starts here.
+Verified: 3 new stage tests (+ shared kalshi stub now takes POST),
+full suite 171/171 green. The running background loop holds the
+old module but behaves identically, so no restart needed.
+
+## 2026-11-03 — rule-based orchestrator over stages
+
+`scripts/orchestrate.py`: supervisor that decides each round
+(rotate modes; fresh challenge → same mode + deep history dig;
+two quiet rounds → one deep round) and launches the news STAGES
+in-process. No model reasoning, spend unchanged. Stashes
+next-round params in state; keep-alive loop mirrors the other
+runners. 8 orchestrator tests green (policy units + stubbed
+rounds); live `--once` not yet run.
+
 ## 2026-11-03 — new day
 
 Carried over: replay (`?at=` odds scrub so the time slider moves
 prices too), pre-public auth gate (shared-secret header), then a live wiring re-run against the events-first
 view. Polish backlog unchanged (heuristic pre-filter, mamdani
 widening, `KXTOPLLMGENERAL-30` gap, feedback loop).
+
+## Nov 3 — bounded tool orchestration (two sets + supervisor)
+- tools/: kalshi.py (discover/health/read-topic/sweep/publish; +propose_event_support kept for subagent writes), graph.py (summary/list-hypotheses/post-proposals gated) — 5+5 names, fail-soft {ok False} under each spec'd error, __init__.as_structured() bridges to LangChain StructuredTool.
+- scripts/supervise.py: bounded model-driven loop, one JSON action/turn ({"tool",...}/{"answer",...}), own audit-style parse (first {...} span), unknown-tool + bad-JSON + model-error feedback, max-iterations budget; schedules one goal per run (no loop flag). Supervisor prompt guards: read-only-first, gated writes, short runs win.
+- squad/models.py: supervisor role on the default route (treatment-capable path), no key fallback None-safe.
+- Proof (live, read-only): goal "report rev/counts/challenged" → graph rev 115, 629 nodes, 867 edges, 21 hypotheses, 11 challenged — 2 tool calls, 4 iterations, traced under compass-dev.
+- Offline: 189 passed (was 171 + 18 new: test_tools 5, test_supervise 6, test_orchestrate 7).
+- Note: graph rev 115 live — the user's own background news loop kept writing while this ran; :8080 stayed theirs, only read-only tool calls made here.

@@ -5,6 +5,8 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import pytest
+
 import scripts.news_loop as nl
 from graph import GraphStore, GraphUpdateAPI, Node, commit_batch
 
@@ -39,6 +41,146 @@ def _topics():
 def test_next_mode_rotates_and_pins():
     assert [nl.next_mode(c) for c in range(6)] == list(nl.MODES) + [nl.MODES[0]]
     assert nl.next_mode(99, pinned="burst") == "burst"
+
+
+def _graph_first_fake(url, timeout=30):
+    if url.endswith("/graph"):
+        return {"elements": [
+            {"data": {"id": "kalshi:GA", "label": "Gamma Alpha Aero",
+                      "kind": "Event"}},
+            {"data": {"id": "market:GA-1", "label": "m",
+                      "kind": "Market"}},
+        ]}
+    return {"events": [
+        {"event_ticker": "GA", "title": "Gamma Alpha Aero"},
+        {"event_ticker": "NB", "title": "New Beta Story"},
+        {"event_ticker": "NC", "title": "New Gamma Thing"},
+    ]}
+
+
+def test_discover_graph_first_then_new(monkeypatch):
+    monkeypatch.setattr(nl, "_get_json", _graph_first_fake)
+    topics = nl.discover_topics("http://k", (), 1, graph_url="http://g")
+    assert [(t["event_ticker"], t.get("new")) for t in topics] == [
+        ("GA", False), ("NB", True)]
+    assert topics[0]["title"] == "Gamma Alpha Aero"
+    assert all(t["terms"] for t in topics)
+
+
+def test_discover_graph_down_falls_back_to_discovery(monkeypatch):
+    def fake(url, timeout=30):
+        if url.endswith("/graph"):
+            raise RuntimeError("down")
+        return {"events": [{"event_ticker": "NB",
+                            "title": "New Beta Story"}]}
+    monkeypatch.setattr(nl, "_get_json", fake)
+    topics = nl.discover_topics("http://k", (), 5, graph_url="http://g")
+    assert [(t["event_ticker"], t.get("new")) for t in topics] == [
+        ("NB", True)]
+
+
+def test_discover_graph_ticker_titles_use_kalshi_terms(monkeypatch):
+    def fake(url, timeout=30):
+        if url.endswith("/graph"):
+            return {"elements": [
+                {"data": {"id": "kalshi:GA", "label": "kalshi:GA",
+                          "kind": "Event"}},
+            ]}
+        return {"events": [{"event_ticker": "GA",
+                            "title": "Gamma Alpha Aero"}]}
+    monkeypatch.setattr(nl, "_get_json", fake)
+    topics = nl.discover_topics("http://k", (), 5, graph_url="http://g")
+    assert [(t["event_ticker"], t.get("new")) for t in topics] == [
+        ("GA", False)]
+    assert topics[0]["title"] == "Gamma Alpha Aero"
+    assert topics[0]["terms"]
+
+
+def test_discover_slice_ignores_graph(monkeypatch):
+    seen = []
+
+    def fake(url, timeout=30):
+        seen.append(url)
+        return _graph_first_fake(url, timeout)
+    monkeypatch.setattr(nl, "_get_json", fake)
+    topics = nl.discover_topics("http://k", ("NB",), 5,
+                                graph_url="http://g")
+    assert [t["event_ticker"] for t in topics] == ["NB"]
+    assert not any(u.endswith("/graph") for u in seen)
+
+
+def test_ensure_event_nodes_posts_newcomers(monkeypatch):
+    posted = []
+    monkeypatch.setattr(
+        nl, "_post_json",
+        lambda url, payload: posted.append(payload) or
+        {"verdicts": [{"committed": True}]})
+    topics = [{"event_ticker": "GA", "title": "T", "terms": ["x"]},
+              {"event_ticker": "NB", "title": "T2", "terms": ["y"],
+               "new": True}]
+    assert nl._ensure_event_nodes("http://g", topics) == 1
+    (prop,) = posted[0]["proposals"]
+    assert prop["entity_id"] == "kalshi:NB"
+    assert json.loads(prop["detail"])["kind"] == "Event"
+
+
+def test_ensure_event_nodes_fails_open(monkeypatch):
+    def boom(url, payload):
+        raise RuntimeError("down")
+    monkeypatch.setattr(nl, "_post_json", boom)
+    topics = [{"event_ticker": "NB", "title": "T2", "terms": ["y"],
+               "new": True}]
+    assert nl._ensure_event_nodes("http://g", topics) == 0
+
+
+def test_stages_registry_and_dispatch():
+    assert nl.STAGES == ("discover", "scan", "pair", "propose", "commit")
+    ctx: dict = {}
+    with pytest.raises(KeyError):
+        nl.run_stage("nope", ctx)
+    assert ctx == {}
+
+
+def test_stage_pair_comention_unit():
+    topics = [{"event_ticker": "EA", "title": "A", "terms": ["t1"]},
+              {"event_ticker": "EB", "title": "B", "terms": ["t2"]}]
+    mentions = {"t1": {"urls": ["u1"]}, "t2": {"urls": ["u1", "u2"]}}
+    ctx = {"topics": topics, "mentions": mentions, "mode": "co-mention",
+           "max_pairs": 10, "cycle": 0}
+    res = nl.run_stage("pair", ctx)
+    assert len(res["pairs"]) == 1
+    assert ctx["pairs"] == res["pairs"]  # merged back into ctx
+    assert (res["pairs"][0]["a"], res["pairs"][0]["b"]) == ("EA", "EB")
+
+
+def test_stage_discover_graph_first_and_watch():
+    api = GraphUpdateAPI(GraphStore())
+    gsrv, gt, holder = _serve_graph(api)
+    ksrv, kt = _serve_kalshi()
+    try:
+        ctx = {"graph_url": f"http://127.0.0.1:{gsrv.server_address[1]}",
+               "kalshi_url": f"http://127.0.0.1:{ksrv.server_address[1]}",
+               "event_slice": (), "event_limit": 30, "sync_topics": True}
+        res = nl.run_stage("discover", ctx)
+    finally:
+        gsrv.shutdown()
+        ksrv.shutdown()
+        gt.join(timeout=10)
+        kt.join(timeout=10)
+    assert [(t["event_ticker"], t["new"]) for t in res["topics"]] == [
+        ("EA", True), ("EB", True)]
+    assert res["watch"] == {"synced": True, "tickers": 4}
+    assert "kalshi:EA" in api.store.nodes  # newcomers landed
+
+
+def test_cap_pairs_zero_means_uncapped():
+    topics = [{"event_ticker": "EA", "title": "A", "terms": ["t1"]},
+              {"event_ticker": "EB", "title": "B", "terms": ["t2"]},
+              {"event_ticker": "EC", "title": "C", "terms": ["t3"]}]
+    mentions = {t: {"urls": ["u1", "u2"]} for t in ("t1", "t2", "t3")}
+    assert len(nl.shared_url_pairs(topics, mentions, 0)) == 3
+    assert len(nl.shared_url_pairs(topics, mentions, 2)) == 2
+    assert len(nl.shared_url_pairs(topics, mentions, 10)) == 3
 
 
 def test_co_mention_pair_on_fixture(tmp_path):
@@ -193,16 +335,26 @@ def _serve_graph(api):
 
 def _serve_kalshi():
     class Handler(BaseHTTPRequestHandler):
-        def do_GET(self):
-            body = json.dumps({"events": [
-                {"event_ticker": "EA", "title": "Alpha Beta Aero"},
-                {"event_ticker": "EB", "title": "Gamma Delta Games"},
-            ]}).encode()
+        def _ok(self, obj):
+            body = json.dumps(obj).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+
+        def do_GET(self):
+            self._ok({"events": [
+                {"event_ticker": "EA", "title": "Alpha Beta Aero"},
+                {"event_ticker": "EB", "title": "Gamma Delta Games"},
+            ]})
+
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length") or 0)
+            payload = json.loads(self.rfile.read(length) or b"{}")
+            tickers = [f"{e}-M{i}" for e in payload.get("events", [])
+                       for i in (1, 2)]
+            self._ok({"tickers": tickers})
 
         def log_message(self, *args):
             pass

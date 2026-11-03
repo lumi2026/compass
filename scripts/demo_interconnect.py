@@ -59,11 +59,15 @@ def _graph_summary(graph_url: str, at: str | None = None) -> dict:
               help="events to discover when no --event is given")
 @click.option("--cycles", type=int, default=2,
               help="news-team cycles to run (rotates modes)")
-@click.option("--max-pairs", type=int, default=10)
+@click.option("--max-pairs", type=int, default=10,
+              help="pairs per cycle, 0 = no cap")
 @click.option("--model", default="auto",
               help="LLM model spec (auto|None|model-id); None = extractive")
+@click.option("--sync-topics/--no-sync-topics", default=True,
+              help="push discovered events to the kalshi service "
+                   "watchlist each cycle (fail-open)")
 def main(graph_url, kalshi_url, event, event_limit, cycles,
-         max_pairs, model) -> None:
+         max_pairs, model, sync_topics) -> None:
     start = datetime.datetime.now(datetime.timezone.utc)
     start_ts = start.isoformat(timespec="seconds").replace("+00:00", "Z")
     try:
@@ -89,7 +93,8 @@ def main(graph_url, kalshi_url, event, event_limit, cycles,
     for cycle in range(cycles):
         summary = run_cycle(
             graph_url, kalshi_url, cycle=cycle, event_slice=tickers,
-            max_pairs=max_pairs, model=model, event_limit=len(tickers))
+            max_pairs=max_pairs, model=model, event_limit=len(tickers),
+            sync_topics=sync_topics)
         print(f"[demo] cycle={cycle} mode={summary.get('mode')} "
               f"pairs={summary.get('pairs', 0)} "
               f"proposals={summary.get('proposals', 0)} "
