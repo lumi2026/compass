@@ -1,8 +1,8 @@
-"""Bounded supervisor: protocol, budget, feedback. No network."""
+"""Bounded brain: protocol, budget, feedback. No network."""
 
 from types import SimpleNamespace
 
-from scripts.supervise import run_goal
+from squad.brain import run_goal
 
 
 def _model(*replies):

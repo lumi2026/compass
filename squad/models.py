@@ -44,7 +44,7 @@ AGENT_MODEL_DEFAULTS = {
     "scout": "muse-spark-1.3",
     "investigator": "muse-spark-1.3-contributor",
     "connector": "muse-spark-1.3-contributor",
-    "supervisor": "muse-spark-1.3-contributor",
+    "brain": "muse-spark-1.3-contributor",
 }
 
 

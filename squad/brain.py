@@ -1,42 +1,47 @@
-"""Bounded model-driven supervisor over the service tools.
+"""Bounded model-driven brain over the service tools.
 
-One goal per run: the model reasons over Kalshi/graph tool results
-and answers, or the iteration budget stops it. Tools are plain
-functions (see tools/); writes go through the gated proposals path
-only. No loop flag in v1 — schedule one goal per invocation.
-
-Run:  uv run python scripts/supervise.py --goal "report rev, counts, \
-          and challenged hypotheses"
+One goal per run: the model reasons over Kalshi/graph/news tool
+results and answers, or the iteration budget stops it. Tools are
+plain functions (see tools/); writes go through the gated proposals
+path only. No loop flag in v1 — schedule one goal per invocation.
 """
 
-import datetime
 import json
-import sys
 
-import click
-
-sys.path.insert(0, ".")
-
-from langchain_core.messages import (AIMessage, HumanMessage,  # noqa: E402
+from langchain_core.messages import (AIMessage, HumanMessage,
                                      SystemMessage, ToolMessage)
-from squad.models import resolve_model  # noqa: E402
-from tools.graph import graph_tools  # noqa: E402
-from tools.kalshi import kalshi_tools  # noqa: E402
+
+from tools.graph import graph_tools
+from tools.kalshi import kalshi_tools
+from tools.news import news_tools
 
 
-SUPERVISOR_PROMPT = """You supervise the Compass living graph (Kalshi
-prediction markets + news interconnects). Achieve the operator's goal
-with the tools below, then stop.
+BRAIN_PROMPT = """You are the Compass brain (Kalshi prediction markets +
+news interconnects). Achieve the operator's goal with the tools
+below, then stop.
 
 Protocol, every turn exactly one JSON object, no prose outside it:
 {"tool": "<name>", "args": {...}} to call a tool, or
 {"answer": "<final result for the operator>"} when done.
 
-Rules: prefer read-only tools; propose writes only through gated
-proposals; report tool errors honestly instead of retrying blindly;
+Rules: prefer read-only tools; launch news work through
+news_run_cycle (one cycle) or news_run_batch (several cycles
+concurrently, one per selected event set);
+propose writes only through gated proposals; report tool errors
+honestly instead of retrying blindly;
 answer as soon as the goal is met — a correct short run beats a long
 one. You have a fixed iteration budget, enforced outside; unspent
 budget is fine."""
+
+
+def build_registry(graph_url: str, kalshi_url: str,
+                   model: str | None = "auto") -> dict:
+    """Kalshi + graph + news_loop launch tools bound to live services."""
+    registry = {}
+    registry.update(kalshi_tools(kalshi_url))
+    registry.update(graph_tools(graph_url))
+    registry.update(news_tools(graph_url, kalshi_url, model))
+    return registry
 
 
 def _extract_json(raw: str) -> dict:
@@ -54,7 +59,7 @@ def run_goal(goal: str, registry: dict, model_obj,
              max_iterations: int = 10) -> dict:
     """Drive one goal to an answer or the budget. Returns
     {ok, answer?, tool_calls, iterations, reason?}."""
-    transcript = [SystemMessage(SUPERVISOR_PROMPT), HumanMessage(goal)]
+    transcript = [SystemMessage(BRAIN_PROMPT), HumanMessage(goal)]
     tool_calls = 0
     for i in range(max(1, max_iterations)):
         try:
@@ -100,43 +105,3 @@ def run_goal(goal: str, registry: dict, model_obj,
     return {"ok": False, "tool_calls": tool_calls,
             "iterations": max(1, max_iterations),
             "reason": "iteration budget exhausted"}
-
-
-@click.command()
-@click.option("--goal", required=True, help="operator goal, one run")
-@click.option("--graph-url", default="http://127.0.0.1:8090")
-@click.option("--kalshi-url", default="http://127.0.0.1:8080")
-@click.option("--model", default="auto")
-@click.option("--max-iterations", type=int, default=10)
-@click.option("--langsmith-project", default=None)
-def main(goal, graph_url, kalshi_url, model, max_iterations,
-         langsmith_project) -> None:
-    from services.auth import load_dotenv  # noqa: E402
-    from squad.tracing import setup_langsmith, squad_span  # noqa: E402
-
-    load_dotenv()
-    if model == "None":
-        model = None
-    if model is None:
-        raise SystemExit("supervise needs a model (no --model None mode)")
-    model_obj = resolve_model(model, role="supervisor")
-    if model_obj is None:
-        raise SystemExit("no model resolved (missing key?)")
-    registry = {}
-    registry.update(kalshi_tools(kalshi_url))
-    registry.update(graph_tools(graph_url))
-    ls = setup_langsmith(project=langsmith_project)
-    print(f"[supervise] langsmith={'on' if ls['enabled'] else 'off'} "
-          f"project={ls['project']}", flush=True)
-    with squad_span("supervise-goal", {"goal": goal}) as span:
-        out = run_goal(goal, registry, model_obj, max_iterations)
-        span.outputs = {"ok": out["ok"],
-                        "tool_calls": out["tool_calls"]}
-    stamp = datetime.datetime.now(datetime.timezone.utc).strftime(
-        "%Y-%m-%dT%H:%M:%SZ")
-    print(f"[supervise] {stamp} {out}", flush=True)
-    sys.exit(0 if out["ok"] else 1)
-
-
-if __name__ == "__main__":
-    main()

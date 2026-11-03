@@ -1,7 +1,7 @@
 """Service tools for agentic loops: plain functions + LangChain wrappers.
 
 Each builder takes a service base URL and returns {name: spec} with
-description + func. The supervisor calls funcs directly;
+description + func. The brain calls funcs directly;
 as_structured() converts a registry for LangChain agents. Every
 function fails soft ({ok: False, ...}) so a model can reason about
 errors instead of catching exceptions.
