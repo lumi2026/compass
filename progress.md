@@ -674,3 +674,66 @@ Verified: `npm run build` clean, 141/141 green, live API rev 80
 (529 nodes / 168 edges) serving through the dev proxy (`/health` +
 `/graph` 200). No Chromium on PATH — canvas pixels unverified,
 reachability only. Next: replay, wiring demo, auth gate.
+
+## 2026-11-02 — Stack startup Q&A (no code changes)
+
+- Resumed from Nov 1 close-out (clean tree at `402fe32`, nothing
+  listening). Verified loop/kalshi CLI flags (`--sync-topics` present).
+- Clarified wiring questions: the loop reads Kalshi (`GET /events`,
+  `GET /markets`) and writes the graph API (`POST /proposals`,
+  `POST /findings`); its only write to Kalshi is `sync_watchlist`
+  (`POST /topics`), and the Kalshi terminal stays quiet by design
+  (`log_message` silenced). Kalshi→graph odds publishing stays off
+  until `POST /publish/graph` + `POST /publish/sweep` are run by hand.
+- Handed out the 4-terminal startup order (graph :8090 → kalshi :8080
+  bare → loop `--once` then `--loop` → view `npm run dev`) plus the
+  graph data layout (`data/graph_snapshot.json`, `graph_log.jsonl`,
+  `findings.jsonl` via `--data-dir`/`COMPASS_DATA_DIR`).
+- `/commit-push`: working tree clean, nothing to commit.
+- Next (unchanged): replay (`?at=` odds scrub), wiring demo, auth gate.
+
+## 2026-11-02 — Step 6 wiring (docs + interconnect demo)
+
+Built `scripts/demo_interconnect.py`: drives the live stack for a
+fixed topic slice (or the first discovered events), runs N news-team
+cycles via `run_cycle` (rotating modes), then prints rev before/after,
+new Hypothesis ids, and a `?at=<start>` scrub pair for the view slider.
+`docs/live_test.md` gains the full living-loop wiring section (graph
+:8090 → kalshi :8080 bare → 2 loops → view) plus the demo command.
+Verified: script compiles, `--help` clean, suite 142/142 green.
+Live end-to-end (services + loops + view) not run here.
+Next: replay (`?at=` odds scrub), live wiring run, auth gate.
+
+## 2026-11-02 — Wide cross-section seed
+
+Live survey: events carry a native `category` field (Economics 56,
+Sports 45, Elections 23, Politics 20, Science and Technology 18,
+Entertainment 15, Financials 13, … in top 200 open).
+`services/seed.py` gains `capture_cross_section` (bucket → native
+categories, discovery order wins, `categories` metadata beside
+`tickers`; `load` ignores it) + `parse_cross_section`; per-market
+capture factored into `_capture_market_entry` (no behavior change).
+`scripts/seed_kalshi.py` gains `--cross-section --per-category
+--buckets` (`--event` explicit list still wins).
+Captured `data/seed_wide.json`: 10 events × up to 3 markets = 22
+tickers, 2 events in each of politics / economics / science /
+culture / sports. `data/seed.json` untouched (POC pins it).
+Verified: new tests + suite 144/144 green, wide seed loads offline
+(22 tickers).
+
+## 2026-11-03 — Events-first view (graph display fix)
+
+Report: 3D view looked misleading — expected Event nodes linked by news,
+saw a grey cloud. Grounded: live graph is 435 Markets / 50 Events /
+22 Articles / 20 Subjects / 12 Hypotheses; no direct Event–Event
+article edges exist (Article `about` Event + `mentions` Subject;
+Event–Event only via derived red `shares-subject-with`, doubled
+bidirectionally); node size = degree = market count; legend omitted
+Happening/Audit/`challenges`.
+Fix (chosen option): `view/src/graph.js` hides Markets by default,
+keeps all Events (even unlinked), recomputes degree/size/cap on the
+visible subgraph, pins Events first under the cap, reports hidden
+count; `view/src/App.jsx` gains a `markets` toggle, hidden-count bar
+text, full legend. `view/test/graph.test.mjs` (node:test stdlib) +
+`npm test` script: 5/5 green; `npm run build` clean. Standalone
+`demo/*.html` viewer untouched.

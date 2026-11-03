@@ -23,10 +23,14 @@ function PropsTable({ props }) {
 export default function App() {
   const [at, setAt] = useState('')
   const [showAll, setShowAll] = useState(false)
+  const [showMarkets, setShowMarkets] = useState(false)
   const [sel, setSel] = useState(null)
   const { elements, revision, counts, loading, error, stale } = useGraph({ at })
 
-  const view = useMemo(() => transformElements(elements, 200), [elements])
+  const view = useMemo(
+    () => transformElements(elements, 200, { showMarkets }),
+    [elements, showMarkets],
+  )
   const byId = useMemo(() => new Map(view.nodes.map((n) => [n.id, n])), [view.nodes])
 
   let detail = <p>Click a node or link.</p>
@@ -68,11 +72,16 @@ export default function App() {
         <span>
           {view.nodes.length} nodes, {view.links.length} links (rev {revision})
           {view.capped ? ` — showing 200 of ${view.totalNodes}` : ''}
+          {!showMarkets && view.marketsHidden > 0 ? ` — ${view.marketsHidden} markets hidden` : ''}
         </span>
-        <span className="dim">blue=Event grey=Market green=Article amber=Subject purple=Hypothesis — drag moves, right-drag rotates, scroll zooms</span>
+        <span className="dim">blue=Event grey=Market green=Article amber=Subject purple=Hypothesis teal=Happening red=Audit — drag moves, right-drag rotates, scroll zooms</span>
         <label>
           <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} /> all
           labels
+        </label>
+        <label title="Show the grey Market odds nodes (hidden by default so the news links dominate).">
+          <input type="checkbox" checked={showMarkets} onChange={(e) => setShowMarkets(e.target.checked)} />{' '}
+          markets
         </label>
         <label title="Filter by world time (valid_at). Odds stay live until replay lands.">
           as-of{' '}
