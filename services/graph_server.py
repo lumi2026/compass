@@ -109,12 +109,21 @@ class GraphService:
             result = commit_batch(self.api, proposals,
                                   log_path=self.log_path,
                                   snapshot_path=self.snapshot_path)
+            verdicts = result["verdicts"]
+            n_ok = sum(1 for v in verdicts if v.get("committed"))
+            print(f"[graph-api] proposals={len(verdicts)} "
+                  f"committed={n_ok} rejected={len(verdicts) - n_ok} "
+                  f"derived_fresh={result['derived_fresh']} "
+                  f"revision={result['revision']}", flush=True)
             return {"revision": result["revision"],
                     "verdicts": result["verdicts"],
                     "derived_fresh": result["derived_fresh"]}
 
     def record_finding(self, finding: dict) -> dict:
-        return append_finding(self.findings_path, finding)
+        rec = append_finding(self.findings_path, finding)
+        print(f"[graph-api] finding recorded_at={rec.get('recorded_at')}",
+              flush=True)
+        return rec
 
 
 def create_app(service: GraphService | None = None,
@@ -187,7 +196,8 @@ def main(port, snapshot, log, findings, data_dir) -> None:
     print(f"[graph-api] nodes={len(svc.api.store.nodes)} "
           f"edges={len(svc.api.store.edges)} "
           f"revision={svc.api.revision} port={port}")
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="info",
+                access_log=True)
 
 
 if __name__ == "__main__":

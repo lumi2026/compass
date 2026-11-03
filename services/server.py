@@ -31,6 +31,10 @@ from .listener import KalshiListener, TickerState, Update
 DEFAULT_MOVE_THRESHOLD_CENTS = 5
 
 
+def _log(msg: str) -> None:
+    print(f"[kalshi] {msg}", flush=True)
+
+
 def event_of(market_ticker: str) -> str:
     """Seed heuristic: strip a trailing -LETTERS market suffix to the event."""
     head, _, tail = market_ticker.rpartition("-")
@@ -107,6 +111,8 @@ class Service:
             self.ticker_event.setdefault(t, event_of(t))
         tickers = sorted(set(tickers))
         self.listener.watch(tickers)
+        _log(f"topics set: events watched, tickers={len(tickers)} "
+             f"live_ws={self.listener.live}")
         return tickers
 
     def discover_events(self, limit: int = 10) -> list[dict]:
@@ -150,6 +156,8 @@ class Service:
                 tickers.append(m.ticker)
         tickers = sorted(set(tickers))
         self.listener.watch(tickers)
+        _log(f"auto topics: top_k={top_k} tickers={len(tickers)} "
+             f"live_ws={self.listener.live}")
         return tickers
 
     def set_graph_publish(self, graph_url: str,
@@ -157,6 +165,8 @@ class Service:
         """Point the publish path at a graph API. Empty URL disables it."""
         self.graph_url = (graph_url or "").rstrip("/")
         self.move_threshold_cents = move_threshold_cents
+        _log(f"publish config: graph_url={self.graph_url or '(disabled)'} "
+             f"move_threshold_cents={self.move_threshold_cents}")
         return {"graph_url": self.graph_url,
                 "move_threshold_cents": self.move_threshold_cents}
 
@@ -204,12 +214,15 @@ class Service:
                 headers={"Content-Type": "application/json"})
             with urllib.request.urlopen(req, timeout=30) as resp:
                 posted = json.loads(resp.read() or b"{}")
-            return {"published": True, "tickers": len(tickers),
-                    "proposals": len(all_props),
-                    "revision": posted.get("revision")}
+            out = {"published": True, "tickers": len(tickers),
+                   "proposals": len(all_props),
+                   "revision": posted.get("revision")}
+            _log(f"sweep: tickers={len(tickers)} "
+                 f"proposals={len(all_props)} revision={out['revision']}")
+            return out
         except Exception as e:
-            print(f"[publish] graph unreachable "
-                  f"({e.__class__.__name__}), log-only")
+            _log(f"sweep: graph unreachable "
+                 f"({e.__class__.__name__}), log-only")
             return {"published": False, "reason": f"graph unreachable: {e}"}
 
     def _proposals_for(self, ticker: str, last: dict, ts_ms: int) -> list[dict]:
@@ -299,8 +312,8 @@ class Service:
             return {"published": True, "proposals": len(props),
                     "revision": posted.get("revision")}
         except Exception as e:
-            print(f"[publish] graph unreachable "
-                  f"({e.__class__.__name__}), log-only")
+            _log(f"publish: graph unreachable "
+                 f"({e.__class__.__name__}), log-only")
             return {"published": False, "reason": f"graph unreachable: {e}"}
         finally:
             with self._pub_lock:
@@ -357,8 +370,11 @@ def make_handler(service: Service):
                     self._send(400, {"error": "limit must be an integer"})
                     return
                 try:
-                    self._send(200, {"events": service.discover_events(limit)})
+                    events = service.discover_events(limit)
+                    _log(f"discover: limit={limit} events={len(events)}")
+                    self._send(200, {"events": events})
                 except Exception as e:
+                    _log(f"discover: upstream failure ({e})")
                     self._send(502, {"error": f"upstream: {e}"})
             elif parsed.path == "/publish/graph":
                 self._send(200, {"graph_url": service.graph_url,
@@ -377,6 +393,7 @@ def make_handler(service: Service):
                 try:
                     markets = service.src.fetch_markets(ev, limit=limit)
                 except Exception as e:
+                    _log(f"markets: upstream failure event={ev} ({e})")
                     self._send(502, {"error": f"upstream: {e}"})
                     return
                 self._send(200, {"markets": [
@@ -397,8 +414,11 @@ def make_handler(service: Service):
                     self._send(400, {"error": "need ?ticker=&start=&end=&interval="})
                     return
                 try:
-                    self._send(200, service.history(ticker, start, end, interval))
+                    candles = service.history(ticker, start, end, interval)
+                    _log(f"history: ticker={ticker} candles={len(candles)}")
+                    self._send(200, candles)
                 except Exception as e:
+                    _log(f"history: upstream failure ticker={ticker} ({e})")
                     self._send(502, {"error": f"upstream: {e}"})
             elif parsed.path == "/stream":
                 self.send_response(200)
@@ -435,8 +455,11 @@ def make_handler(service: Service):
                     try:
                         tickers = service.auto_topics(top_k=top_k, scan_limit=scan)
                     except Exception as e:
+                        _log(f"topics: auto upstream failure ({e})")
                         self._send(502, {"error": f"upstream: {e}"})
                         return
+                    _log(f"topics: auto top_k={top_k} "
+                         f"tickers={len(tickers)}")
                     self._send(200, {"tickers": tickers,
                                      "live_ws": service.listener.live,
                                      "mode": "auto", "top_k": top_k})
@@ -444,6 +467,7 @@ def make_handler(service: Service):
                     tickers = service.set_topics(
                         body.get("events") or [], body.get("market_tickers") or []
                     )
+                    _log(f"topics: manual tickers={len(tickers)}")
                     self._send(200, {"tickers": tickers,
                                      "live_ws": service.listener.live,
                                      "mode": "manual"})
@@ -462,8 +486,11 @@ def make_handler(service: Service):
                 self._send(200, service.set_graph_publish(url, threshold))
             elif self.path == "/publish/sweep":
                 try:
-                    self._send(200, service.sweep())
+                    result = service.sweep()
+                    _log(f"sweep request: {result}")
+                    self._send(200, result)
                 except Exception as e:
+                    _log(f"sweep request failed ({e})")
                     self._send(502, {"error": f"upstream: {e}"})
             elif self.path == "/subscriptions":
                 body = self._read_json()
@@ -485,4 +512,6 @@ def make_handler(service: Service):
 
 def serve(service: Service, port: int) -> ThreadingHTTPServer:
     server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(service))
+    _log(f"listening on 127.0.0.1:{port} "
+         f"graph_url={service.graph_url or '(disabled)'}")
     return server

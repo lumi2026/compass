@@ -49,7 +49,10 @@ def main(graph_url, kalshi_url, model, max_iterations, loop,
     load_dotenv()
     ls = setup_langsmith(project=langsmith_project)
     log(f"langsmith={'on' if ls['enabled'] else 'off'} "
-        f"project={ls['project']}")
+        f"project={ls['project']} endpoint={ls['endpoint']}")
+    if not ls["enabled"]:
+        log("tracing off: set LANGSMITH_TRACING=true plus "
+            "LANGSMITH_API_KEY to enable brain traces")
     if model == "None":
         log("FAIL: brain is model-driven; --model None has no fallback.")
         sys.exit(1)
@@ -63,7 +66,9 @@ def main(graph_url, kalshi_url, model, max_iterations, loop,
         f"{'unbounded' if max_iterations <= 0 else max_iterations}")
     cycle = 0
     while True:
-        with squad_span("brain-goal", {"cycle": cycle}) as span:
+        with squad_span("brain-goal",
+                         {"cycle": cycle, "graph_url": graph_url,
+                          "kalshi_url": kalshi_url, "model": model}) as span:
             try:
                 summary = run_goal(active_goal, registry, model_obj,
                                    max_iterations=max_iterations)
