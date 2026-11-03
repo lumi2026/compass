@@ -30,11 +30,18 @@ network services directly — live access goes through `tools/`.
 
 ## Main agent
 
-- `brain.py`: bounded model-driven loop over the service tools
-  (Kalshi, graph, news cycle launch). One operator goal per run,
-  then it stops. Launches `news_loop` cycles singly
-  (`news_run_cycle`) or concurrently over selected event sets
-  (`news_run_batch`).
+- `brain.py`: model-driven loop over the service tools
+  (Kalshi, graph, news cycle launch). `run_goal` budget defaults
+  to 10 iterations, `0` = no cap. Launches `news_loop` cycles
+  singly (`news_run_cycle`) or concurrently over selected event
+  sets (`news_run_batch`).
+- `scripts/run_compass.py`: Compass as a service. Each cycle
+  runs the internal `STANDING_GOAL` upkeep pass (scan graph +
+  discover Kalshi, build via news cycles, close out with derive
+  + findings note), repeated every `--interval-min` with
+  `--loop` (default `--max-iterations 0`, uncapped). Without
+  `--loop` it runs once. `0` = forever, same convention as
+  `news_loop`.
 
 ## Support
 

@@ -1,9 +1,11 @@
-"""Bounded model-driven brain over the service tools.
+"""Model-driven brain over the service tools.
 
-One goal per run: the model reasons over Kalshi/graph/news tool
-results and answers, or the iteration budget stops it. Tools are
-plain functions (see tools/); writes go through the gated proposals
-path only. No loop flag in v1 — schedule one goal per invocation.
+The model reasons over Kalshi/graph/news tool results and answers,
+or the iteration budget stops it (max_iterations <= 0 = no cap).
+Tools are plain functions (see tools/); writes go through the gated
+proposals path only. STANDING_GOAL is the default upkeep pass
+(scan graph + discover Kalshi, build via news cycles, close out);
+scripts/run_compass.py repeats it as a service.
 """
 
 import json
@@ -33,6 +35,23 @@ answer as soon as the goal is met — a correct short run beats a long
 one. You have a fixed iteration budget, enforced outside; unspent
 budget is fine."""
 
+STANDING_GOAL = """Run one full Compass upkeep pass:
+
+1. Scan current state: graph_summary + graph_list_hypotheses
+   (what topics and links exist), kalshi_service_status +
+   kalshi_discover_events (what is open now).
+2. Diff them: name which open events are new vs already graphed,
+   and which graphed topics deserve a fresh-news revisit.
+3. Build: sync the watchlist to the chosen events, trigger a
+   sweep for newcomers, then investigate with news — one
+   news_run_cycle for a narrow set, or news_run_batch with one
+   entry per event set (distinct event_filter each) for wide
+   coverage.
+4. Close out: graph_trigger_derive, re-check graph_summary to
+   confirm the revision advanced, post a short ops note with
+   graph_post_finding, then answer with new events added,
+   cycles run, and revision before/after."""
+
 
 def build_registry(graph_url: str, kalshi_url: str,
                    model: str | None = "auto") -> dict:
@@ -58,10 +77,17 @@ def _extract_json(raw: str) -> dict:
 def run_goal(goal: str, registry: dict, model_obj,
              max_iterations: int = 10) -> dict:
     """Drive one goal to an answer or the budget. Returns
-    {ok, answer?, tool_calls, iterations, reason?}."""
+    {ok, answer?, tool_calls, iterations, reason?}.
+
+    max_iterations <= 0 means no cap: run until the model answers
+    (Ctrl-C stops the service loop outside).
+    """
     transcript = [SystemMessage(BRAIN_PROMPT), HumanMessage(goal)]
     tool_calls = 0
-    for i in range(max(1, max_iterations)):
+    i = 0
+    while True:
+        if max_iterations > 0 and i >= max_iterations:
+            break
         try:
             msg = model_obj.invoke(transcript)
             raw = msg.content if isinstance(msg.content, str) else str(
@@ -75,6 +101,7 @@ def run_goal(goal: str, registry: dict, model_obj,
             transcript += [AIMessage(raw), HumanMessage(
                 f"Protocol error ({e}): reply with one JSON object, "
                 '{"tool": name, "args": {...}} or {"answer": ...}.')]
+            i += 1
             continue
         if "answer" in act:
             return {"ok": True, "answer": act["answer"],
@@ -102,6 +129,7 @@ def run_goal(goal: str, registry: dict, model_obj,
                       tool_calls=[{"name": name, "args": args or {},
                                    "id": call_id, "type": "tool_call"}]),
             ToolMessage(content=json.dumps(result), tool_call_id=call_id)]
+        i += 1
     return {"ok": False, "tool_calls": tool_calls,
-            "iterations": max(1, max_iterations),
+            "iterations": i,
             "reason": "iteration budget exhausted"}
