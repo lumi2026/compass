@@ -17,7 +17,8 @@ from sources.ngrams import (
 )
 from squad import Proposal
 from squad.models import resolve_model
-from squad.tools import fetch_article, llm_relevant, llm_summarize, summarize
+from tools.articles import (fetch_article, llm_relevant, llm_summarize,
+                           summarize)
 
 
 def kalshi_markets(event_ticker: str, limit: int = 10) -> list:

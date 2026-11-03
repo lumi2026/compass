@@ -1,6 +1,6 @@
 """Shared agent toolbox: article fetch + text/LLM summary + relevance.
 
-Generic building blocks every squad agent can use (news, investigator,
+Generic building blocks every agent can use (news, investigator,
 graph). No source-specific logic here: callers supply text and key
 subjects. LLM tools take any LangChain chat model and raise on failure
 so callers can fall back to the extractive path.

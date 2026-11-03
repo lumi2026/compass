@@ -7,7 +7,7 @@ Run:  python3 scripts/smoke_news_pipeline.py [--event TICKER]
       [--term WORD ...] [--max-articles N]
 
 Article texts are dumped to /tmp/smoke_articles/ for inspection.
-Stdlib + squad tools only.
+Stdlib + tools/articles only.
 """
 
 import os
@@ -25,7 +25,7 @@ from sources.ngrams import (  # noqa: E402
     snapshot_candidates,
 )
 from squad.news_agent import kalshi_markets  # noqa: E402
-from squad.tools import fetch_article  # noqa: E402
+from tools.articles import fetch_article  # noqa: E402
 
 
 @click.command()

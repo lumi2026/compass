@@ -5,7 +5,7 @@ import json
 
 from sources import ngrams as ng
 from squad import news_agent as na
-from squad import tools as t
+from tools import articles as t
 
 
 def _fixture_gz(path):
