@@ -32,7 +32,10 @@ def news_tools(graph_url: str, kalshi_url: str,
                 max_pairs=int(job.get("max_pairs", 10)),
                 mode_pin=mode_pin, model=model,
                 event_limit=int(job.get("event_limit", 30)),
-                history_snaps=int(job.get("history_snaps", 1)))
+                history_snaps=int(job.get("history_snaps", 1)),
+                history_hours=float(job.get("history_hours", 48)),
+                history_stride_hours=float(
+                    job.get("history_stride_hours", 6)))
         except Exception as e:
             return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
@@ -40,6 +43,8 @@ def news_tools(graph_url: str, kalshi_url: str,
                        event_limit: int = 30,
                        max_pairs: int = 10,
                        history_snaps: int = 1,
+                       history_hours: float = 48,
+                       history_stride_hours: float = 6,
                        event_filter: str = "") -> dict:
         """Run one news_loop subagent cycle (discover->scan->pair->propose->commit)."""
         try:
@@ -49,13 +54,16 @@ def news_tools(graph_url: str, kalshi_url: str,
         return _run_one({"mode_pin": mode_pin, "event_limit": event_limit,
                          "max_pairs": max_pairs,
                          "history_snaps": history_snaps,
+                         "history_hours": history_hours,
+                         "history_stride_hours": history_stride_hours,
                          "event_filter": event_filter}, 0)
 
     def run_news_batch(cycles_json: str, max_workers: int = 4) -> dict:
         """Launch several news_loop subagent cycles concurrently.
 
         cycles_json: JSON list of per-cycle {mode_pin, event_limit,
-        max_pairs, history_snaps, event_filter} objects, one per
+        max_pairs, history_snaps, history_hours,
+        history_stride_hours, event_filter} objects, one per
         selected event set. Results come back in input order.
         """
         try:

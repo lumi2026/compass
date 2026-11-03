@@ -37,20 +37,28 @@ budget is fine."""
 
 STANDING_GOAL = """Run one full Compass upkeep pass:
 
-1. Scan current state: graph_summary + graph_list_hypotheses
-   (what topics and links exist), kalshi_service_status +
-   kalshi_discover_events (what is open now).
-2. Diff them: name which open events are new vs already graphed,
-   and which graphed topics deserve a fresh-news revisit.
-3. Build: sync the watchlist to the chosen events, trigger a
-   sweep for newcomers, then investigate with news — one
-   news_run_cycle for a narrow set, or news_run_batch with one
-   entry per event set (distinct event_filter each) for wide
-   coverage.
-4. Close out: graph_trigger_derive, re-check graph_summary to
-   confirm the revision advanced, post a short ops note with
-   graph_post_finding, then answer with new events added,
-   cycles run, and revision before/after."""
+1. Snapshot the graph: graph_summary + graph_list_hypotheses.
+   Record every existing kalshi: topic already graphed.
+2. Discover Kalshi now: kalshi_service_status +
+   kalshi_discover_events. Diff against the snapshot and name
+   which open events are NEW (not yet graphed) vs already
+   standing.
+3. Search news for existing + new topics: kalshi_sync_watchlist
+   to the chosen events, kalshi_trigger_sweep for newcomers,
+   then fan out news work — one news_run_cycle for a narrow set,
+   or news_run_batch with one entry per event set (distinct
+   event_filter each) for wide coverage. Each news agent builds
+   the graph internally (discover->scan->pair->propose->commit).
+   A failing news agent is not fatal: note it, ignore it, and
+   continue with the rest.
+4. Close out when all news agents complete: graph_trigger_derive,
+   re-check graph_summary to confirm the revision advanced, post
+   a short ops note with graph_post_finding, then answer with new
+   events added, cycles run, and revision before/after. The outer
+   service waits X minutes between passes; when current news is
+   fully scanned, stride back in time (history_snaps > 1 with
+   larger history_hours / history_stride_hours) instead of
+   rescanning the same window."""
 
 
 def build_registry(graph_url: str, kalshi_url: str,
