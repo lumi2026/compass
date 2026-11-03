@@ -81,6 +81,11 @@ Start order matters: graph first, then kalshi, then the loops, then the view.
   `uv run python scripts/news_loop.py --graph-url http://127.0.0.1:8090 --kalshi-url http://127.0.0.1:8080 --event KXSPACEXMARS-30 --loop --interval-min 15`
 - Terminal 5 (view):
   `cd view && npm install && npm run dev` — open http://localhost:5173
+- Terminal 6 (audit loop — only unaudited hypotheses, keeps recorded
+  to `data/audit_state.json`, never re-audited, nothing deleted):
+  `uv run python scripts/audit_loop.py --loop --interval-min 60`
+  (`--once` for one pass, `--dry-run` to print verdicts without
+  posting, `--model None` to keep everything without LLM calls)
 
 The loop only writes Kalshi via `sync_watchlist` (`POST /topics`); the Kalshi terminal stays quiet by design (`log_message` silenced). Kalshi→graph odds publishing stays off until `POST /publish/graph` + `POST /publish/sweep` are run by hand.
 

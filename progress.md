@@ -842,6 +842,22 @@ button refits the camera (`zoomToFit`) and clears selection.
 Verified: view tests 16/16, build clean, real-data probe (GDP-34:
 5 hypotheses titled).
 
+## 2026-11-03 — independent audit loop (unaudited only)
+
+Achievement: `scripts/audit_loop.py` runs by itself (`--loop`,
+default 60 min) and audits only hypotheses with no verdict yet —
+graph Audit challengers plus `data/audit_state.json` keeps make
+repeat passes free and idempotent. Fresh vetoes post Audit +
+`challenges`; keeps persist to state only; nothing deleted, ever.
+First live pass: 11 audited (11 LLM calls), 10 vetoed with specific
+reasons (Mexico-INEGI vs US-GDP on 8, Modi visit vs successions,
+biotech vs Mars/Mamdani), 1 kept (NFL Mahomes×Allen, genuinely
+shared story) — rev 98 → 108, 10 Audit nodes + edges. Rerun and
+`--loop --max-cycles 1` both return zero-work cleanly. Caveat kept
+from before: Oct-30 called one GDP link genuine, the loop vetoes
+its cousins — auditor inconsistency stands, hence flag-only.
+Verified: 7 new offline tests, suite 161/161 green. Server stopped.
+
 ## 2026-11-03 — new day
 
 Carried over: replay (`?at=` odds scrub so the time slider moves
