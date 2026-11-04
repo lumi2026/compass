@@ -47,10 +47,13 @@ STANDING_GOAL = """Run one full Compass upkeep pass:
    to the chosen events, kalshi_trigger_sweep for newcomers,
    then fan out news work — one news_run_cycle for a narrow set,
    or news_run_batch with one entry per event set (distinct
-   event_filter each) for wide coverage. Each news agent builds
-   the graph internally (discover->scan->pair->propose->commit).
-   A failing news agent is not fatal: note it, ignore it, and
-   continue with the rest.
+   event_filter each) for wide coverage. First call news_next_steps
+   and pass its event_filter/mode_pin/history_* into the cycle jobs
+   (skip keys that are empty) — the loop carries follow-up digs,
+   challenge re-scans, and deep rounds between cycles on its own.
+   Each news agent builds the graph internally
+   (discover->scan->pair->propose->commit). A failing news agent
+   is not fatal: note it, ignore it, and continue with the rest.
 4. Close out when all news agents complete: graph_trigger_derive,
    re-check graph_summary to confirm the revision advanced, post
    a short ops note with graph_post_finding, then answer with new

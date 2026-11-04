@@ -13,9 +13,7 @@ lanes take injected data or call `sources/` + `tools/articles.py`.
 - `Skeptic`: vetoes weak proposals (confidence < 0.3, empty action/entity). Only approved ones commit.
 - `Orchestrator`: protocol fan-out to lanes, gate through Skeptic.
   Used by `scripts/cross_link.py` and tests; the live loop instead runs
-  cheaper deterministic STAGES in `scripts/news_loop.py`, and
-  `scripts/orchestrate.py` supervises round policy (which mode, when to
-  dig deeper) without spending model calls.
+  cheaper deterministic STAGES in `scripts/news_loop.py`.
 - `WorkspaceTask` / `feedback_to_task`: human feedback (`explore | ask
   | challenge`) mapped to a typed task for the queue. Accepted by the
   gate, not yet wired to a live UI loop.
@@ -81,6 +79,12 @@ lanes take injected data or call `sources/` + `tools/articles.py`.
   without tracing, flushes explicitly with it. Called by the
   `scripts/run_*` runners, so a forgotten setup call means zero runs —
   that exact silence has bitten before.
+- `next_steps.py`: autonomous carry-over between cycles
+  (`compute_next_steps` pure over recent summaries, `apply_next_steps`
+  merges with operator pins). Follow-up endpoints first, challenged
+  links get a same-mode deep dig, two quiet rounds trigger one deep
+  history round. Consumed by the `news_loop --loop` runner and the
+  `news_next_steps` brain tool; explicit `--mode`/`--event` always win.
 
 ## How it fits together
 

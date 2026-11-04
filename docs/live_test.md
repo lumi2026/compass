@@ -92,8 +92,10 @@ Start order matters: graph first, then kalshi, then the loops, then the view.
   to `--event-limit` newcomers; newcomers get Event nodes posted.
   Each cycle is five deterministic subagent stages — discover, scan,
   pair, propose, commit — dispatchable individually via
-  `run_stage(name, ctx)` for a future orchestrator; `run_cycle` is
-  the reference dispatcher.)
+  `run_stage(name, ctx)`. In `--loop` the runner carries next steps
+  itself (follow-up digs, challenge re-scans, deep round after two
+  quiet cycles; `--no-auto-next` disables, explicit `--mode`/`--event`
+  always win); `run_cycle` is the reference dispatcher.)
 - Terminal 4 (news loop B, a different `--event` slice, same graph):
   `uv run python scripts/news_loop.py --graph-url http://127.0.0.1:8090 --kalshi-url http://127.0.0.1:8080 --event KXSPACEXMARS-30 --loop --interval-min 15`
 - Terminal 5 (view):

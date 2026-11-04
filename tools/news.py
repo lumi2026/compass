@@ -5,6 +5,10 @@ from __future__ import annotations
 import concurrent.futures
 import json
 
+from squad.next_steps import KEEP_RECENT, compute_next_steps
+
+_RECENT: list = []
+
 
 def news_tools(graph_url: str, kalshi_url: str,
                model: str | None = "auto") -> dict:
@@ -26,7 +30,7 @@ def news_tools(graph_url: str, kalshi_url: str,
                 t.strip() for t in str(raw_filter or "").split(",")
                 if t.strip())
         try:
-            return nl.run_cycle(
+            out = nl.run_cycle(
                 graph_url, kalshi_url, cycle=cycle,
                 event_slice=event_slice,
                 max_pairs=int(job.get("max_pairs", 10)),
@@ -38,6 +42,9 @@ def news_tools(graph_url: str, kalshi_url: str,
                     job.get("history_stride_hours", 6)))
         except Exception as e:
             return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+        _RECENT.append(out)
+        del _RECENT[:-KEEP_RECENT]
+        return out
 
     def run_news_cycle(mode_pin: str = "",
                        event_limit: int = 30,
@@ -93,6 +100,14 @@ def news_tools(graph_url: str, kalshi_url: str,
         return {"ok": all(r.get("ok") for r in results),
                 "results": results}
 
+    def next_steps() -> dict:
+        """Autonomous next-cycle params from recent cycle summaries."""
+        try:
+            nxt = compute_next_steps(_RECENT)
+        except Exception as e:
+            return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+        return {"ok": True, **nxt}
+
     return {
         "news_run_cycle": {
             "description": "Launch one news_loop subagent cycle "
@@ -103,4 +118,10 @@ def news_tools(graph_url: str, kalshi_url: str,
                            "concurrently over selected event sets "
                            "(JSON list); results in input order.",
             "func": run_news_batch},
+        "news_next_steps": {
+            "description": "Next-cycle params from recent summaries "
+                           "(follow-up focus, challenge re-scan, deep "
+                           "rounds). Pass event_filter/mode_pin/history_* "
+                           "into the next cycle jobs.",
+            "func": next_steps},
     }

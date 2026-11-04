@@ -781,6 +781,9 @@ def stage_commit(ctx: dict) -> dict:
             "revision": posted.get("revision"),
             "derived_fresh": fresh,
             "followups": len(followups),
+            "followup_events": [
+                {"event_ticker": f["event_ticker"], "via": f["via"]}
+                for f in followups],
             "llm_calls": ctx.get("llm_calls", 0),
             "vetoed": ctx.get("vetoed", 0)}
 
@@ -925,11 +928,18 @@ def _odds_cycle(graph_url: str, kalshi_url: str, topics: list[dict],
 @click.option("--sync-topics/--no-sync-topics", default=True,
               help="push discovered events to the kalshi service "
               "watchlist each cycle (fail-open)")
+@click.option("--auto-next/--no-auto-next", default=True,
+              help="carry next steps between cycles (follow-up digs, "
+              "challenge re-scans, deep rounds after quiet streaks); "
+              "explicit --mode/--event always win")
 def main(graph_url, kalshi_url, interval_min, event, max_pairs, mode,
          model, once, loop, max_cycles, event_limit, history_snaps,
          history_hours, history_stride_hours,
-         langsmith_project, deliberate, sync_topics) -> None:
+         langsmith_project, deliberate, sync_topics,
+         auto_next) -> None:
     from services.kalshi_auth import load_dotenv  # noqa: E402
+    from squad.next_steps import (  # noqa: E402
+        apply_next_steps, compute_next_steps)
     from squad.tracing import setup_langsmith, squad_span  # noqa: E402
 
     load_dotenv()
@@ -938,15 +948,32 @@ def main(graph_url, kalshi_url, interval_min, event, max_pairs, mode,
         f"project={ls['project']}")
     if model == "None":
         model = None
+    cli_depth = {"history_snaps": history_snaps,
+                 "history_hours": history_hours,
+                 "history_stride_hours": history_stride_hours}
+    recent: list = []
     cycle = 0
     while True:
+        if auto_next:
+            nxt = apply_next_steps(
+                mode, tuple(event), cli_depth,
+                compute_next_steps(recent))
+            log(f"cycle={cycle} next: mode_pin={nxt['mode_pin']} "
+                f"events={list(nxt['event_slice']) or 'all'} "
+                f"snaps={nxt['history_snaps']} "
+                f"({'; '.join(nxt['reasons'])})")
+        else:
+            nxt = {"mode_pin": mode, "event_slice": tuple(event),
+                   "reasons": ["auto-next off"], **cli_depth}
         with squad_span("news-loop-cycle",
                         {"cycle": cycle, "mode": mode or "rotate"}) as span:
             try:
                 summary = run_cycle(graph_url, kalshi_url, cycle,
-                                    tuple(event), max_pairs, mode, model,
-                                    event_limit, history_snaps, history_hours,
-                                    history_stride_hours, deliberate,
+                                    nxt["event_slice"], max_pairs,
+                                    nxt["mode_pin"], model,
+                                    event_limit, nxt["history_snaps"],
+                                    nxt["history_hours"],
+                                    nxt["history_stride_hours"], deliberate,
                                     sync_topics)
             except Exception as e:  # keep the loop alive; record and retry
                 summary = {"ok": False,
@@ -955,6 +982,7 @@ def main(graph_url, kalshi_url, interval_min, event, max_pairs, mode,
         stamp = datetime.datetime.now(datetime.timezone.utc).strftime(
             "%Y-%m-%dT%H:%M:%SZ")
         print(f"[news-loop] {stamp} cycle={cycle} {summary}", flush=True)
+        recent = (recent + [summary])[-5:]
         if not loop:
             sys.exit(0 if summary.get("ok") else 1)
         cycle += 1
