@@ -17,6 +17,11 @@ from .base import MarketEvent, SourcePlugin
 
 API_BASE = "https://api.elections.kalshi.com/trade-api/v2"
 TIMEOUT_S = 20
+# Probed: /events?limit above 200 returns 400 {"code": "bad_request"}.
+# Fetchers must clamp; newcomers past the first page need cursor
+# pagination (not yet implemented — standing-set-first discovery
+# covers the demo).
+EVENTS_LIMIT_MAX = 200
 
 
 def _error_with_body(e) -> Exception:

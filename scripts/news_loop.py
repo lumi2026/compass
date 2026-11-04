@@ -30,6 +30,7 @@ sys.path.insert(0, ".")
 from graph import article_id  # noqa: E402
 from scripts.cross_link import extract_terms  # noqa: E402
 from squad.auditor import audit_pair  # noqa: E402
+from sources.kalshi import EVENTS_LIMIT_MAX  # noqa: E402
 from sources.ngrams import (  # noqa: E402
     articles_from_mentions,
     ngram_mentions,
@@ -45,8 +46,17 @@ MODES = ("co-mention", "shared-subject", "burst",
 
 
 def _get_json(url: str, timeout: int = 120):
-    with urllib.request.urlopen(url, timeout=timeout) as resp:
-        return json.loads(resp.read() or b"{}")
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            return json.loads(resp.read() or b"{}")
+    except Exception as e:
+        # Transient 502s from the kalshi service (Kalshi upstream
+        # flakes) observed mid-loop. One retry saves the cycle; the
+        # caller still decides (fail-soft paths stay fail-soft).
+        log(f"GET retry: {url.rsplit('/', 1)[-1]} ({type(e).__name__})")
+        time.sleep(5)
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            return json.loads(resp.read() or b"{}")
 
 
 def _post_json(url: str, payload: dict, timeout: int = 120) -> dict:
@@ -97,9 +107,11 @@ def discover_topics(kalshi_url: str, event_slice: tuple = (),
         return [t for t in topics if t["terms"]]
     known = set(_graph_events(graph_url)) if graph_url else set()
     # Newcomers are capped at `limit`; fetch past the standing set so a
-    # full head of known events cannot hide them.
+    # full head of known events cannot hide them. Clamped: Kalshi 400s
+    # /events above EVENTS_LIMIT_MAX, and this sum grows with the graph.
+    fetch_limit = min(limit + len(known), EVENTS_LIMIT_MAX)
     data = _get_json(
-        kalshi_url.rstrip("/") + f"/events?limit={limit + len(known)}")
+        kalshi_url.rstrip("/") + f"/events?limit={fetch_limit}")
     open_evts = [e for e in data.get("events", [])
                  if e.get("event_ticker")]
     standing, fresh = [], []

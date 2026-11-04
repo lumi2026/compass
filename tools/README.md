@@ -49,7 +49,7 @@ calls of their own — the spend stays in the brain + lane LLMs).
 | Tool | Does |
 |---|---|
 | `news_run_cycle` | One cycle: discover → scan → pair → propose → commit. Narrow with `event_filter` / `mode_pin`, stride history with `history_snaps` / `history_hours` / `history_stride_hours` |
-| `news_run_batch` | Several cycles concurrently (ThreadPool, default 4 workers) over distinct event sets; results in input order. Accepts `cycles` (list) or `cycles_json` (string) |
+| `news_run_batch` | Several cycles concurrently (ThreadPool, default 4 workers) over distinct event sets; results in input order. Accepts `cycles` (list), `batches=` alias, or `cycles_json` (string) |
 | `news_propose_step` | Proposes the next executable step from recent summaries (`{"step": {"tool", "args"}, "reasons"}`). The brain executes it first, then continues — this is how the loop starts from its own proposal |
 
 ## Articles (`articles.py`, not a registry)

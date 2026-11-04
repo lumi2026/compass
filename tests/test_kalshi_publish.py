@@ -69,6 +69,27 @@ def test_discover_events():
         {"event_ticker": "E2", "title": "Event E2"}]
 
 
+def test_events_route_clamps_huge_limits():
+    from services.kalshi_server import serve
+
+    many = [f"E{i}" for i in range(250)]
+    svc = Service(KalshiListener(None), FeedStore())
+    svc.src = _StubSrc(many, {})
+    httpd = serve(svc, 0)
+    t = threading.Thread(target=httpd.serve_forever, daemon=True)
+    t.start()
+    try:
+        base = f"http://127.0.0.1:{httpd.server_address[1]}"
+        # Kalshi 400s above 200; the service clamps instead of
+        # forwarding a doomed request (which would 502 here).
+        code, body = _http("GET", base + "/events?limit=500")
+        assert code == 200
+        assert len(body["events"]) == 200
+    finally:
+        httpd.shutdown()
+        t.join(timeout=10)
+
+
 def test_auto_topics_ranks_by_volume():
     svc, _ = _service()
     assert svc.auto_topics(top_k=1) == ["E1-A", "E1-B"]

@@ -44,24 +44,29 @@ def compute_next_steps(recent: list[dict]) -> dict:
     last = ok[-1]
     fups = [f for f in (last.get("followup_events") or [])
             if isinstance(f, dict) and f.get("event_ticker")]
-    if fups:
-        tickers: list[str] = []
-        for f in fups:
-            t = str(f["event_ticker"])
-            if t not in tickers:
-                tickers.append(t)
+    tickers: list[str] = []
+    for f in fups:
+        t = str(f["event_ticker"])
+        if t not in tickers:
+            tickers.append(t)
+    lone = tickers[:1] if len(tickers) == 1 else []
+    if len(tickers) >= 2:
+        # Pairs need 2+ topics: a lone endpoint can't pair with itself.
         via = str(fups[0].get("via") or "") or None
         out = _defaults(f"follow-up dig into {len(tickers)} "
                         f"fresh link endpoint(s)")
         out["event_filter"] = tickers
         out["mode_pin"] = via
         return out
+    lone_note = [f"single follow-up {lone[0]} needs a partner: "
+                   f"not pinned"] if lone else []
     if last.get("vetoed", 0) > 0:
         out = _defaults(f"challenged pair(s) in {last.get('mode')}: "
                         f"same mode, deep dig for more evidence")
         out["mode_pin"] = last.get("mode") or None
         out["deep"] = True
         out["history_snaps"] = DEEP_SNAPS
+        out["reasons"] += lone_note
         return out
     streak = [s for s in ok[-QUIET_STREAK:]
               if s.get("pairs", 0) == 0]
@@ -69,8 +74,11 @@ def compute_next_steps(recent: list[dict]) -> dict:
         out = _defaults("two quiet rounds: one deep history round")
         out["deep"] = True
         out["history_snaps"] = DEEP_SNAPS
+        out["reasons"] += lone_note
         return out
-    return _defaults("rotate")
+    out = _defaults("rotate")
+    out["reasons"] += lone_note
+    return out
 
 
 def apply_next_steps(cli_mode: str | None, cli_events: tuple,

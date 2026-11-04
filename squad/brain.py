@@ -51,6 +51,11 @@ STANDING_GOAL = """Run one full Compass upkeep pass:
    and execute the returned step first — the loop proposes its own
    next move (follow-up dig, challenge re-scan, deep round) from
    recent cycles. Then continue the pass.
+   Exact tool shapes only — the registry has no other arg names:
+   news_run_cycle(mode_pin=, event_filter=, max_pairs=,
+   history_snaps=, history_hours=, history_stride_hours=),
+   news_run_batch(cycles=[{...}]),
+   graph_post_finding(text=, extra_json=).
    Each news agent builds the graph internally
    (discover->scan->pair->propose->commit). A failing news agent
    is not fatal: note it, ignore it, and continue with the rest.

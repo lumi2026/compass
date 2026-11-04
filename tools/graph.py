@@ -91,14 +91,25 @@ def graph_tools(base_url: str) -> dict:
                 "rejected": sum(1 for v in verdicts
                                 if not v.get("committed"))}
 
-    def post_finding(text: str, extra_json: str = "{}") -> dict:
-        """Append an ops note to the findings log (JSON object string)."""
+    def post_finding(text: str = "", extra_json: str = "{}",
+                     **aliases) -> dict:
+        """Append an ops note to the findings log.
+
+        Exact shape: post_finding(text="...", extra_json="{...}").
+        note= and finding= are accepted aliases for text; a dict
+        passed as finding= posts as the finding object itself.
+        """
         try:
-            extra = json.loads(extra_json or "{}")
-            if not isinstance(extra, dict):
-                raise ValueError("extra_json must be an object")
-            data = _post(base_url, "/findings",
-                         {"finding": {"note": text, **extra}})
+            raw = text or aliases.get("note", "") or aliases.get(
+                "finding", "")
+            if isinstance(raw, dict):
+                finding = raw
+            else:
+                extra = json.loads(extra_json or "{}")
+                if not isinstance(extra, dict):
+                    raise ValueError("extra_json must be an object")
+                finding = {"note": str(raw), **extra}
+            data = _post(base_url, "/findings", {"finding": finding})
         except Exception as e:
             return {"ok": False, "error": f"{type(e).__name__}: {e}"}
         return {"ok": True, "posted": data.get("posted", True)}

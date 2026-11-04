@@ -67,17 +67,22 @@ def news_tools(graph_url: str, kalshi_url: str,
 
     def run_news_batch(cycles_json: str | list = "",
                        cycles: list | None = None,
-                       max_workers: int = 4) -> dict:
+                       max_workers: int = 4,
+                       batches: list | None = None) -> dict:
         """Launch several news_loop subagent cycles concurrently.
 
         The job list is per-cycle {mode_pin, event_limit,
         max_pairs, history_snaps, history_hours,
         history_stride_hours, event_filter} objects, one per
-        selected event set. Pass it as a JSON string (cycles_json)
-        or a plain list (cycles, or cycles_json as a list).
+        selected event set. Pass it as cycles=[...] (batches= is
+        an accepted alias; cycles_json takes a JSON string).
         Results come back in input order.
         """
-        jobs = cycles if isinstance(cycles, list) else cycles_json
+        if batches is not None and not isinstance(cycles, list) \
+                and not cycles_json:
+            jobs = batches
+        else:
+            jobs = cycles if isinstance(cycles, list) else cycles_json
         if isinstance(jobs, str):
             try:
                 jobs = json.loads(jobs)

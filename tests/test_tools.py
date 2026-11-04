@@ -157,6 +157,46 @@ def test_news_run_batch_fans_out_in_order(monkeypatch):
     assert [r["events"] for r in out["results"]] == [["E7"]]
 
 
+def test_news_run_batch_accepts_batches_alias(monkeypatch):
+    import scripts.news_loop as nl
+
+    calls = []
+
+    def fake_run_cycle(graph_url, kalshi_url, cycle=0, event_slice=(),
+                       max_pairs=10, mode_pin=None, model="auto",
+                       event_limit=30, history_snaps=1, **kw):
+        calls.append((cycle, event_slice))
+        return {"ok": True, "cycle": cycle,
+                "events": list(event_slice)}
+
+    monkeypatch.setattr(nl, "run_cycle", fake_run_cycle)
+    batch = N.news_tools("http://g", "http://k",
+                         "m")["news_run_batch"]["func"]
+    out = batch(batches=[{"event_filter": "E1"}])
+    assert out["ok"] is True
+    assert [r["events"] for r in out["results"]] == [["E1"]]
+
+
+def test_post_finding_accepts_note_and_finding_aliases(monkeypatch):
+    import tools.graph as G
+
+    posted = {}
+
+    def fake_post(base, path, payload, timeout=120):
+        posted.clear()
+        posted.update(payload)
+        return {"posted": True}
+
+    monkeypatch.setattr(G, "_post", fake_post)
+    func = G.graph_tools("http://g")["graph_post_finding"]["func"]
+    assert func(note="hi") == {"ok": True, "posted": True}
+    assert posted == {"finding": {"note": "hi"}}
+    assert func(finding={"note": "n", "k": 1})["ok"] is True
+    assert posted == {"finding": {"note": "n", "k": 1}}
+    assert func(text="t", extra_json='{"a": 1}')["ok"] is True
+    assert posted == {"finding": {"note": "t", "a": 1}}
+
+
 def test_as_structured_keeps_names():
     from langchain_core.tools import StructuredTool
 

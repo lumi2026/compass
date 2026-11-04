@@ -55,11 +55,12 @@ def test_failed_cycle_is_neutral():
 
 
 def test_followups_beat_quiet_streak():
-    fups = [{"event_ticker": "EC", "via": "shared-subject"}]
+    fups = [{"event_ticker": "EC", "via": "shared-subject"},
+            {"event_ticker": "ED", "via": "shared-subject"}]
     recent = [_summ(pairs=0), _summ(pairs=0),
               _summ(pairs=1, followups=fups)]
     nxt = compute_next_steps(recent)
-    assert nxt["event_filter"] == ["EC"]
+    assert nxt["event_filter"] == ["EC", "ED"]
     assert nxt["mode_pin"] == "shared-subject"
 
 
@@ -95,11 +96,13 @@ def _propose(recent, monkeypatch):
 
 
 def test_propose_followups_become_batch(monkeypatch):
-    fups = [{"event_ticker": "EB", "via": "co-mention"}]
+    fups = [{"event_ticker": "EB", "via": "co-mention"},
+            {"event_ticker": "EA", "via": "co-mention"}]
     out = _propose([_summ(pairs=2, followups=fups)], monkeypatch)
     assert out["step"]["tool"] == "news_run_batch"
     job = out["step"]["args"]["cycles"][0]
-    assert job["event_filter"] == ["EB"] and job["mode_pin"] == "co-mention"
+    assert job["event_filter"] == ["EB", "EA"]
+    assert job["mode_pin"] == "co-mention"
 
 
 def test_propose_challenged_rescans_deep(monkeypatch):
@@ -123,6 +126,94 @@ def test_propose_defaults_to_plain_cycle(monkeypatch):
     assert out["step"] == {"tool": "news_run_cycle", "args": {}}
     out = _propose([], monkeypatch)
     assert out["step"] == {"tool": "news_run_cycle", "args": {}}
+
+
+def test_single_followup_needs_a_partner(monkeypatch):
+    import tools.news as N
+
+    out = _propose(
+        [_summ(pairs=1,
+               followups=[{"event_ticker": "EB",
+                           "via": "co-mention"}])], monkeypatch)
+    assert out["step"] == {"tool": "news_run_cycle", "args": {}}
+    assert any("needs a partner" in r for r in out["reasons"])
+    propose = N.news_tools("http://g", "http://k")[
+        "news_propose_step"]["func"]
+    assert propose.__doc__ is not None
+
+
+def test_discover_retries_transient_502(monkeypatch):
+    import io
+    import json
+    import urllib.error
+
+    import scripts.news_loop as nl
+
+    calls = {"n": 0, "sleeps": []}
+    monkeypatch.setattr(nl.time, "sleep",
+                        lambda s: calls["sleeps"].append(s))
+
+    class Resp:
+        def __init__(self, payload):
+            self._b = io.BytesIO(json.dumps(payload).encode())
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self, n=-1):
+            return self._b.read(n)
+
+    def fake(url, timeout=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise urllib.error.HTTPError(url, 502, "Bad Gateway",
+                                         {}, None)
+        return Resp({"events": []})
+
+    monkeypatch.setattr(nl.urllib.request, "urlopen", fake)
+    assert nl.discover_topics("http://k", ("EA",), limit=30) == []
+    assert calls["n"] == 2
+    assert calls["sleeps"] == [5]
+
+
+def test_discover_clamps_limit_to_kalshi_max(monkeypatch):
+    import scripts.news_loop as nl
+
+    seen = {}
+    monkeypatch.setattr(
+        nl, "_graph_events",
+        lambda url: {f"KX{i:04d}": f"T{i}" for i in range(500)})
+    def fake_get(url, timeout=120):
+        seen["url"] = url
+        return {"events": []}
+
+    monkeypatch.setattr(nl, "_get_json", fake_get)
+    assert nl.discover_topics("http://k", (), limit=30,
+                              graph_url="http://g") == []
+    assert seen["url"].endswith("/events?limit=200")
+
+
+def test_discover_gives_up_after_retry(monkeypatch):
+    import urllib.error
+
+    import scripts.news_loop as nl
+
+    calls = {"n": 0}
+    monkeypatch.setattr(nl.time, "sleep", lambda s: None)
+
+    def fake(url, timeout=None):
+        calls["n"] += 1
+        raise urllib.error.HTTPError(url, 502, "Bad Gateway", {}, None)
+
+    import pytest
+
+    monkeypatch.setattr(nl.urllib.request, "urlopen", fake)
+    with pytest.raises(urllib.error.HTTPError):
+        nl.discover_topics("http://k", (), limit=1)
+    assert calls["n"] == 2
 
 
 def test_commit_summary_carries_followup_events(monkeypatch):

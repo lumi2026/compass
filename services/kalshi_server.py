@@ -23,7 +23,7 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from sources.kalshi import KalshiSource
+from sources.kalshi import EVENTS_LIMIT_MAX, KalshiSource
 
 from .feed_store import FeedStore
 from .kalshi_listener import KalshiListener, TickerState, Update
@@ -381,6 +381,9 @@ def make_handler(service: Service):
                 except (ValueError, TypeError):
                     self._send(400, {"error": "limit must be an integer"})
                     return
+                # Kalshi 400s above EVENTS_LIMIT_MAX: clamp instead of
+                # forwarding a doomed request upstream (which 502s here).
+                limit = max(1, min(limit, EVENTS_LIMIT_MAX))
                 try:
                     events = service.discover_events(limit)
                     _log(f"discover: limit={limit} events={len(events)}")
