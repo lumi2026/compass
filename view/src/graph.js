@@ -258,6 +258,17 @@ export function transformElements(elements, cap = 200, opts = {}) {
       }
     })
     .concat(hypothesisLinks.filter((l) => kept.has(l.source) && kept.has(l.target)))
+  // Neighbours mirror the rendered links exactly, so the Details tab
+  // lists what the eye sees. Collapsed hypotheses render as
+  // Event->Event edges with no raw counterpart, so the raw pair map
+  // above misses those endpoints (the subject mesh stays excluded:
+  // it never reaches the rendered links).
+  const renderedNbrs = {}
+  for (const l of links) {
+    ;(renderedNbrs[l.source] ??= []).push(l.target)
+    ;(renderedNbrs[l.target] ??= []).push(l.source)
+  }
+  for (const n of nodes) n.neighbors = [...new Set(renderedNbrs[n.id] ?? [])]
   return { nodes, links, totalNodes, totalLinks, capped: totalNodes > nodes.length, marketsHidden, subjectsHidden, subjectLinksHidden }
 }
 

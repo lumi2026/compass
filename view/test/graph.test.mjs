@@ -305,6 +305,15 @@ describe('hypothesis as edge', () => {
     assert.equal(eventSummary(byId.get('kalshi:A'), byId, v.links).hypotheses, 2)
     assert.equal(eventSummary(byId.get('kalshi:B'), byId, v.links).hypotheses, 1)
   })
+
+  it('lists collapsed-hypothesis endpoints as neighbours', () => {
+    const v = transformElements(hyp, 200)
+    const byId = new Map(v.nodes.map((n) => [n.id, n]))
+    // h1 renders as an A-B edge with no raw counterpart: both ends
+    // must still list each other, mirroring the visible link
+    assert.ok(byId.get('kalshi:A').neighbors.includes('kalshi:B'))
+    assert.ok(byId.get('kalshi:B').neighbors.includes('kalshi:A'))
+  })
 })
 
 describe('evidence budget', () => {
