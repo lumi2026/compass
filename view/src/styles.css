@@ -19,6 +19,9 @@ body { margin: 0; font-family: system-ui, -apple-system, sans-serif; font-size: 
 #info .nid { font-size: 12px; color: #777; word-break: break-all; margin-top: 8px; }
 #info .meta { margin-top: 12px; font-size: 13px; color: #777; }
 #info ul { margin: 6px 0; padding-left: 18px; }
+#info ul.legend { list-style: none; padding-left: 0; }
+#info ul.legend li { display: flex; align-items: center; gap: 8px; }
+#info .swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
 @media (max-width: 700px) {
   #wrap { flex-direction: column; height: auto; }
   #view3d { height: 60vh; }

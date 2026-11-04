@@ -39,7 +39,7 @@ def _topics():
 
 
 def test_next_mode_rotates_and_pins():
-    assert [nl.next_mode(c) for c in range(6)] == list(nl.MODES) + [nl.MODES[0]]
+    assert [nl.next_mode(c) for c in range(7)] == list(nl.MODES) + [nl.MODES[0]]
     assert nl.next_mode(99, pinned="burst") == "burst"
 
 
@@ -376,6 +376,111 @@ def test_entity_overlap_skips_generic_context():
             "alpha beta": {"urls": []}, "beta gamma": {"urls": []}}
     assert nl.entity_overlap_pairs(
         topics, kept, url_terms=nl._url_term_hits(hits)) == []
+
+
+def test_hypothesis_type_covers_all_modes():
+    assert set(nl.MODE_HYPOTHESIS_TYPE) == set(nl.MODES)
+    assert set(nl.MODE_HYPOTHESIS_TYPE.values()) <= set(nl.HYPOTHESIS_TYPES)
+
+
+def test_extract_places_city_country_not_person():
+    out = nl.extract_places(["Mayor Smith visits Gaza City summit",
+                             "Kevin Warsh out as chairman",
+                             "Ukraine peace talks stall"])
+    assert out["Mayor Smith visits Gaza City summit"] == {"Gaza City"}
+    assert out["Kevin Warsh out as chairman"] == set()
+    assert out["Ukraine peace talks stall"] == {"Ukraine"}
+
+
+def _place_mentions():
+    return {
+        "alpha gaza": {"urls": ["u1"], "samples": [
+            {"url": "u1", "pre": "Fighting in", "ngram": "Gaza",
+             "post": "City summit", "date": ""}]},
+        "beta gaza": {"urls": ["u1"], "samples": [
+            {"url": "u1", "pre": "Fighting in", "ngram": "Gaza",
+             "post": "City summit", "date": ""}]},
+    }
+
+
+def test_colocation_pairs_share_place_not_person():
+    topics = [{"event_ticker": "EA", "title": "A",
+               "terms": ["alpha gaza"]},
+              {"event_ticker": "EB", "title": "B",
+               "terms": ["beta gaza"]}]
+    mentions = _place_mentions()
+    arts = nl.articles_from_mentions(mentions, "20261105T000000Z")
+    url_terms = nl._url_term_hits(mentions)
+    kept = nl._kept_from_articles(arts, "20261105T000000Z", topics,
+                                  url_terms)
+    pairs = nl.colocation_pairs(topics, kept, url_terms=url_terms)
+    assert len(pairs) == 1
+    assert (pairs[0]["a"], pairs[0]["b"]) == ("EA", "EB")
+    assert pairs[0]["mode"] == "co-location"
+    assert pairs[0]["place"] == "Gaza"
+
+
+def test_colocation_pairs_ignores_shared_person():
+    topics = [{"event_ticker": "EA", "title": "A", "terms": ["alpha beta"]},
+              {"event_ticker": "EB", "title": "B", "terms": ["beta gamma"]}]
+    kept = [
+        {"url": "u1", "title": "Smith visits summit",
+         "topics": ["EA"], "subjects": ["EA", "alpha beta"]},
+        {"url": "u2", "title": "Smith opens office today",
+         "topics": ["EB"], "subjects": ["EB", "beta gamma"]},
+    ]
+    assert nl.colocation_pairs(topics, kept) == []
+
+
+def test_stage_pair_colocation_dispatch():
+    topics = [{"event_ticker": "EA", "title": "A", "terms": ["alpha gaza"]},
+              {"event_ticker": "EB", "title": "B", "terms": ["beta gaza"]}]
+    ctx = {"topics": topics, "mentions": _place_mentions(),
+           "snap_ts": "20261105T000000Z", "mode": "co-location",
+           "max_pairs": 10, "cycle": 0}
+    res = nl.run_stage("pair", ctx)
+    assert len(res["pairs"]) == 1
+    assert res["pairs"][0]["mode"] == "co-location"
+
+
+def test_meta_hypotheses_chain_cites_both_links():
+    live = [{"a": "A", "b": "B", "urls": ["u1"], "mode": "co-location"},
+            {"a": "B", "b": "C", "urls": ["u2"], "mode": "co-location"}]
+    props = nl.meta_hypotheses(live, {"u1": {}, "u2": {}})
+    by_action = {}
+    for pr in props:
+        by_action.setdefault(pr.action, []).append(pr)
+    assert len(by_action["add-node"]) == 1
+    (node,) = by_action["add-node"]
+    assert node.entity_id == "hypothesis:loop-meta-a-c"
+    import json as _json
+    detail = _json.loads(node.detail)
+    assert detail["props"]["type"] == "co_location"  # unanimous inherits
+    assert detail["props"]["layer"] == 2
+    assert detail["props"]["via"] == ["hypothesis:loop-a-b",
+                                      "hypothesis:loop-b-c"]
+    assert len(by_action["add-edge"]) == 4  # 2 hyp + 2 article links
+
+
+def test_meta_hypotheses_skips_direct_link_and_caps():
+    live = [{"a": "A", "b": "B", "urls": [], "mode": "co-mention"},
+            {"a": "B", "b": "C", "urls": [], "mode": "co-mention"},
+            {"a": "A", "b": "C", "urls": [], "mode": "co-mention"}]
+    assert nl.meta_hypotheses(live, {}) == []
+    star = [{"a": "HUB", "b": f"E{i}", "urls": [], "mode": "co-mention"}
+            for i in range(5)]
+    metas = [pr for pr in nl.meta_hypotheses(star, {})
+             if pr.action == "add-node"]
+    assert len(metas) == 3  # capped
+
+
+def test_meta_hypotheses_mixed_types_share_context():
+    live = [{"a": "A", "b": "B", "urls": [], "mode": "co-location"},
+            {"a": "B", "b": "C", "urls": [], "mode": "odds-correlation"}]
+    (node,) = [pr for pr in nl.meta_hypotheses(live, {})
+               if pr.action == "add-node"]
+    import json as _json
+    assert _json.loads(node.detail)["props"]["type"] == "shared_context"
 
 
 def test_burst_topics_spike_only():

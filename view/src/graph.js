@@ -16,6 +16,33 @@ export const EDGE_COLORS = {
   'has-market': '#94a3b8',
 }
 
+// Closed hypothesis relation taxonomy (mirrors HYPOTHESIS_TYPES in
+// scripts/news_loop.py): each link type gets its own edge color so the
+// globe reads by relation, not just by link. Legacy nodes carry only
+// props.mode and fall back through LEGACY_MODE_TYPE.
+export const HYPOTHESIS_COLORS = {
+  co_mention: '#7c3aed',
+  co_location: '#0284c7',
+  shared_context: '#d97706',
+  co_outcome: '#059669',
+}
+
+export const LEGACY_MODE_TYPE = {
+  'co-mention': 'co_mention',
+  'shared-subject': 'shared_context',
+  burst: 'co_mention',
+  'entity-overlap': 'co_mention',
+  transitive: 'shared_context',
+  'odds-correlation': 'co_outcome',
+}
+
+export function hypothesisType(props = {}) {
+  if (props.type && HYPOTHESIS_COLORS[props.type]) return props.type
+  const legacy = LEGACY_MODE_TYPE[props.mode]
+  if (legacy) return legacy
+  return 'co_mention'
+}
+
 export const SKELETON_KINDS = ['Event', 'Subject', 'Hypothesis', 'Happening']
 
 const SHORT_LEN = 28
@@ -95,24 +122,36 @@ export function transformElements(elements, cap = 200, opts = {}) {
     else if (d.label === 'challenges') (challengesTo[d.target] ??= []).push(d.source)
   }
   const collapsed = new Set()
+  // Layer-2 meta links (hypothesis supports hypothesis) pin both ends
+  // as nodes: collapsing either would orphan the meta edge.
+  const hypLinked = new Set()
+  for (const d of raw) {
+    if (!('source' in d) || d.label !== 'supports') continue
+    if ((kindOf[d.source] ?? '') === 'Hypothesis' && (kindOf[d.target] ?? '') === 'Hypothesis') {
+      hypLinked.add(d.source)
+      hypLinked.add(d.target)
+    }
+  }
   const hypothesisLinks = []
   for (const d of nodeRows) {
     if ((d.kind || 'Market') !== 'Hypothesis') continue
     const ends = [...new Set((supportsFrom[d.id] ?? []).filter(
       (t) => (kindOf[t] ?? '') === 'Event'))]
-    if (ends.length !== 2) continue
+    if (ends.length !== 2 || hypLinked.has(d.id)) continue
     const evidence = [...new Set((supportsFrom[d.id] ?? []).filter(
       (t) => (kindOf[t] ?? '') === 'Article'))]
     const audits = challengesTo[d.id] ?? []
     const [a, b] = ends.sort()
+    const htype = hypothesisType(d.props ?? {})
     hypothesisLinks.push({
       source: a,
       target: b,
       rel: 'hypothesizes',
-      color: '#7c3aed',
+      color: HYPOTHESIS_COLORS[htype],
       w: 2,
       hypothesis: {
         title: String(d.label ?? d.id),
+        type: htype,
         evidence: evidence.map((id) => ({ id, label: String(rawById[id]?.label ?? id) })),
         challenged: audits.length > 0,
         challengeReason: audits.length ? String(rawById[audits[0]]?.label ?? '') : '',
@@ -164,12 +203,17 @@ export function transformElements(elements, cap = 200, opts = {}) {
   const nodes = nodeRows.map((d) => {
     const kind = d.kind || 'Market'
     const deg = degree[d.id] ?? 0
+    // Uncollapsed Hypothesis nodes (single-endpoint layer-1, layer-2
+    // metas) wear their relation color instead of the generic purple.
+    const color = kind === 'Hypothesis'
+      ? HYPOTHESIS_COLORS[hypothesisType(d.props ?? {})]
+      : KIND_COLORS[kind] ?? '#6b7fa3'
     return {
       id: d.id,
       label: String(d.label ?? d.id),
       short: short(String(d.label ?? d.id)),
       kind,
-      color: KIND_COLORS[kind] ?? '#6b7fa3',
+      color,
       val: Math.round((1 + Math.min(deg, 12) / 3) * 100) / 100,
       deg,
       neighbors: [...new Set(neighbours[d.id] ?? [])].filter((m) => kept.has(m)),
@@ -186,13 +230,21 @@ export function transformElements(elements, cap = 200, opts = {}) {
   const links = raw
     .filter((d) => 'source' in d && kept.has(d.source) && kept.has(d.target))
     .filter((d) => (d.label ?? '') !== 'shares-subject-with')
-    .map((d) => ({
-      source: d.source,
-      target: d.target,
-      rel: d.label ?? '',
-      color: EDGE_COLORS[d.label] ?? '#999999',
-      w: d.label === 'shares-subject-with' ? 3 : 1,
-    }))
+    .map((d) => {
+      // Layer-2 meta links (hypothesis supports hypothesis) wear the
+      // citing hypothesis's relation color instead of generic purple.
+      let color = EDGE_COLORS[d.label] ?? '#999999'
+      if (d.label === 'supports' && (kindOf[d.source] ?? '') === 'Hypothesis') {
+        color = HYPOTHESIS_COLORS[hypothesisType(rawById[d.source]?.props ?? {})]
+      }
+      return {
+        source: d.source,
+        target: d.target,
+        rel: d.label ?? '',
+        color,
+        w: d.label === 'shares-subject-with' ? 3 : 1,
+      }
+    })
     .concat(hypothesisLinks.filter((l) => kept.has(l.source) && kept.has(l.target)))
   return { nodes, links, totalNodes, totalLinks, capped: totalNodes > nodes.length, marketsHidden, subjectsHidden, subjectLinksHidden }
 }

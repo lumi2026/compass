@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import GraphCanvas from './GraphCanvas'
-import { eventSummary, transformElements } from './graph'
+import { HYPOTHESIS_COLORS, eventSummary, transformElements } from './graph'
 import { useGraph } from './useGraph'
 
 function EventAbout({ node, byId, links }) {
@@ -110,7 +110,9 @@ export default function App() {
     detail = (
       <div>
         <h2>{h?.title ?? sel.rel}</h2>
-        <div className="kind">{h ? 'hypothesis link' : 'link'}</div>
+        <div className="kind">
+          {h ? `hypothesis link · ${h.type ?? 'co_mention'}` : 'link'}
+        </div>
         <div>
           {byId.get(sel.source)?.label ?? sel.source} →{' '}
           {byId.get(sel.target)?.label ?? sel.target}
@@ -207,6 +209,20 @@ export default function App() {
         <aside id="info">
           <h2>Details</h2>
           {detail}
+          <div className="meta">Hypothesis links</div>
+          <ul className="legend">
+            {[
+              ['co_mention', 'shared articles'],
+              ['co_location', 'shared place'],
+              ['shared_context', 'shared theme'],
+              ['co_outcome', 'correlated odds'],
+            ].map(([t, what]) => (
+              <li key={t}>
+                <span className="swatch" style={{ background: HYPOTHESIS_COLORS[t] }} />
+                {what}
+              </li>
+            ))}
+          </ul>
           <div className="meta">
             nodes {counts.nodes} · edges {counts.edges} · rev {revision}
           </div>

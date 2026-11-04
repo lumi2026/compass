@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { centerOnNode, eventSummary, spherePoint, transformElements, zoomCamera } from '../src/graph.js'
+import { HYPOTHESIS_COLORS, centerOnNode, eventSummary, hypothesisType, spherePoint, transformElements, zoomCamera } from '../src/graph.js'
 
 class V {
   constructor(x = 0, y = 0, z = 0) {
@@ -300,6 +300,59 @@ describe('evidence budget', () => {
     assert.ok(!off.nodes.some((n) => n.kind === 'Market'))
     const on = transformElements(els, 4, { showMarkets: true })
     assert.ok(on.nodes.some((n) => n.id === 'market:A-1'))
+  })
+})
+
+describe('hypothesis types', () => {
+  const typed = [
+    NM('kalshi:A', 'Event', 'A'),
+    NM('kalshi:B', 'Event', 'B'),
+    NM('hypothesis:h1', 'Hypothesis', 'A x B in Gaza',
+      { type: 'co_location', mode: 'co-location', evidence: 1 }),
+    NM('article:1', 'Article', 'Gaza summit'),
+    E('hypothesis:h1', 'kalshi:A', 'supports'),
+    E('hypothesis:h1', 'kalshi:B', 'supports'),
+    E('hypothesis:h1', 'article:1', 'supports'),
+  ]
+
+  it('maps explicit types, legacy modes, and unknown props', () => {
+    assert.equal(hypothesisType({ type: 'co_location' }), 'co_location')
+    assert.equal(hypothesisType({ mode: 'shared-subject' }), 'shared_context')
+    assert.equal(hypothesisType({ mode: 'odds-correlation' }), 'co_outcome')
+    assert.equal(hypothesisType({}), 'co_mention')
+    assert.equal(hypothesisType({ type: 'bogus' }), 'co_mention')
+  })
+
+  it('colors collapsed links by relation type and carries it', () => {
+    const v = transformElements(typed, 200)
+    const [l] = v.links.filter((x) => x.rel === 'hypothesizes')
+    assert.equal(l.color, HYPOTHESIS_COLORS.co_location)
+    assert.equal(l.hypothesis.type, 'co_location')
+  })
+
+  it('colors uncollapsed hypothesis nodes by type', () => {
+    const els = [
+      NM('kalshi:A', 'Event', 'A'),
+      NM('hypothesis:h2', 'Hypothesis', 'lonely odds',
+        { type: 'co_outcome', mode: 'odds-correlation' }),
+      E('hypothesis:h2', 'kalshi:A', 'supports'),
+    ]
+    const v = transformElements(els, 200)
+    const h2 = v.nodes.find((n) => n.id === 'hypothesis:h2')
+    assert.equal(h2.color, HYPOTHESIS_COLORS.co_outcome)
+  })
+
+  it('colors hyp-to-hyp supports edges by the citing type', () => {
+    const els = typed.concat([
+      NM('hypothesis:h2', 'Hypothesis', 'meta', { type: 'shared_context' }),
+      E('hypothesis:h2', 'hypothesis:h1', 'supports'),
+    ])
+    const v = transformElements(els, 200)
+    // h1 stays a node (it is meta-linked, not collapsed) ...
+    assert.ok(v.nodes.some((n) => n.id === 'hypothesis:h1'))
+    assert.ok(v.nodes.some((n) => n.id === 'hypothesis:h2'))
+    const [l] = v.links.filter((x) => x.source === 'hypothesis:h2')
+    assert.equal(l.color, HYPOTHESIS_COLORS.shared_context)
   })
 })
 

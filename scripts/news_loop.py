@@ -10,7 +10,11 @@ Run:  uv run python scripts/news_loop.py --graph-url URL --once
       uv run python scripts/news_loop.py --loop --interval-min 15
 
 Modes rotate per cycle: co-mention, shared-subject, burst,
-entity-overlap, odds-correlation. Pin one with --mode for tests.
+entity-overlap, co-location, odds-correlation. Each pair becomes a
+typed Hypothesis (co_mention, shared_context, co_location, co_outcome);
+layer-1 pairs sharing an event additionally nominate a transitive
+meta-hypothesis citing both links as evidence. Pin one with --mode
+for tests.
 """
 
 import concurrent.futures
@@ -42,7 +46,93 @@ from squad.models import resolve_model  # noqa: E402
 from squad.news_agent import NewsAgent  # noqa: E402
 
 MODES = ("co-mention", "shared-subject", "burst",
-         "entity-overlap", "odds-correlation")
+         "entity-overlap", "co-location", "odds-correlation")
+
+# Closed hypothesis relation taxonomy (user-pinned, 2026-11-05): every
+# Hypothesis node carries props.type in this set. detectors map their
+# trigger mode via MODE_HYPOTHESIS_TYPE; legacy nodes without a type
+# fall back through LEGACY_MODE_TYPE (old mode strings) in the view.
+HYPOTHESIS_TYPES = ("co_mention", "co_location", "shared_context",
+                    "co_outcome")
+
+MODE_HYPOTHESIS_TYPE = {
+    "co-mention": "co_mention",
+    "shared-subject": "shared_context",
+    "burst": "co_mention",  # bursting topics linked by shared articles
+    "entity-overlap": "co_mention",  # shared mention-level content
+    "co-location": "co_location",
+    "odds-correlation": "co_outcome",
+}
+
+LEGACY_MODE_TYPE = {
+    "co-mention": "co_mention",
+    "shared-subject": "shared_context",
+    "burst": "co_mention",
+    "entity-overlap": "co_mention",
+    "odds-correlation": "co_outcome",
+}
+
+# Place cues for co_location: multi-word entities ending in one of
+# these, or any entity in PLACES (countries + major cities). Precision
+# over recall: a missed place just means no pair, while a false place
+# (a "Park" surname, a "Jordan" firstname) burns an auditor call.
+PLACE_SUFFIXES = frozenset(
+    """city county state province district territory republic kingdom
+    emirates islands island river lake bay harbor harbour airport
+    mountains mountain sea ocean gulf valley desert coast peninsula
+    region prefecture oblast krai canton department municipality commune
+    town village capital port downtown borough parish township heights
+    springs falls beach""".split())
+
+PLACES = frozenset([
+    # countries, incl. common short forms
+    "afghanistan", "albania", "algeria", "andorra", "angola", "argentina",
+    "armenia", "australia", "austria", "azerbaijan", "bahamas", "bahrain",
+    "bangladesh", "barbados", "belarus", "belgium", "belize", "benin",
+    "bhutan", "bolivia", "bosnia", "botswana", "brazil", "brunei",
+    "bulgaria", "burkina faso", "burundi", "cambodia", "cameroon",
+    "canada", "cape verde", "chad", "chile", "china", "colombia",
+    "comoros", "congo", "costa rica", "croatia", "cuba", "cyprus",
+    "czechia", "denmark", "djibouti", "dominica", "ecuador", "egypt",
+    "el salvador", "england", "eritrea", "estonia", "eswatini",
+    "ethiopia", "fiji", "finland", "france", "gabon", "gambia",
+    "georgia", "germany", "ghana", "greece", "grenada", "guatemala",
+    "guinea", "haiti", "honduras", "hungary", "iceland", "india",
+    "indonesia", "iran", "iraq", "ireland", "israel", "italy", "jamaica",
+    "japan", "jordan", "kazakhstan", "kenya", "kiribati", "korea",
+    "kosovo", "kuwait", "kyrgyzstan", "laos", "latvia", "lebanon",
+    "lesotho", "liberia", "libya", "liechtenstein", "lithuania",
+    "luxembourg", "madagascar", "malawi", "malaysia", "maldives",
+    "mali", "malta", "mauritania", "mauritius", "mexico", "micronesia",
+    "moldova", "monaco", "mongolia", "montenegro", "morocco",
+    "mozambique", "myanmar", "namibia", "nauru", "nepal", "netherlands",
+    "nicaragua", "niger", "nigeria", "north macedonia", "norway", "oman",
+    "pakistan", "palau", "palestine", "panama", "papua new guinea",
+    "paraguay", "peru", "philippines", "poland", "portugal", "qatar",
+    "romania", "russia", "rwanda", "samoa", "san marino", "scotland",
+    "serbia", "seychelles", "singapore", "slovakia", "slovenia",
+    "somalia", "south africa", "spain", "sri lanka", "sudan", "suriname",
+    "sweden", "switzerland", "syria", "taiwan", "tajikistan", "tanzania",
+    "thailand", "timor", "togo", "tonga", "tunisia", "turkey",
+    "turkmenistan", "tuvalu", "uganda", "ukraine", "united arab emirates",
+    "united kingdom", "united states", "uruguay", "uzbekistan", "vanuatu",
+    "venezuela", "vietnam", "wales", "yemen", "zambia", "zimbabwe",
+    # major cities and conflict zones that dominate news text
+    "taipei", "hong kong", "gaza", "gaza city", "paris", "london", "kyiv",
+    "moscow", "beijing", "tehran", "baghdad", "damascus", "khartoum",
+    "tripoli", "sanaa", "beirut", "amman", "riyadh", "doha", "ankara",
+    "istanbul", "athens", "rome", "madrid", "berlin", "warsaw", "vienna",
+    "brussels", "amsterdam", "stockholm", "oslo", "helsinki", "dublin",
+    "lisbon", "ottawa", "washington", "jerusalem", "cairo", "lagos",
+    "nairobi", "johannesburg", "kharkiv", "odesa", "mariupol", "bakhmut",
+    "rafah", "kherson", "bucha", "shanghai", "seoul", "tokyo", "delhi",
+    "mumbai", "kolkata", "karachi", "lahore", "dhaka", "jakarta",
+    "manila", "bangkok", "hanoi", "sydney", "melbourne", "auckland",
+    "toronto", "vancouver", "montreal", "chicago", "houston", "miami",
+    "seattle", "boston", "atlanta", "dallas", "denver", "kabul",
+    "islamabad", "quetta", "rio de janeiro", "sao paulo", "new york",
+    "los angeles", "san francisco", "mexico city", "kansas city", "des moines",
+])
 
 
 def _get_json(url: str, timeout: int = 120):
@@ -364,6 +454,25 @@ def extract_entities(titles: list[str]) -> dict[str, set[str]]:
     return out
 
 
+def _is_place(entity: str) -> bool:
+    """Place cue: multi-word ending in a place suffix, or a known place."""
+    words = entity.lower().split()
+    if len(words) > 1 and words[-1] in PLACE_SUFFIXES:
+        return True
+    return entity.lower() in PLACES
+
+
+def extract_places(titles: list[str]) -> dict[str, set[str]]:
+    """Place entities per title: capitalized phrases passing a place cue.
+
+    Same regex as extract_entities, then the PLACES/suffix filter, so
+    persons and offices ("Kevin Warsh", "Senate") never become places
+    while "Gaza City" and "Ukraine" do.
+    """
+    return {title: {e for e in ents if _is_place(e)}
+            for title, ents in extract_entities(titles).items()}
+
+
 def entity_overlap_pairs(topics: list[dict], kept: list[dict],
                          max_pairs: int = 10,
                          url_terms: dict[str, set[str]] | None = None
@@ -415,6 +524,54 @@ def entity_overlap_pairs(topics: list[dict], kept: list[dict],
     return _cap_pairs(pairs, max_pairs)
 
 
+def colocation_pairs(topics: list[dict], kept: list[dict],
+                     max_pairs: int = 10,
+                     url_terms: dict[str, set[str]] | None = None
+                     ) -> list[dict]:
+    """Pairs whose kept articles share a PLACE entity (co_location).
+
+    Same anchored-context gating as entity_overlap_pairs, but the
+    shared entity must pass the place cue: two topics whose articles
+    both ground in "Gaza" link; two sharing "Smith" do not.
+    """
+    anchored_of = {t["event_ticker"]: set(anchored_terms(t.get("terms", [])))
+                   for t in topics}
+    place_by_topic: dict[str, dict[str, set[str]]] = {}
+    for t in topics:
+        ticker = t["event_ticker"]
+        own = anchored_of.get(ticker) or set()
+        titles = []
+        for k in kept:
+            if ticker not in k.get("topics", []):
+                continue
+            if own and "subjects" in k:
+                cover = set(k.get("subjects", []))
+                if url_terms is not None:
+                    cover |= url_terms.get(k["url"], set())
+                if not (cover & own):
+                    continue
+            titles.append(k["title"])
+        merged: dict[str, set[str]] = {}
+        for title, places in extract_places(titles).items():
+            for e in places:
+                merged.setdefault(e, set()).add(title)
+        place_by_topic[ticker] = merged
+    keys = sorted(place_by_topic)
+    pairs = []
+    for i, a in enumerate(keys):
+        for b in keys[i + 1:]:
+            for e in sorted(set(place_by_topic[a]) & set(place_by_topic[b])):
+                urls = sorted(k["url"] for k in kept
+                              if k["title"] in place_by_topic[a][e]
+                              or k["title"] in place_by_topic[b][e])
+                pairs.append({"a": a, "b": b, "urls": urls,
+                              "mode": "co-location", "place": e})
+                break
+    pairs.sort(key=lambda p: -len(p["urls"]))
+    pairs = _prefer_cross_family(pairs, topics)
+    return _cap_pairs(pairs, max_pairs)
+
+
 def _existing_hypotheses(graph_url: str) -> set[str]:
     """Hypothesis node ids already committed (best-effort, for challenges)."""
     try:
@@ -455,6 +612,81 @@ def _slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")[:40]
 
 
+def meta_hypotheses(live: list[dict], url_kept: dict,
+                    max_metas: int = 3) -> list[dict]:
+    """Transitive layer-2 proposals: two layer-1 links sharing exactly
+    one event (A x B, B x C) nominate A x C, citing BOTH links as
+    evidence via hyp -> hyp supports edges. Skips outer pairs already
+    directly linked. Deterministic and extractive (no LLM spend):
+    at most max_metas, first chains win. Returns Proposal lists ready
+    for the skeptic gate.
+    """
+    from graph import article_id  # local: keeps import cost off module load
+
+    hid_of = { (p["a"], p["b"]):
+               f"hypothesis:loop-{_slug(p['a'])}-{_slug(p['b'])}"
+               for p in live }
+    by_event: dict[str, list[dict]] = {}
+    for p in live:
+        for end in (p["a"], p["b"]):
+            by_event.setdefault(end, []).append(p)
+    direct = set(hid_of) | {(b, a) for (a, b) in hid_of}
+    out: list[dict] = []
+    seen_outer = set()
+    for mid in sorted(by_event):
+        members = by_event[mid]
+        for i in range(len(members)):
+            for j in range(i + 1, len(members)):
+                p1, p2 = members[i], members[j]
+                outer = sorted({p1["a"], p1["b"], p2["a"], p2["b"]} - {mid})
+                if len(seen_outer) >= max_metas:
+                    return out
+                if len(outer) != 2:
+                    continue
+                if tuple(outer) in seen_outer:
+                    continue
+                if (outer[0], outer[1]) in direct:
+                    continue  # already directly linked layer-1
+                seen_outer.add(tuple(outer))
+                t1 = MODE_HYPOTHESIS_TYPE.get(p1["mode"], "co_mention")
+                t2 = MODE_HYPOTHESIS_TYPE.get(p2["mode"], "co_mention")
+                htype = t1 if t1 == t2 else "shared_context"
+                hid = (f"hypothesis:loop-meta-{_slug(outer[0])}"
+                       f"-{_slug(outer[1])}")
+                h1, h2 = hid_of[(p1["a"], p1["b"])], hid_of[(p2["a"], p2["b"])]
+                urls = sorted(set(p1.get("urls", [])) |
+                              set(p2.get("urls", [])))[:3]
+                out.append(Proposal(
+                    agent="investigator", action="add-node", entity_id=hid,
+                    detail=json.dumps(
+                        {"kind": "Hypothesis",
+                         "title": (f"transitive {htype}: {outer[0]} x "
+                                   f"{outer[1]} via {mid}"),
+                         "props": {"mode": "transitive",
+                                   "type": htype,
+                                   "evidence": len(urls),
+                                   "layer": 2,
+                                   "via": [h1, h2]}}),
+                    confidence=0.55))
+                for h in (h1, h2):
+                    out.append(Proposal(
+                        agent="investigator", action="add-edge",
+                        entity_id=hid,
+                        detail=json.dumps({"src": hid, "dst": h,
+                                           "rel": "supports"}),
+                        confidence=0.6))
+                for u in urls:
+                    if u in url_kept:
+                        out.append(Proposal(
+                            agent="investigator", action="add-edge",
+                            entity_id=hid,
+                            detail=json.dumps(
+                                {"src": hid, "dst": article_id(u),
+                                 "rel": "supports"}),
+                            confidence=0.5))
+    return out
+
+
 def hypothesis_title(a: str, b: str, urls: list[str], arts: list,
                      model=None) -> tuple[str, float]:
     """One-sentence relation for a topic pair. LLM or extractive."""
@@ -487,8 +719,17 @@ def hypothesis_title(a: str, b: str, urls: list[str], arts: list,
     return f"shared coverage ({len(urls)} articles): {head}", 0.6
 
 
-def _kept_from_articles(arts, snapshot_ts: str, topics: list[dict]) -> list[dict]:
-    """NewsArticles -> kept dicts tagged with the topics whose terms hit."""
+def _kept_from_articles(arts, snapshot_ts: str, topics: list[dict],
+                         url_terms: dict[str, set[str]] | None = None
+                         ) -> list[dict]:
+    """NewsArticles -> kept dicts tagged with the topics whose terms hit.
+
+    Each article row carries only its first hitting term, so without
+    url_terms a URL shared by two topics is attributed to one side and
+    entity/place pair detectors never see it on the other. Passing the
+    mentions reverse index (url -> all hitting terms) attributes every
+    owner: the same evidence then grounds both topics.
+    """
     term_topics: dict[str, set[str]] = {}
     for t in topics:
         for term in t["terms"]:
@@ -497,12 +738,17 @@ def _kept_from_articles(arts, snapshot_ts: str, topics: list[dict]) -> list[dict
     kept = []
     for a in arts:
         term = (a.raw or {}).get("term", "")
-        owners = term_topics.get(term, set())
+        owners = set(term_topics.get(term, set()))
+        if url_terms is not None:
+            for other in url_terms.get(a.url, set()):
+                owners |= term_topics.get(other, set())
         if not owners:
             continue
         url_topics.setdefault(a.url, set()).update(owners)
         kept.append({"url": a.url, "title": a.title,
-                     "subjects": sorted(owners | {term}),
+                     "subjects": sorted(owners | {term} |
+                                        (url_terms.get(a.url, set())
+                                         if url_terms else set())),
                      "snapshot": snapshot_ts, "seendate": a.published_at,
                      "topics": sorted(url_topics[a.url])})
     return kept
@@ -726,9 +972,14 @@ def stage_pair(ctx: dict) -> dict:
             p["mode"] = "burst"
     elif mode == "entity-overlap":
         arts = articles_from_mentions(ctx["mentions"], ctx["snap_ts"])
-        kept = _kept_from_articles(arts, ctx["snap_ts"], topics)
-        pairs = entity_overlap_pairs(topics, kept, max_pairs,
-                                     _url_term_hits(ctx["mentions"]))
+        url_terms = _url_term_hits(ctx["mentions"])
+        kept = _kept_from_articles(arts, ctx["snap_ts"], topics, url_terms)
+        pairs = entity_overlap_pairs(topics, kept, max_pairs, url_terms)
+    elif mode == "co-location":
+        arts = articles_from_mentions(ctx["mentions"], ctx["snap_ts"])
+        url_terms = _url_term_hits(ctx["mentions"])
+        kept = _kept_from_articles(arts, ctx["snap_ts"], topics, url_terms)
+        pairs = colocation_pairs(topics, kept, max_pairs, url_terms)
     elif mode == "odds-correlation":
         return {"pairs": [],
                 "done": _odds_cycle(ctx["graph_url"], ctx["kalshi_url"],
@@ -835,9 +1086,12 @@ def stage_propose(ctx: dict) -> dict:
                 inv_llm)
         all_props.append(Proposal(
             agent="investigator", action="add-node", entity_id=hid,
-            detail=json.dumps({"kind": "Hypothesis", "title": title,
-                               "props": {"mode": p["mode"],
-                                         "evidence": len(p["urls"])}}),
+            detail=json.dumps(
+                {"kind": "Hypothesis", "title": title,
+                 "props": {"mode": p["mode"],
+                           "type": MODE_HYPOTHESIS_TYPE.get(
+                               p["mode"], "co_mention"),
+                           "evidence": len(p["urls"])}}),
             confidence=conf))
         for end in (p["a"], p["b"]):
             all_props.append(Proposal(
@@ -853,8 +1107,12 @@ def stage_propose(ctx: dict) -> dict:
                 detail=json.dumps({"src": hid, "dst": article_id(u),
                                    "rel": "supports"}),
                 confidence=0.6))
+    meta_props = meta_hypotheses(live, url_kept)
+    all_props.extend(meta_props)
     return {"all_props": all_props, "pairs": live,
-            "vetoed": vetoed, "llm_calls": llm_calls}
+            "vetoed": vetoed, "llm_calls": llm_calls,
+            "metas": sum(1 for pr in meta_props
+                         if pr.action == "add-node")}
 
 
 def stage_commit(ctx: dict) -> dict:
@@ -894,6 +1152,7 @@ def stage_commit(ctx: dict) -> dict:
     _post_json(graph_url.rstrip("/") + "/findings",
                {"finding": {"loop": "news", "mode": mode, "cycle": cycle,
                             "pairs": len(pairs),
+                            "metas": ctx.get("metas", 0),
                             "revision": posted.get("revision"),
                             "derived_fresh": fresh,
                             "followups": followups,
@@ -902,8 +1161,9 @@ def stage_commit(ctx: dict) -> dict:
     log(f"cycle={cycle} posted {len(approved)} proposals "
         f"rev={posted.get('revision')} derived_fresh={fresh} "
         f"followups={len(followups)} llm_calls={ctx.get('llm_calls', 0)} "
-        f"vetoed={ctx.get('vetoed', 0)}")
+        f"vetoed={ctx.get('vetoed', 0)} metas={ctx.get('metas', 0)}")
     return {"ok": True, "mode": mode, "pairs": len(pairs),
+            "metas": ctx.get("metas", 0),
             "proposals": len(approved),
             "revision": posted.get("revision"),
             "derived_fresh": fresh,
@@ -995,6 +1255,7 @@ def _odds_cycle(graph_url: str, kalshi_url: str, topics: list[dict],
                 {"kind": "Hypothesis",
                  "title": f"odds co-move {p['corr']}: {p['a']} x {p['b']}",
                  "props": {"mode": "odds-correlation",
+                           "type": "co_outcome",
                            "corr": p["corr"]}}),
             confidence=0.7))
         for end in (p["a"], p["b"]):
