@@ -21,6 +21,13 @@ Same thing proposed twice maps to the same node.
 Loop pair ids use canonical `a < b` ordering in every pair producer, so
 the same pair found via any mode or cycle yields one id.
 
+Hypothesis nodes carry `props.type` in the closed taxonomy
+(`co_mention`, `co_location`, `shared_context`, `co_outcome`) plus the
+trigger `mode`; detectors map their mode onto the type. Layer-2
+transitive metas (`hypothesis:loop-meta-*`, max 3 per cycle) inherit
+the unanimous type of their two supporting links, else
+`shared_context`, and record the pair in `props.via`.
+
 ## Edge vocabulary
 
 `mentions` (Article → Subject), `about` (Article → Market/Event),
@@ -50,8 +57,9 @@ instead of multiplying.
 
 Follow-up digs fan out only on verdict `created`; re-created
 duplicates fan out nothing. Vetoed pairs whose hypothesis already
-committed get an `Audit` node plus a `challenges` edge: bad links
-are flagged, never deleted.
+committed get an `Audit` node plus a `challenges` edge, and the
+audit loop retires vetoed nodes via `POST /retire` (which also
+prunes derived mesh left stale by the removal).
 
 ## Rerun behavior
 
@@ -61,9 +69,12 @@ are flagged, never deleted.
 - One article under several hypotheses happens only across
   different pairs: distinct claims sharing evidence, by design.
 - A pair found via a second mode refreshes the one hypothesis node;
-  the `mode` prop then reflects the latest committing mode.
+  the `mode`/`type` props then reflect the latest committing detection.
 - The audit loop only visits hypotheses with no verdict yet
-  (`audit_state.json`), so repeat passes are no-ops.
+  (`audit_state.json`), so repeat passes are no-ops — unless
+  `--force` re-audits everything. Fresh vetoes retire by default;
+  the audit judges the claimed `type` (legacy typeless nodes get the
+  generic test).
 
 ## Time and persistence
 

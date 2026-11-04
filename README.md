@@ -61,7 +61,7 @@ services/               (curated store)     (read-only 3D)
 | Services | `services/` | Two local HTTP services. Kalshi feed `:8080` (live socket + REST fallback, SSE/webhooks, odds publishing). Graph API `:8090` (single-writer curated store, atomic snapshots, append-only log). [README](services/README.md) |
 | Agent squad | `squad/` | Lanes (scout, news-agent, investigator, connector, auditor) plus a model-driven `brain`. All writes go through the Skeptic gate. [README](squad/README.md) |
 | Service tools | `tools/` | `{name: {description, func}}` registries the brain calls — Kalshi, graph, news-cycle launchers. Fail-soft dicts, never exceptions. [README](tools/README.md) |
-| View | `view/` | React 3D over `GET /graph` (5s poll, `If-None-Match`). Events-first, markets/subjects hidden, hypotheses as purple edges. [Init guide](view/README.md) |
+| View | `view/` | React 3D over `GET /graph` (5s poll, `If-None-Match`). Events-first, markets/subjects hidden, hypotheses as relation-colored edges. [Init guide](view/README.md) |
 
 Shared state lives in two places: the graph store (`data_local/`,
 gitignored — snapshot + commit log + findings) and frozen seeds for

@@ -72,11 +72,16 @@ uv run python scripts/news_loop.py --graph-url http://127.0.0.1:8090 --kalshi-ur
 
 Add `--loop --interval-min 15` to keep building.
 
-Audit loop (flags bad links, never deletes):
+Audit loop (re-audits hypotheses, retires vetoed ones):
 
 ```sh
 uv run python scripts/audit_loop.py --loop --interval-min 60
 ```
+
+A fresh veto posts an Audit challenge and retires the hypothesis
+(`--no-retire-on-veto` keeps challenge-only mode). `--force`
+re-audits everything, ignoring prior verdicts. `--prune` (no
+re-audit) sweeps all vetoed hypotheses still on the graph.
 
 Skip these for a first look — the frozen `data_local/` state already
 renders.
@@ -102,16 +107,23 @@ only).
 
 ## What you will see
 
-- Events-first: blue Event nodes linked through articles and purple
-  hypothesis edges. Markets (grey) and Subjects are hidden by default —
-  the bar reports the hidden counts; tick `markets` / `subjects` to
-  reveal each layer. Events always stay, even unlinked controls.
+- Events-first: blue Event nodes linked through articles and
+  hypothesis edges colored by relation type — purple `co_mention`
+  (shared articles), blue `co_location` (shared place), amber
+  `shared_context` (shared theme), green `co_outcome` (correlated
+  odds). The Details panel legends each type. Markets (grey) and
+  Subjects are hidden by default — the bar reports the hidden counts;
+  tick `markets` / `subjects` to reveal each layer. Events always
+  stay, even unlinked controls.
+- The Event picker centers the graph on one event; Reset returns the
+  slowly auto-rotating globe of all events (drag rotates, scroll
+  zooms, pan off).
 - Click an Event for category · series · lead market + live price,
-  article titles, hypothesis titles. Click a purple link for the claim,
-  its evidence, and any audit challenge flag.
-- `+`/`-` zoom, Reset refits. Polls every 5s (`If-None-Match`, cheap
-  `304` when unchanged); killing the API shows a stale banner and
-  recovers on restart.
+  article titles, hypothesis titles. Click a hypothesis link for the
+  claim, its evidence, and any audit challenge flag.
+- `+`/`-` zoom, Reset returns the globe. Polls every 5s
+  (`If-None-Match`, cheap `304` when unchanged); killing the API
+  shows a stale banner and recovers on restart.
 - The as-of input filters by world time (`valid_at`). Odds stay live
   on older frames until the replay step lands — faithfully labeled in
   the UI.

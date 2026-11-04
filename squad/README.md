@@ -31,17 +31,24 @@ lanes take injected data or call `sources/` + `tools/articles.py`.
   `graph_proposals()` output commits.
 - `investigator.py`: turns kept articles + market context into one
   Hypothesis node with `supports` edges to its evidence (and the lead
-  market). Offline-first; optional LLM refinement via
+  market). Every node carries `props.type` in the closed taxonomy
+  (`co_mention`, `co_location`, `shared_context`, `co_outcome`);
+  layer-2 transitive metas inherit the unanimous type, else
+  `shared_context`. Offline-first; optional LLM refinement via
   `context["model"]`, extractive title otherwise.
 - `connector.py`: derives event-event links (idempotent, never
   hand-written) and dispatches follow-up digs so the
   topic → news → topics loop closes. `run()` emits a derive-links
   intent; `apply()` records via `graph.refresh_derived_links`.
 - `auditor.py`: third reviewer. Vetoes spurious pairs pre-commit
-  (explicit NO only, fail-open); flags already-committed bad links
-  with a reversible `challenges` edge instead of deleting. Also homes
-  the `--deliberate` multi-turn experiment (verdict: DROP — single-shot
-  propose + audit stays default).
+  (explicit NO only, fail-open), judging the claimed hypothesis type
+  (`co_location` needs a shared place, `co_outcome` linked outcomes,
+  ...; unknown modes get the generic test). Flags already-committed
+  bad links with a reversible `challenges` edge, and the audit loop
+  (`scripts/audit_loop.py`) retires vetoed nodes via `POST /retire`
+  unless `--no-retire-on-veto` (`--force` re-audits everything).
+  Also homes the `--deliberate` multi-turn experiment (verdict:
+  DROP — single-shot propose + audit stays default).
 
 ## Main agent
 
