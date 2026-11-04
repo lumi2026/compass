@@ -1,6 +1,48 @@
 # Compass Progress
 
-## Day 1 — Oct 27: Kalshi service (goal: historical + live/websocket, topics, agent subscriptions)
+## Now — current state (as of 2026-11-04, HEAD `6025e2a`)
+
+- Stack: graph API `:8090` owns the store (`data/graph_snapshot.json`,
+  `graph_log.jsonl`, `findings.jsonl` via `--data-dir`/`COMPASS_DATA_DIR`);
+  kalshi service `:8080`; news team as `squad/brain.py` +
+  `scripts/run_compass.py` (staged `scripts/news_loop.py` underneath,
+  `scripts/audit_loop.py` independent); React view in `view/`
+  (`react-force-graph-3d`, events-first, hypothesis edges, markets/subjects
+  hidden by default) polling `GET /graph`.
+- Graph: last live cycle cited rev 144 → 148 (GDP pair kept, 3 cycles
+  empty); earlier wide-loop base rev 110–115, 500+ nodes. Odds live on
+  Market nodes; history via `graph_log.jsonl` replay.
+- Quality gates: full suite 197 green, offline POC OK; `npm test` green,
+  `npm run build` clean (last verified Nov 3–4 entries).
+- Wiring (step 6) marked done per operator: graph → kalshi → loops → view
+  re-run confirmed against the events-first view.
+- Note: HEAD `6025e2a` is a progress-log commit on top of the code push
+  `91c6c93`; `data/audit_state.json` was dirty at review time (runtime
+  state, not a code change).
+
+## Future enhancements (deferred, post-demo)
+
+- Pre-public auth gate: Bearer-token check on graph routes (still local-only,
+  no token check until then).
+- Public-cloud deploy: Fly.io backend + staging smoke, together with auth.
+- DB migration: SQLite central store when JSONL replay gets slow; includes
+  multi-machine writers, snapshot compaction/retention, webhook push
+  graph → agents.
+- Time-travel replay: `?at=` odds scrub so the slider moves prices too
+  (`valid_at` + move props already logged per batch).
+- Polish: heuristic relevance pre-filter (save LLM calls), mamdani term
+  widening, `KXTOPLLMGENERAL-30` zero-market gap, human feedback loop on
+  the workspace, view label density/mobile refinement.
+- Experiment backlog: multi-turn pair deliberation verdict DROP (single-shot
+  stays default; `--deliberate` opt-in only) — see Oct 31 section.
+
+## 2026-10-26 — Day 1: repo init
+
+- Repo created (first commit `4c92445` Oct 26): initial commit, LICENSE
+  removed, Compass README + plan added, `.agents/` scratch dir untracked
+  and ignored. No source code yet.
+
+## 2026-10-27 — Day 2: Kalshi service (goal: historical + live/websocket, topics, agent subscriptions)
 
 ### Built
 - `sources/kalshi.py` — events, per-event markets, single + batch order books,
@@ -48,7 +90,7 @@
 - Market price parsing fixed to Kalshi `*_dollars` strings; seed recaptured
   with real prices.
 
-## Day 2 — Oct 28
+## 2026-10-28 — Day 3: news baseline, NGrams pivot, graph POC, LLM wiring
 
 ### Plan
 - News service baseline: behavior, latency, Oct-28 USA sample, how we use it later.
@@ -162,7 +204,7 @@
   git-ignored) that agents query: snapshots log, mentions (term/ts/url/
   pre/post/pos), articles (url/text/summary/engine).
 
-## Day 2 (cont.) — Oct 28
+**Day 3 (cont.): fan-out accumulator, graph POC, LLM wiring**
 
 ### Plan
 - Fan-out accumulator: `squad/store.py` (SQLite: snapshots/mentions/articles),
@@ -251,11 +293,11 @@
   Graph + Squad (Scout/Investigator/Connector fan-out, Skeptic gate, Graph
   Update API), Kalshi + GDELT DOC 2.0 sources, service-ready backend, seeded
   offline demo, Cytoscape workspace + human feedback.
-- Day 1 fit: Kalshi source + service + seed — on-plan (backend + offline demo).
-- Day 2 fit: GDELT baseline + NGrams 3.0 pivot (DOC v2 throttled, static host
+- Day 2 fit: Kalshi source + service + seed — on-plan (backend + offline demo).
+- Day 3 fit: GDELT baseline + NGrams 3.0 pivot (DOC v2 throttled, static host
   fast — justified extension, not drift), single news-agent prototype with
   Muse Spark via LangChain — on-plan toward Squad/Investigator.
-- Gaps to close for demo (updated at Day 3 close): Event Graph + Graph
+- Gaps to close for demo (updated at Day 4 close): Event Graph + Graph
   Update API done (schema, lanes, translator, POC). Remaining: full
   Scout/Investigator/Connector agent split (roles exist, classes don't),
   Investigator context wiring, Cytoscape workspace + feedback loop demo.
@@ -274,7 +316,7 @@
   provider keys, `COMPASS_MODEL`/`MODEL_BASE_URL` overrides; agent tools
   already provider-agnostic (`model.invoke` only). 15/15 tests green.
 
-### Day 2 close-out
+### Day 3 close-out
 Done: Meta/LLM wiring + live validation, per-agent + role-based models
 (contributor default), subject-level relevance, squad/tools + ngrams split,
 ngrams-as-default digest, 404 avoidance, graph schema + POC + use-case
@@ -293,7 +335,7 @@ split, workspace + feedback demo.
   suffices for now); heuristic relevance pre-score (saves LLM calls);
   mamdani term widening; `KXTOPLLMGENERAL-30` zero-market gap.
 
-## Day 3 — Oct 29: squad split + LangSmith
+## 2026-10-29 — Day 4: squad split, MVP, 3D graph
 
 ### Built
 - Squad split: real Scout / Investigator / Connector agents behind the
@@ -306,13 +348,13 @@ split, workspace + feedback demo.
 - Full suite green, graph POC OK, live squad run OK, tracing live
   probes ingested. Pushed (`b8d836a`).
 
-### Day 3 close-out
+### Day 4 close-out
 Done: squad split + LangSmith.
 Not done: Cytoscape workspace + feedback demo; accumulator + `--loop`
 (deferred); heuristic pre-filter; mamdani widening;
 `KXTOPLLMGENERAL-30` zero-market gap.
 
-## Day 3 (cont.) — Oct 29: real-data MVP
+**Day 4 (cont.): real-data MVP**
 
 ### Built
 - Cross-category seed: `seed_kalshi.py --event` (repeatable) captures
@@ -333,7 +375,7 @@ Not done: Cytoscape workspace + feedback demo; accumulator + `--loop`
   (deferred); heuristic pre-filter; `KXTOPLLMGENERAL-30` zero-market gap.
 - Changes uncommitted (MVP scripts, viewer, demo page, seed, docs).
 
-## Day 3 (cont.) — Oct 29: dates + 3D graph
+**Day 4 (cont.): dates + 3D graph**
 
 ### Built
 - News summaries carry dates: run-date line plus per-article stamps.
@@ -352,7 +394,9 @@ Not done: Cytoscape workspace + feedback demo; accumulator + `--loop`
 - Display refinement (layout, label density, mobile) — later step.
 - Changes uncommitted.
 
-## Day 4 — Oct 30: unit 1 (graph timestamps + trail weight)
+## 2026-10-30 — Day 5: graph time-travel + living loop
+
+### Unit 1: graph timestamps + trail weight
 
 Done: bitemporal fields on Node/Edge (`valid_at` + `recorded_at`,
 legacy `created_at`/`at` kept and auto-filled; old JSON loads with
@@ -378,7 +422,7 @@ all edges on big graphs). Suite 95/95. Artifacts:
 (`2d7da5b`). User verdict: promising examples found — calling it
 a day.
 
-### Day 4 usage (approx)
+### Day 5 usage (approx)
 
 ~3.5M tokens this session (cumulative run counter, last observed
 3.1M before the final stretch). Heaviest turns: 3D viewer rewrite
@@ -388,7 +432,7 @@ wall) and browser runs cost machine time, not tokens. No paid API
 calls beyond existing keys (Kalshi public REST, GDELT static host,
 CDN fetches in the browser check).
 
-## Next — living loop milestone (graph builder is the product)
+### Living-loop milestone (direction set, not started — graph builder is the product)
 
 Plan saved to `.agents/plans/2026-10-30-living-loop.md` (direction set,
 not started): interconnecting seemingly unrelated Kalshi topics is the
@@ -423,7 +467,7 @@ become `market-move` happenings, co-moving odds nominate topic
 pairs for news exploration (odds suggest, news explains), and
 news-vs-odds divergence triggers re-investigation.
 
-## Day 5 — Oct 30: living-loop steps 1 + 2
+**Living-loop steps 1 + 2 (cont.)**
 
 Built (storage v1, no SQLite yet — JSONL is the later migration base):
 - `graph/store.py`: `Happening` kind + `happening_id()` helper.
@@ -523,7 +567,7 @@ market tickers via the new `GET /markets?event=`. 131/131 green.
 "secretary of state marco rubio" 15/11; controls "white house"
 43/29, "interest rates" 11/4, "artificial intelligence" 38/25.
 
-## Next (ordered)
+### What's next (ordered; items 2+ superseded by Future enhancements above)
 
 1. **Live interconnect proof — DONE 23:43 UTC.** 50 events ×
    newest snapshot → 10 pairs, 482 proposals, rev 22, 20 followups.
@@ -572,7 +616,9 @@ market tickers via the new `GET /markets?event=`. 131/131 green.
    rises without recall loss; otherwise keep single-shot propose
    + separate audit.
 
-## 2026-10-31 ~00:30 UTC — Auditor agent (third review role)
+## 2026-10-31 — Day 6: auditor agent + deliberation verdict DROP
+
+### Auditor agent, 00:30 UTC (third review role)
 
 - New `squad/auditor.py`: `audit_pair()` judges one linked pair
   against its shared evidence. Veto ONLY on clear country/market/
@@ -600,7 +646,7 @@ market tickers via the new `GET /markets?event=`. 131/131 green.
 - Open: posting `challenges` for the vetoed existing links awaits
   your call; 136/136 green.
 
-## 2026-10-30 ~23:45 UTC — LLM + LangSmith verified working
+### LLM + LangSmith verified working (Oct 30 ~23:45 UTC)
 
 - Tiny direct probe: `resolve_model("auto", role="investigator")`
   → `ChatOpenAI`, returned a real sentence + conf 0.8. Key is good.
@@ -613,7 +659,7 @@ market tickers via the new `GET /markets?event=`. 131/131 green.
   pairs to hypothesize about — both closed, no key/flag changes
   needed (flag was already `true`, key present in `.env`).
 
-## Usage log (loop + LLM, running tally)
+### Usage log (loop + LLM, running tally)
 
 - 2026-10-30 ~23:45 UTC: 11 model calls total (1 direct probe +
   10 in the first interconnect cycle, one per pair). Cycle
@@ -627,7 +673,7 @@ market tickers via the new `GET /markets?event=`. 131/131 green.
   per cycle + 1 for derive. Token-level accounting lives in
   LangSmith under `compass-dev`.
 
-## 2026-10-31 ~01:30 UTC — Item 1 deliberation experiment: verdict DROP
+### Item 1 deliberation experiment, 01:30 UTC: verdict DROP
 
 - Live both-arms measurement on all 11 PAIR_FIXTURES
   (`/tmp/measure_deliberation.py`, 54 sequential reasoning-model
@@ -660,7 +706,7 @@ market tickers via the new `GET /markets?event=`. 131/131 green.
   session: 54 measurement + ~4 probes/smoke (all Meta key,
   `compass-dev` traces).
 
-## 2026-11-01 — Step 5 React view (view/)
+## 2026-11-01 — Day 7: Step 5 React view (view/)
 
 Built `view/` (Vite + React, vanilla `3d-force-graph@1.80.1` mounted
 via ref — same pinned lib as the standalone viewer, no wrapper peer
@@ -675,7 +721,9 @@ Verified: `npm run build` clean, 141/141 green, live API rev 80
 `/graph` 200). No Chromium on PATH — canvas pixels unverified,
 reachability only. Next: replay, wiring demo, auth gate.
 
-## 2026-11-02 — Stack startup Q&A (no code changes)
+## 2026-11-02 — Day 8: wiring, wide seed, events-first view, demo run
+
+### Stack startup Q&A (no code changes)
 
 - Resumed from Nov 1 close-out (clean tree at `402fe32`, nothing
   listening). Verified loop/kalshi CLI flags (`--sync-topics` present).
@@ -692,7 +740,7 @@ reachability only. Next: replay, wiring demo, auth gate.
 - `/commit-push`: working tree clean, nothing to commit.
 - Next (unchanged): replay (`?at=` odds scrub), wiring demo, auth gate.
 
-## 2026-11-02 — Step 6 wiring (docs + interconnect demo)
+### Step 6 wiring (docs + interconnect demo)
 
 Built `scripts/demo_interconnect.py`: drives the live stack for a
 fixed topic slice (or the first discovered events), runs N news-team
@@ -704,7 +752,7 @@ Verified: script compiles, `--help` clean, suite 142/142 green.
 Live end-to-end (services + loops + view) not run here.
 Next: replay (`?at=` odds scrub), live wiring run, auth gate.
 
-## 2026-11-02 — Wide cross-section seed
+### Wide cross-section seed
 
 Live survey: events carry a native `category` field (Economics 56,
 Sports 45, Elections 23, Politics 20, Science and Technology 18,
@@ -721,7 +769,7 @@ culture / sports. `data/seed.json` untouched (POC pins it).
 Verified: new tests + suite 144/144 green, wide seed loads offline
 (22 tickers).
 
-## 2026-11-02 — Events-first view (graph display fix)
+### Events-first view (graph display fix)
 
 Achievement: the 3D view now opens on the news story — blue Events
 linked through articles/subjects/hypotheses — instead of a grey
@@ -741,7 +789,7 @@ Verified: new `view/test/graph.test.mjs` (node:test stdlib) +
 `npm test` script 5/5 green; `npm run build` clean; Python suite
 144/144 green. Standalone `demo/*.html` viewer untouched.
 
-## 2026-11-02 — Live demo run + push
+### Live demo run + push
 
 Stack up detached, all re-verified then killed: graph API :8090
 (booted prior state, rev 88, 540 nodes / 203 edges), kalshi :8080
@@ -754,12 +802,14 @@ Follow-up cycles: burst 0 pairs; entity-overlap 1 pair (Elon×NATO)
 vetoed; odds-correlation 0; wide 30-event entity-overlap 2 pairs,
 both vetoed; wide co-mention 1 pair (Elon×Israel), vetoed. Auditor
 reasons all sound (UN-vs-NATO, Musk-philanthropy noise, NFL vs
-labor-data with no shared article) — Day-2 unigram-noise gap live,
+labor-data with no shared article) — Day-3 unigram-noise gap live,
 gate holding, no junk committed. Rev 88 → 94 is derive bookkeeping.
 `/commit-push`: `d01b7d3` on `main`, 11 files (wiring, wide seed,
 demo script, events-first view + tests, docs).
 
-## 2026-11-03 — Event descriptions in the view
+## 2026-11-03 — Day 9: view refinements, audit loop, orchestrator stages
+
+### Event descriptions in the view
 
 Achievement: clicking a blue Event now says what the topic is about —
 category · series · qualifier, lead market + live price, market /
@@ -776,7 +826,7 @@ events refreshed with meta, 0 skipped, rev 94 → 96.
 Verified: 3 new Python tests + 3 new view tests; `npm test` 8/8,
 `npm run build` clean, suite 147/147 green. Server stopped after.
 
-## 2026-11-03 — dead nodes + market linking
+### Dead nodes + market linking
 
 Report: stale-looking nodes in the view. Inspection: all 50 events
 listed live and all 435 markets still open (an early 173-dead count
@@ -800,7 +850,7 @@ Verified: full suite 154/154 (one MVP count assertion updated to
 the intended new contract — derived 4 with exact edge composition,
 not just the count); `npm test` 8/8, `npm run build` clean.
 
-## 2026-11-03 — hypotheses as edges
+### Hypotheses as edges
 
 Achievement: the graph now shows what you asked — Event nodes joined
 by hypothesis edges, each backed by its news articles. Display-level
@@ -816,7 +866,7 @@ links. All 12 real hypotheses collapse (1 flagged challenged);
 Verified: 4 new view tests 12/12 green; real-snapshot probe;
 `npm run build` clean; suite 154/154 green.
 
-## 2026-11-03 — subjects hidden
+### Subjects hidden
 
 Same treatment as markets: Subject nodes ("growth 2034" etc.) are
 internal matching logic, hidden by default behind a `subjects`
@@ -825,7 +875,7 @@ shows both hidden counts. Real data: 72 nodes shown (50 Events +
 22 Articles), 435 markets + 20 subjects hidden.
 Verified: new view test 13/13 green, build clean, real-data probe.
 
-## 2026-11-03 — bar cleanup + zoom buttons
+### Bar cleanup + zoom buttons
 
 As-of input removed (`?at=` plumbing stays for replay); legend
 rebuilt as color dots + one hint line; +/− zoom buttons over the
@@ -833,7 +883,7 @@ canvas (camera steps toward/away from the orbit target, clamped).
 Zoom math lives in tested `zoomCamera` (`view/src/graph.js`).
 Verified: view tests 16/16, build clean.
 
-## 2026-11-03 — legend out, hypotheses in details, reset
+### Legend out, hypotheses in details, reset
 
 Legend removed (it listed hidden/absent kinds; kinds show in
 details). Event sidebar now lists hypothesis titles; purple-link
@@ -842,7 +892,7 @@ button refits the camera (`zoomToFit`) and clears selection.
 Verified: view tests 16/16, build clean, real-data probe (GDP-34:
 5 hypotheses titled).
 
-## 2026-11-03 — independent audit loop (unaudited only)
+### Independent audit loop (unaudited only)
 
 Achievement: `scripts/audit_loop.py` runs by itself (`--loop`,
 default 60 min) and audits only hypotheses with no verdict yet —
@@ -858,7 +908,7 @@ from before: Oct-30 called one GDP link genuine, the loop vetoes
 its cousins — auditor inconsistency stands, hence flag-only.
 Verified: 7 new offline tests, suite 161/161 green. Server stopped.
 
-## 2026-11-03 — uncapped pairs
+### Uncapped pairs
 
 `--max-pairs 0` now means no cap in `news_loop.py` (all four pair
 producers via `_cap_pairs`) + demo script help. Matches the existing
@@ -867,14 +917,14 @@ producers via `_cap_pairs`) + demo script help. Matches the existing
 run: time stays bounded (`--max-cycles`), breadth unbounded.
 Verified: new cap test, news-loop suite 24/24 green.
 
-## 2026-11-03 — wide background loop live
+### Wide background loop live
 
 Started detached: 50 events, `--max-pairs 0`, 15-min interval,
 12 cycles max, log `/tmp/loop-wide.log`, building on live rev 110.
 Cycle 0 already shows the payoff: 31 co-mention pairs (old cap
 would have kept 10), first veto on the known Modi-article link.
 
-## 2026-11-03 — graph-first discovery + newcomers land
+### Graph-first discovery + newcomers land
 
 Loop now starts from the graph's standing set, then adds up to
 `--event-limit` open events not yet graphed (`new` flag, titles
@@ -887,7 +937,7 @@ uncapped — the background builder now grows the graph, not just
 re-scans it.
 Verified: 6 new tests, news-loop suite 30/30, full 168/168 green.
 
-## 2026-11-03 — news_loop as deterministic subagents
+### News_loop as deterministic subagents
 
 Carved `run_cycle` into five typed stages (discover/scan/pair/
 propose/commit) with explicit ctx contracts + `run_stage(name, ctx)`
@@ -898,7 +948,7 @@ Verified: 3 new stage tests (+ shared kalshi stub now takes POST),
 full suite 171/171 green. The running background loop holds the
 old module but behaves identically, so no restart needed.
 
-## 2026-11-03 — rule-based orchestrator over stages
+### Rule-based orchestrator over stages
 
 `scripts/orchestrate.py`: supervisor that decides each round
 (rotate modes; fresh challenge → same mode + deep history dig;
@@ -908,14 +958,14 @@ next-round params in state; keep-alive loop mirrors the other
 runners. 8 orchestrator tests green (policy units + stubbed
 rounds); live `--once` not yet run.
 
-## 2026-11-03 — new day
+### New day (carry-over list)
 
 Carried over: replay (`?at=` odds scrub so the time slider moves
 prices too), pre-public auth gate (shared-secret header), then a live wiring re-run against the events-first
 view. Polish backlog unchanged (heuristic pre-filter, mamdani
 widening, `KXTOPLLMGENERAL-30` gap, feedback loop).
 
-## Nov 3 — bounded tool orchestration (two sets + supervisor)
+### Bounded tool orchestration (two sets + supervisor)
 - tools/: kalshi.py (discover/health/read-topic/sweep/publish; +propose_event_support kept for subagent writes), graph.py (summary/list-hypotheses/post-proposals gated) — 5+5 names, fail-soft {ok False} under each spec'd error, __init__.as_structured() bridges to LangChain StructuredTool.
 - scripts/supervise.py: bounded model-driven loop, one JSON action/turn ({"tool",...}/{"answer",...}), own audit-style parse (first {...} span), unknown-tool + bad-JSON + model-error feedback, max-iterations budget; schedules one goal per run (no loop flag). Supervisor prompt guards: read-only-first, gated writes, short runs win.
 - squad/models.py: supervisor role on the default route (treatment-capable path), no key fallback None-safe.
@@ -923,12 +973,14 @@ widening, `KXTOPLLMGENERAL-30` gap, feedback loop).
 - Offline: 189 passed (was 171 + 18 new: test_tools 5, test_supervise 6, test_orchestrate 7).
 - Note: graph rev 115 live — the user's own background news loop kept writing while this ran; :8080 stayed theirs, only read-only tool calls made here.
 
-## 2026-11-04 — wiring done, deferrals collected
+## 2026-11-04 — Day 10: wiring done, cleanup, brain fixes
+
+### Wiring done, deferrals collected
 
 - Step 6 wiring marked done per operator: live stack re-run against the
   events-first view confirmed working (graph API → kalshi → loops → view).
 
-### Future enhancements (deferred, post-demo)
+**Deferred items (consolidated in Future enhancements at the top):**
 
 - Pre-public auth gate: Bearer-token check on graph routes; API stays
   local-only with no token check until then.
@@ -941,7 +993,7 @@ widening, `KXTOPLLMGENERAL-30` gap, feedback loop).
   `KXTOPLLMGENERAL-30` zero-market gap, human feedback loop on the
   workspace, view label density/mobile refinement.
 
-## 2026-11-04 — structure cleanup + brain fixes
+### Structure cleanup + brain fixes
 
 - Removed dead weight: untracked `tmp/vtest/` Vite template; absorbed
   `processing/` into `squad/pipeline.py` (its only consumer); dissolved
