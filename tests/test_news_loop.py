@@ -296,6 +296,88 @@ def test_shared_subject_pair_on_fixture(tmp_path):
     assert pairs[0]["subject"] == "alpha beta"
 
 
+def _pres_topics():
+    return [{"event_ticker": "KB", "title": "Brazil 2030",
+             "terms": ["brazilian presidential", "presidential election",
+                       "brazilian"]},
+            {"event_ticker": "KK", "title": "Korea 2030",
+             "terms": ["korean presidential", "presidential election",
+                       "korean"]}]
+
+
+def test_shared_url_pairs_ignores_generic_only_overlap():
+    # both sides reach the same US-politics articles, but only through
+    # the genre phrase: no anchored term covers the shared URLs
+    mentions = {"presidential election": {"urls": ["u1", "u2"]},
+                "brazilian presidential": {"urls": ["u3"]},
+                "brazilian": {"urls": ["u3"]},
+                "korean presidential": {"urls": ["u4"]},
+                "korean": {"urls": ["u4"]}}
+    assert nl.shared_url_pairs(_pres_topics(), mentions) == []
+
+
+def test_shared_url_pairs_keeps_anchored_comention():
+    # one article both sides reach through their own country terms:
+    # the pair survives, with only the grounded URL as evidence
+    mentions = {"presidential election": {"urls": ["u1", "u2"]},
+                "brazilian presidential": {"urls": ["u9"]},
+                "brazilian": {"urls": ["u9"]},
+                "korean presidential": {"urls": ["u9"]},
+                "korean": {"urls": ["u9"]}}
+    pairs = nl.shared_url_pairs(_pres_topics(), mentions)
+    assert len(pairs) == 1
+    assert pairs[0]["urls"] == ["u9"]
+
+
+def test_shared_subject_pairs_ignores_generic_term():
+    mentions = {"presidential election": {"urls": ["u1"]}}
+    assert nl.shared_subject_pairs(_pres_topics(), mentions) == []
+    anchored = {"presidential election": {"urls": ["u1"]},
+                "brazilian": {"urls": ["u2"]}}
+    topics = _pres_topics() + [
+        {"event_ticker": "KC", "title": "Rio Cud Zone",
+         "terms": ["brazilian cud", "brazilian"]}]
+    pairs = nl.shared_subject_pairs(topics, anchored)
+    assert [(p["a"], p["b"]) for p in pairs] == [("KB", "KC")]
+    assert pairs[0]["subject"] == "brazilian"
+
+
+def test_entity_overlap_requires_anchored_context():
+    topics = [{"event_ticker": "EA", "title": "Alpha",
+               "terms": ["alpha beta", "alpha"]},
+              {"event_ticker": "EB", "title": "Beta",
+               "terms": ["beta gamma", "beta"]}]
+    kept = [
+        {"url": "u1", "title": "Smith visits Paris summit",
+         "topics": ["EA"], "subjects": ["EA", "alpha"]},
+        {"url": "u2", "title": "Smith opens Paris office today",
+         "topics": ["EB"], "subjects": ["EB", "beta"]},
+    ]
+    pairs = nl.entity_overlap_pairs(
+        topics, kept, url_terms=nl._url_term_hits(
+            {"alpha": {"urls": ["u1"]}, "beta": {"urls": ["u2"]}}))
+    assert len(pairs) == 1
+    assert (pairs[0]["a"], pairs[0]["b"]) == ("EA", "EB")
+
+
+def test_entity_overlap_skips_generic_context():
+    # same shared entity, but both titles come from the generic trawl
+    topics = [{"event_ticker": "EA", "title": "Alpha",
+               "terms": ["alpha beta", "presidential election"]},
+              {"event_ticker": "EB", "title": "Beta",
+               "terms": ["beta gamma", "presidential election"]}]
+    kept = [
+        {"url": "u1", "title": "Smith visits Paris summit",
+         "topics": ["EA"], "subjects": ["EA", "presidential election"]},
+        {"url": "u2", "title": "Smith opens Paris office today",
+         "topics": ["EB"], "subjects": ["EB", "presidential election"]},
+    ]
+    hits = {"presidential election": {"urls": ["u1", "u2"]},
+            "alpha beta": {"urls": []}, "beta gamma": {"urls": []}}
+    assert nl.entity_overlap_pairs(
+        topics, kept, url_terms=nl._url_term_hits(hits)) == []
+
+
 def test_burst_topics_spike_only():
     topics = _topics()
     new_m = {"alpha beta": {"count": 6, "urls": ["u1"]},

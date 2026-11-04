@@ -28,7 +28,7 @@ import click
 sys.path.insert(0, ".")
 
 from graph import article_id  # noqa: E402
-from scripts.cross_link import extract_terms  # noqa: E402
+from scripts.cross_link import anchored_terms, extract_terms  # noqa: E402
 from squad.auditor import audit_pair  # noqa: E402
 from sources.kalshi import EVENTS_LIMIT_MAX  # noqa: E402
 from sources.ngrams import (  # noqa: E402
@@ -198,6 +198,27 @@ def _topic_urls(topics: list[dict], mentions: dict) -> dict[str, set[str]]:
     return out
 
 
+def _anchored_of(topic: dict) -> set[str]:
+    """A topic's discriminating terms; all terms when it has none.
+
+    Topics whose every term is generic ("presidential election" and
+    friends) can't discriminate, so they keep the old behavior rather
+    than going permanently dark.
+    """
+    terms = topic.get("terms", [])
+    anchored = anchored_terms(terms)
+    return set(anchored) if anchored else set(terms)
+
+
+def _url_term_hits(mentions: dict) -> dict[str, set[str]]:
+    """Reverse index: article URL -> search terms that reported it."""
+    hits: dict[str, set[str]] = {}
+    for term, m in mentions.items():
+        for u in m.get("urls", []):
+            hits.setdefault(u, set()).add(term)
+    return hits
+
+
 def _cap_pairs(pairs: list, max_pairs: int) -> list:
     """Cap pairs per cycle; max_pairs <= 0 means no cap.
 
@@ -253,15 +274,28 @@ def _prefer_cross_family(pairs: list[dict], topics: list[dict],
 
 def shared_url_pairs(topics: list[dict], mentions: dict,
                      max_pairs: int = 10) -> list[dict]:
-    """Co-mention: topic pairs sharing article URLs in one snapshot."""
+    """Co-mention: topic pairs sharing article URLs in one snapshot.
+
+    A shared URL only counts when an anchored term from EACH side covers
+    it: two presidential markets sharing US horse-race articles (via the
+    generic "presidential election") pair on nothing once the genre
+    term is discounted, while an article both sides reach through their
+    own country/domain terms still links them. Pair evidence is the
+    anchored-covered URLs only, so the auditor judges grounded articles.
+    """
     by_topic = _topic_urls(topics, mentions)
+    hits = _url_term_hits(mentions)
+    anchored_of = {t["event_ticker"]: _anchored_of(t) for t in topics}
     keys = sorted(by_topic)
     pairs = []
     for i, a in enumerate(keys):
         for b in keys[i + 1:]:
             shared = sorted(by_topic[a] & by_topic[b])
-            if shared:
-                pairs.append({"a": a, "b": b, "urls": shared,
+            good = [u for u in shared
+                    if hits.get(u, set()) & anchored_of.get(a, set())
+                    and hits.get(u, set()) & anchored_of.get(b, set())]
+            if good:
+                pairs.append({"a": a, "b": b, "urls": good,
                               "mode": "co-mention"})
     pairs.sort(key=lambda p: -len(p["urls"]))
     pairs = _prefer_cross_family(pairs, topics)
@@ -270,10 +304,16 @@ def shared_url_pairs(topics: list[dict], mentions: dict,
 
 def shared_subject_pairs(topics: list[dict], mentions: dict,
                          max_pairs: int = 10) -> list[dict]:
-    """Shared-subject: pairs with a common term, evidence = its articles."""
+    """Shared-subject: pairs with a common ANCHORED term.
+
+    A common generic term ("presidential election" across every
+    presidential market) is a genre collision, not a shared subject, so
+    only discriminating terms can link topics. Topics with no anchored
+    terms at all keep the old behavior via _anchored_of.
+    """
     term_topics: dict[str, set[str]] = {}
     for t in topics:
-        for term in t["terms"]:
+        for term in _anchored_of(t):
             term_topics.setdefault(term, set()).add(t["event_ticker"])
     seen, pairs = set(), []
     for term, tickers in term_topics.items():
@@ -325,17 +365,40 @@ def extract_entities(titles: list[str]) -> dict[str, set[str]]:
 
 
 def entity_overlap_pairs(topics: list[dict], kept: list[dict],
-                         max_pairs: int = 10) -> list[dict]:
-    """Pairs whose kept articles share a capitalized entity."""
+                         max_pairs: int = 10,
+                         url_terms: dict[str, set[str]] | None = None
+                         ) -> list[dict]:
+    """Pairs whose kept articles share a capitalized entity.
+
+    A title only counts for a topic when an anchored term of that topic
+    covers it (authoritative url_terms when given, else the kept
+    subjects): without this, two topics whose generic-term trawl swept
+    up the same US-politics articles "overlap" on "Senate" and pair on
+    nothing. Titles without attribution and topics without anchored
+    terms keep the old behavior rather than going dark.
+    """
+    anchored_of = {t["event_ticker"]: set(anchored_terms(t.get("terms", [])))
+                   for t in topics}
     ent_by_topic: dict[str, dict[str, set[str]]] = {}
     for t in topics:
-        titles = [k["title"] for k in kept
-                  if t["event_ticker"] in k.get("topics", [])]
+        ticker = t["event_ticker"]
+        own = anchored_of.get(ticker) or set()
+        titles = []
+        for k in kept:
+            if ticker not in k.get("topics", []):
+                continue
+            if own and "subjects" in k:
+                cover = set(k.get("subjects", []))
+                if url_terms is not None:
+                    cover |= url_terms.get(k["url"], set())
+                if not (cover & own):
+                    continue
+            titles.append(k["title"])
         merged: dict[str, set[str]] = {}
         for title, ents in extract_entities(titles).items():
             for e in ents:
                 merged.setdefault(e, set()).add(title)
-        ent_by_topic[t["event_ticker"]] = merged
+        ent_by_topic[ticker] = merged
     keys = sorted(ent_by_topic)
     pairs = []
     for i, a in enumerate(keys):
@@ -664,7 +727,8 @@ def stage_pair(ctx: dict) -> dict:
     elif mode == "entity-overlap":
         arts = articles_from_mentions(ctx["mentions"], ctx["snap_ts"])
         kept = _kept_from_articles(arts, ctx["snap_ts"], topics)
-        pairs = entity_overlap_pairs(topics, kept, max_pairs)
+        pairs = entity_overlap_pairs(topics, kept, max_pairs,
+                                     _url_term_hits(ctx["mentions"]))
     elif mode == "odds-correlation":
         return {"pairs": [],
                 "done": _odds_cycle(ctx["graph_url"], ctx["kalshi_url"],

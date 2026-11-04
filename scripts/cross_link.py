@@ -38,16 +38,90 @@ low top no not vs via per day week month year time times will be des les der
 die und""".split())
 
 
-def extract_terms(title: str, max_terms: int = 3) -> list[str]:
-    """Title -> phrase terms: bigrams of significant tokens, else long unigram."""
+GENERIC_TOKENS = frozenset("""election elections elected electoral electorate
+reelection vote votes voter voters voting poll polls polling polled
+race races runoff runoffs referendum referendums plebiscite plebiscites
+primary primaries caucus caucuses ballot ballots
+president presidents presidential presidency elect
+minister ministers ministry prime mayor mayors mayoral
+governor governors gubernatorial senator senators senate senatorial
+representative representatives house congress congressional
+parliament parliamentary party parties nominee nominees nomination nominations
+candidate candidates candidacy campaign campaigns
+seat seats office offices term terms ticket tickets
+coalition coalitions cabinet cabinets
+chairman chairwoman chair chairs chancellor chancellors premier premiers
+secretary secretaries general government governments
+state states united federal national
+successor succession replacement appointee appointees appointed appointment
+appointments confirmation confirmations incumbent incumbents outgoing
+approval approvals rating ratings
+winner winners wins winning won lose loses losing lost
+victory victories defeat defeats lead leads leading trail trails trailing
+ahead behind favorite favorites frontrunner frontrunners upset upsets
+control retain retains retained gain gains flip flips sweep sweeps
+landslide landslides
+which whose whom whether either neither both each every other another same such
+some any several various former latter current upcoming potential possible
+likely expected eventual future past recent latest early main major key
+big small large old young white black
+make makes making become becomes becoming remain remains stay stays
+hold holds holding keep keeps keeping face faces facing
+call calls called announce announces announced hit hits hitting
+reach reaches reached set name names named pick picks picked
+choose chooses chose beat beats beating meet meets meeting""".split())
+
+
+def is_generic_term(term: str) -> bool:
+    """True when a search term carries no discriminating token."""
+    toks = term.lower().split()
+    return bool(toks) and all(t in GENERIC_TOKENS for t in toks)
+
+
+def anchored_terms(terms: list[str]) -> list[str]:
+    """The discriminating subset of a topic's terms, order preserved."""
+    return [t for t in terms if not is_generic_term(t)]
+
+
+def extract_terms(title: str, max_terms: int = 5,
+                  max_unigrams: int = 4) -> list[str]:
+    """Title -> search terms: ordered bigrams, then proper-noun unigrams.
+
+    Bigrams lead (the old first-N contract, widened): multi-word phrases
+    are what the NGrams 3.0 pre/post rules match best. Proper-noun
+    unigrams follow so the country/office-holder token survives long
+    titles whose tail used to be cut ("2030 Brazilian presidential
+    election" lost "brazilian" past the old cap): a token qualifies when
+    capitalized in the title (short ALLCAPS acronyms like GDP count),
+    significant, non-numeric, and non-generic. Single-token titles keep
+    the old longest-token fallback.
+    """
     toks = [w for w in re.sub(r"[^a-z0-9 ]", " ", title.lower()).split()
             if w not in STOP and len(w) > 2]
-    out = [f"{a} {b}" for a, b in zip(toks, toks[1:])][:max_terms]
-    if not out and toks:
+    bigrams = [f"{a} {b}" for a, b in zip(toks, toks[1:])][:max_terms]
+    if not bigrams and toks:
         longest = max(toks, key=len)
         if len(longest) >= 4:
-            out = [longest]
-    return out
+            return [longest]
+        return []
+    proper = set()
+    for w in re.findall(r"[A-Za-z0-9]+", title):
+        low = w.lower()
+        if not w[0].isupper() or low in STOP or len(low) <= 2:
+            continue
+        if low.isdigit() or low in GENERIC_TOKENS:
+            continue
+        if w.isupper() and len(w) > 5:
+            continue  # long ALLCAPS is emphasis, not an acronym
+        proper.add(low)
+    uni, seen = [], set()
+    for t in toks:
+        if t in proper and t not in seen:
+            seen.add(t)
+            uni.append(t)
+            if len(uni) >= max_unigrams:
+                break
+    return bigrams + uni
 
 
 def shared_pairs(topic_urls: dict[str, list[str]]) -> dict[tuple, list[str]]:
