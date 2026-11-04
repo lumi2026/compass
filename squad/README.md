@@ -1,58 +1,86 @@
 # Squad
 
 Agent lanes that turn Kalshi markets + news into graph structure.
-All writes flow through the Skeptic gate. Nothing here talks to the
-network services directly — live access goes through `tools/`.
+All writes flow through the Skeptic gate and commit at one point —
+`POST /proposals` on the graph API. No lane talks to the network
+services directly; the model-driven brain goes through `tools/`,
+lanes take injected data or call `sources/` + `tools/articles.py`.
 
 ## Contracts (`__init__.py`)
 
 - `Proposal`: one suggested graph write (agent, action, entity, detail, confidence).
 - `Agent`: protocol every lane satisfies (`run(task, context)`).
-- `Skeptic`: vetoes weak proposals. Only approved ones commit.
-- `Orchestrator`: fans out to lanes, gates through Skeptic.
+- `Skeptic`: vetoes weak proposals (confidence < 0.3, empty action/entity). Only approved ones commit.
+- `Orchestrator`: protocol fan-out to lanes, gate through Skeptic.
+  Used by `scripts/cross_link.py` and tests; the live loop instead runs
+  cheaper deterministic STAGES in `scripts/news_loop.py`, and
+  `scripts/orchestrate.py` supervises round policy (which mode, when to
+  dig deeper) without spending model calls.
+- `WorkspaceTask` / `feedback_to_task`: human feedback (`explore | ask
+  | challenge`) mapped to a typed task for the queue. Accepted by the
+  gate, not yet wired to a live UI loop.
 
 ## Lanes (run in this order)
 
 - `scout.py`: discovers Event + Market nodes for one Kalshi event.
-  Add-node only. Market nodes carry live odds in props.
-- `news_agent.py`: explains a topic with news. N-gram term search
-  over snapshots, article fetch, relevance filter + summary (uses
-  `tools/articles.py`). `dig()` strides history; `graph_proposals()`
-  emits lane-ready Article/Subject/edge proposals.
+  Add-node only. Market nodes carry live odds in props; each refresh is
+  a logged batch, so the commit log holds the odds history. Offline via
+  `context["markets"]` / `markets_fn`.
+- `news_agent.py`: explains a topic with news. N-gram term search over
+  snapshots (`run`), history striding (`dig`), fetch + relevance
+  filter + summary, then lane-ready Article/Subject/edge proposals
+  (`graph_proposals`). `run()` itself stays a log-only digest — only
+  `graph_proposals()` output commits.
 - `investigator.py`: turns kept articles + market context into one
-  Hypothesis node with `supports` edges to its evidence.
+  Hypothesis node with `supports` edges to its evidence (and the lead
+  market). Offline-first; optional LLM refinement via
+  `context["model"]`, extractive title otherwise.
 - `connector.py`: derives event-event links (idempotent, never
   hand-written) and dispatches follow-up digs so the
-  topic → news → topics loop closes.
-- `auditor.py`: third reviewer. Vetoes spurious pairs pre-commit;
-  flags bad committed links with a reversible `challenges` edge
-  instead of deleting.
+  topic → news → topics loop closes. `run()` emits a derive-links
+  intent; `apply()` records via `graph.refresh_derived_links`.
+- `auditor.py`: third reviewer. Vetoes spurious pairs pre-commit
+  (explicit NO only, fail-open); flags already-committed bad links
+  with a reversible `challenges` edge instead of deleting. Also homes
+  the `--deliberate` multi-turn experiment (verdict: DROP — single-shot
+  propose + audit stays default).
 
 ## Main agent
 
-- `brain.py`: model-driven loop over the service tools
-  (Kalshi, graph, news cycle launch). `run_goal` budget defaults
-  to 10 iterations, `0` = no cap. Launches `news_loop` cycles
-  singly (`news_run_cycle`) or concurrently over selected event
-  sets (`news_run_batch`).
-- `scripts/run_compass.py`: Compass as a service. Each cycle
-  runs the internal `STANDING_GOAL` upkeep pass (scan graph +
-  discover Kalshi, build via news cycles, close out with derive
-  + findings note), repeated every `--interval-min` with
-  `--loop` (default `--max-iterations 0`, uncapped). Without
-  `--loop` it runs once. `0` = forever, same convention as
-  `news_loop`.
+- `brain.py`: model-driven loop over the service tools. One JSON
+  action per turn (`{"tool", ...}` / `{"answer", ...}`), unknown tools
+  and bad JSON get feedback, not retries. `run_goal` budget defaults
+  to 10 iterations, `0` = no cap. Launches news work singly
+  (`news_run_cycle`) or concurrently over selected event sets
+  (`news_run_batch`). `STANDING_GOAL` is the default upkeep pass:
+  snapshot graph, diff Kalshi discovery, fan out news cycles, close out
+  with derive + findings note.
+- `scripts/run_compass.py`: Compass as a service. Repeats
+  `STANDING_GOAL` every `--interval-min` with `--loop`
+  (`--max-cycles` bounds demo runs), once without it. Needs
+  `--graph-url` + `--kalshi-url`; `--model` pins the model spec.
+- `scripts/run_news_agent.py`: single-topic lane demo on three fixed
+  phrase-term tasks. Resolves the newest snapshot unless `--snapshot`
+  pins one; `--max-articles` caps fetch.
 
 ## Support
 
-- `models.py`: resolves which chat model each role uses (env
-  overrides, then role defaults). Returns None with no key so
-  lanes fall back to extractive offline paths.
-- `pipeline.py`: wires scout/news outputs into investigator
-  context. Only `graph_proposals()` commits; news summaries stay
-  log-only.
+- `models.py`: resolves which chat model each role uses. Env first
+  (`MODEL_FOR_<ROLE>`, then `COMPASS_MODEL` / `MODEL_NAME`), then the
+  per-role table (fast model for collectors, reasoning variant for
+  graph building / investigation), then provider presets
+  (`MODEL_PROVIDER`: meta default, openai, deepseek, custom). Returns
+  None with no key so lanes fall back to extractive offline paths and
+  tests stay network-free.
+- `pipeline.py`: wires scout/news outputs into investigator context
+  (`build_investigator_context`), plus change-detection helpers
+  (`detect_new_items`, `investigation_triggers`) that decide when a
+  re-investigation is worth running. Pure functions, no I/O.
 - `tracing.py`: opt-in LangSmith tracing (`LANGSMITH_TRACING=true`
-  plus key). Project defaults to `compass-dev`.
+  plus key; key alone never enables it). `squad_span` is a no-op
+  without tracing, flushes explicitly with it. Called by the
+  `scripts/run_*` runners, so a forgotten setup call means zero runs —
+  that exact silence has bitten before.
 
 ## How it fits together
 
@@ -65,6 +93,6 @@ operator goal
       Connector derive)
 ```
 
-The lanes are the vocabulary; the brain decides what runs and
-when. The graph API gate (`/proposals`) is the single commit
-point — no lane writes to the graph directly.
+The lanes are the vocabulary; the brain (or the deterministic stage
+runner) decides what runs and when. Nothing writes to the graph except
+through the gated proposals path.

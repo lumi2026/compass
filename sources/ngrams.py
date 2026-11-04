@@ -15,7 +15,7 @@ import time
 import urllib.request
 from urllib.parse import urlsplit
 
-from sources.base import NewsArticle
+from .base import NewsArticle
 
 SNAP_BASE = "https://data.gdeltproject.org/gdeltv3/webngrams"
 UA = {"User-Agent": "compass-hackathon/0.1"}

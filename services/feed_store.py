@@ -12,7 +12,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
 
-from .listener import TickerState, Update
+from .kalshi_listener import TickerState, Update
 
 HISTORY_LEN = 200
 

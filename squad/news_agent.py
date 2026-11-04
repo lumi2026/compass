@@ -1,8 +1,11 @@
-"""Single-agent prototype: explain a Kalshi topic with GDELT news.
+"""News lane: explain a Kalshi topic with web news.
 
 Pipeline: Kalshi event markets -> n-gram term search over a webngrams
 snapshot -> fetch original articles -> LLM relevance filter + summary
--> Proposal. NewsAgent chains the squad toolbox per the Agent protocol.
+-> Proposals. NewsAgent chains the squad toolbox per the Agent
+protocol; run() emits a log-only news_summary digest, dig() strides
+history, graph_proposals() emits lane-ready Article/Subject/edge
+proposals.
 """
 
 from dataclasses import dataclass
@@ -28,7 +31,7 @@ def kalshi_markets(event_ticker: str, limit: int = 10) -> list:
 
 @dataclass
 class NewsAgent:
-    """Single-agent prototype: news summary for one Kalshi topic."""
+    """News lane: digest + graph proposals for one Kalshi topic."""
 
     name: str = "news-agent"
     snapshot_gz: str | None = None

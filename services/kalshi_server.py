@@ -25,8 +25,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from sources.kalshi import KalshiSource
 
-from .feed import FeedStore
-from .listener import KalshiListener, TickerState, Update
+from .feed_store import FeedStore
+from .kalshi_listener import KalshiListener, TickerState, Update
 
 DEFAULT_MOVE_THRESHOLD_CENTS = 5
 

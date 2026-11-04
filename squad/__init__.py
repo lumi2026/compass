@@ -2,7 +2,8 @@
 
 Scout / Investigator / Connector propose in fan-out; Skeptic vetoes;
 only approved proposals reach the Graph Update API. Agents speak the
-Proposal contract, so models swap without rewiring (LangChain later).
+Proposal contract, so chat models swap without rewiring (resolved per
+role in squad.models, any LangChain chat instance also works).
 """
 
 from dataclasses import dataclass, field

@@ -15,7 +15,7 @@ from typing import Any, Callable
 
 from sources.kalshi import OrderBookSnapshot, PriceLevel, _parse_levels
 
-from .auth import WS_PATH, WS_URLS, Credentials, auth_headers
+from .kalshi_auth import WS_PATH, WS_URLS, Credentials, auth_headers
 
 CHANNELS = ["ticker", "orderbook_delta", "trade"]
 

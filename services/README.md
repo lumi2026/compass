@@ -71,6 +71,23 @@ Poll with `If-None-Match: <revision>` for a cheap `304` when nothing
 changed. One machine, one writer, no auth yet — the pre-public token
 gate is a tracked deferral, so keep this on localhost.
 
+### Local state (`data_local/`)
+
+Untracked and gitignored — rebuilt from seeds plus live loops, never
+committed. Override with `--data-dir` / `COMPASS_DATA_DIR`.
+
+| File | Role |
+|---|---|
+| `graph_snapshot.json` | Curated checkpoint (`{revision, store}`), rewritten atomically (temp + rename) after every batch |
+| `graph_log.jsonl` | One record per committed batch: proposals, verdicts, revision. The audit trail and the odds history; never rewritten |
+| `findings.jsonl` | Raw ungated agent findings (high volume stays out of the graph log) |
+
+Boot loads the snapshot, then replays only log records newer than its
+revision; missing files boot to an empty store. The same directory also
+holds the frozen seeds (`seed*.json`, POC pins `seed.json`) and
+`audit_state.json` — that one belongs to `scripts/audit_loop.py`, not
+the graph API, it just shares the folder.
+
 ## Conventions
 
 - Every module states its contract in the docstring first line. Tests

@@ -8,11 +8,18 @@
 
 Known gaps: `KXTOPLLMGENERAL-30` has zero markets (expect conf floor, no crash). LLM path needs `MODEL_API_KEY` in `.env`.
 
-## New: full squad
-- Offline: `uv run python scripts/run_squad.py --event KXSPACEXMARS-30 --snapshot <fixture.gz> --seed data_local/seed.json --out /tmp/squad_graph.json`
-- Live: `uv run python scripts/run_squad.py --event KXSPACEXMARS-30 --terms spacex starlink "elon musk"`
-- The runner walks back up to `--lookback 8` snapshots (default) until term quotas fill, so thin newest snapshots don't blank the run. `--snapshot` pins one fixture file instead.
-- Success: exit 0, `nodes=`/`edges=` printed, `followups:` list, out JSON loads, `refresh re-run == 0` on second derive (covered in tests).
+## News lane + full loop
+- Lane demo (offline, 3 fixed phrase-term topics):
+  `uv run python scripts/run_news_agent.py --max-articles 3` — prints one
+  `news_summary` Proposal per topic; `--snapshot <fixture.gz>` pins one
+  snapshot file instead of resolving the newest.
+- Full loop (needs both services up): `uv run python
+  scripts/run_compass.py --graph-url http://127.0.0.1:8090 --kalshi-url
+  http://127.0.0.1:8080 --max-cycles 1` — runs one STANDING_GOAL upkeep
+  pass (discover → news cycles → derive → findings note), prints revision
+  before/after. Add `--loop --interval-min 15` to keep it running.
+- Success: exit 0; lane prints `engine=` lines, loop prints rev advance;
+  second derive is a no-op (`derived_fresh == 0`, covered in tests).
 
 ## Suite
 - `uv run python -m pytest tests/ -q` (offline fixtures; live scripts excluded).
@@ -65,7 +72,7 @@ Known gaps: `KXTOPLLMGENERAL-30` has zero markets (expect conf floor, no crash).
 
 ## LangSmith
 - Key lives in `.env` as `LANGSMITH_API_KEY`. Tracing is opt-in: set `LANGSMITH_TRACING=true`. Runners print `langsmith=on project=...` (key never printed).
-- Override: `LANGSMITH_PROJECT=demo-1 uv run python scripts/run_squad.py ...` or `--langsmith-project demo-1`.
+- Override: `LANGSMITH_PROJECT=demo-1 uv run python scripts/run_compass.py ...` or `--langsmith-project demo-1`.
 
 ## Wiring (full living loop)
 
