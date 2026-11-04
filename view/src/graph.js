@@ -105,6 +105,10 @@ export function transformElements(elements, cap = 200, opts = {}) {
   const degree = {}
   const neighbours = {}
   for (const d of raw) {
+    // The Event-to-Event subject mesh is always filtered from links, so it
+    // stays out of degree/neighbours too — otherwise the Details tab lists
+    // mesh neighbours with no visible link to explain them.
+    if (d.label === 'shares-subject-with') continue
     if ('source' in d && !isHidden(d.source) && !isHidden(d.target)) {
       degree[d.source] = (degree[d.source] ?? 0) + 1
       degree[d.target] = (degree[d.target] ?? 0) + 1

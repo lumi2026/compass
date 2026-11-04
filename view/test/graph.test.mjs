@@ -381,4 +381,14 @@ describe('subject link filter', () => {
     assert.ok(v.links.some((l) => l.rel === 'hypothesizes'))
     assert.equal(v.subjectLinksHidden, 2)
   })
+
+  it('excludes the mesh from neighbours and degree', () => {
+    const meshOnly = mesh.filter(
+      (el) => !('source' in el.data) || el.data.label !== 'hypothesizes',
+    )
+    const v = transformElements(meshOnly, 200)
+    const a = v.nodes.find((n) => n.id === 'kalshi:A')
+    assert.ok(!a.neighbors.includes('kalshi:B'))
+    assert.equal(a.deg, 0)
+  })
 })
