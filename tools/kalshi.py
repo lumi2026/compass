@@ -6,7 +6,7 @@ import urllib.request
 
 
 def _get(base: str, path: str, params: dict | None = None,
-         timeout: int = 30) -> dict:
+         timeout: int = 120) -> dict:
     url = base.rstrip("/") + path
     if params:
         url += "?" + urllib.parse.urlencode(params)
@@ -16,7 +16,7 @@ def _get(base: str, path: str, params: dict | None = None,
 
 
 def _post(base: str, path: str, payload: dict,
-          timeout: int = 30) -> dict:
+          timeout: int = 120) -> dict:
     req = urllib.request.Request(
         base.rstrip("/") + path, data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json"})

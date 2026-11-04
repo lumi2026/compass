@@ -44,12 +44,12 @@ MODES = ("co-mention", "shared-subject", "burst",
          "entity-overlap", "odds-correlation")
 
 
-def _get_json(url: str, timeout: int = 30):
+def _get_json(url: str, timeout: int = 120):
     with urllib.request.urlopen(url, timeout=timeout) as resp:
         return json.loads(resp.read() or b"{}")
 
 
-def _post_json(url: str, payload: dict, timeout: int = 30) -> dict:
+def _post_json(url: str, payload: dict, timeout: int = 120) -> dict:
     req = urllib.request.Request(
         url, data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json"})

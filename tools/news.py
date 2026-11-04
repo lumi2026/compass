@@ -58,18 +58,24 @@ def news_tools(graph_url: str, kalshi_url: str,
                          "history_stride_hours": history_stride_hours,
                          "event_filter": event_filter}, 0)
 
-    def run_news_batch(cycles_json: str, max_workers: int = 4) -> dict:
+    def run_news_batch(cycles_json: str | list = "",
+                       cycles: list | None = None,
+                       max_workers: int = 4) -> dict:
         """Launch several news_loop subagent cycles concurrently.
 
-        cycles_json: JSON list of per-cycle {mode_pin, event_limit,
+        The job list is per-cycle {mode_pin, event_limit,
         max_pairs, history_snaps, history_hours,
         history_stride_hours, event_filter} objects, one per
-        selected event set. Results come back in input order.
+        selected event set. Pass it as a JSON string (cycles_json)
+        or a plain list (cycles, or cycles_json as a list).
+        Results come back in input order.
         """
-        try:
-            jobs = json.loads(cycles_json)
-        except Exception as e:
-            return {"ok": False, "error": f"bad cycles_json: {e}"}
+        jobs = cycles if isinstance(cycles, list) else cycles_json
+        if isinstance(jobs, str):
+            try:
+                jobs = json.loads(jobs)
+            except Exception as e:
+                return {"ok": False, "error": f"bad cycles_json: {e}"}
         if not isinstance(jobs, list) or not jobs:
             return {"ok": False, "error": "cycles_json must be a non-empty list"}
         if any(not isinstance(j, dict) for j in jobs):

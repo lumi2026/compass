@@ -80,10 +80,16 @@ def main(graph_url, kalshi_url, model, max_iterations, loop,
             "%Y-%m-%dT%H:%M:%SZ")
         log(f"{stamp} cycle={cycle} {summary}")
         if not loop:
+            log("done: single pass complete")
             sys.exit(0 if summary.get("ok") else 1)
         cycle += 1
         if max_cycles and cycle >= max_cycles:
+            log(f"done: reached max_cycles={max_cycles}")
             sys.exit(0)
+        wake = datetime.datetime.now(datetime.timezone.utc) + \
+            datetime.timedelta(minutes=interval_min)
+        log(f"cycle={cycle - 1} complete; next cycle={cycle} at "
+            f"{wake.strftime('%Y-%m-%dT%H:%M:%SZ')}")
         time.sleep(interval_min * 60)
 
 

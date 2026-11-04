@@ -149,6 +149,12 @@ def test_news_run_batch_fans_out_in_order(monkeypatch):
     assert [c[0] for c in calls] == [0, 1]
     assert batch("nope")["ok"] is False
     assert batch("{}")["ok"] is False
+    out = batch(cycles=[{"event_filter": "E9"}])
+    assert out["ok"] is True
+    assert [r["events"] for r in out["results"]] == [["E9"]]
+    out = batch([{"event_filter": "E7"}])
+    assert out["ok"] is True
+    assert [r["events"] for r in out["results"]] == [["E7"]]
 
 
 def test_as_structured_keeps_names():

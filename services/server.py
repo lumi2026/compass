@@ -224,7 +224,7 @@ class Service:
             req = urllib.request.Request(
                 self.graph_url + "/proposals", data=body,
                 headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with urllib.request.urlopen(req, timeout=120) as resp:
                 posted = json.loads(resp.read() or b"{}")
             out = {"published": True, "tickers": len(tickers),
                    "proposals": len(all_props),

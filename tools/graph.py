@@ -4,7 +4,7 @@ import json
 import urllib.request
 
 
-def _get(base: str, path: str, timeout: int = 30) -> dict:
+def _get(base: str, path: str, timeout: int = 120) -> dict:
     req = urllib.request.Request(base.rstrip("/") + path,
                                  headers={"User-Agent": "compass/0.1"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -12,7 +12,7 @@ def _get(base: str, path: str, timeout: int = 30) -> dict:
 
 
 def _post(base: str, path: str, payload: dict,
-          timeout: int = 30) -> dict:
+          timeout: int = 120) -> dict:
     req = urllib.request.Request(
         base.rstrip("/") + path, data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json"})
