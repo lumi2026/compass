@@ -1,8 +1,8 @@
 # Compass — original plan
 
-Dumped from project memory (`compass.md`) on Day 2 (Oct 28, 2026).
+Dumped from project memory (`compass.md`) on Day 3 (Oct 28, 2026).
 Authoritative for "what did we set out to build"; progress is tracked in
-`progress.md`.
+`docs/progress.md`.
 
 - **Vision**: Situation-aware AI consultant. Living Event Graph + Agent Squad.
   Proactive monitoring, not Q&A bot.

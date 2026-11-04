@@ -49,5 +49,5 @@ Base URL: `https://api.gdeltproject.org/api/v2/doc/doc`
 
 ## Related (legacy)
 
-- v1 full-text search (`api/v1/search_ftxtsearch/...`, last-24h only, 15–30 min rolling delay): alive but index observed ~19h stale Oct 2026 — fallback only. Notes in `progress.md` Day 2.
+- v1 full-text search (`api/v1/search_ftxtsearch/...`, last-24h only, 15–30 min rolling delay): alive but index observed ~19h stale Oct 2026 — fallback only. Notes in `docs/progress.md` Day 3 (2026-10-28).
 - Event DB codebook (GDELT 2.0 events/mentions tables, bulk TSV): `QuadClass`, `GoldsteinScale`, `ActionGeo_*`, per-mention `Confidence` — for later event-level aggregation, not the live feed.
