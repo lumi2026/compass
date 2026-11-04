@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { HYPOTHESIS_COLORS, HYPOTHESIS_DESCRIPTIONS, centerOnNode, eventSummary, hypothesisType, spherePoint, transformElements, zoomCamera } from '../src/graph.js'
+import { HYPOTHESIS_COLORS, HYPOTHESIS_DESCRIPTIONS, centerOnNode, eventSummary, faceNode, hypothesisType, spherePoint, transformElements, zoomCamera } from '../src/graph.js'
 
 class V {
   constructor(x = 0, y = 0, z = 0) {
@@ -100,6 +100,40 @@ describe('centerOnNode', () => {
     const cam = { position: new V(5, 5, 5) }
     centerOnNode(cam, new V(5, 5, 5), { x: 1, y: 2, z: 3 })
     assert.deepEqual([cam.position.x, cam.position.y, cam.position.z], [1, 2, 253])
+  })
+})
+
+describe('faceNode', () => {
+  it('puts the camera on the node radial at the same distance, target centered', () => {
+    const cam = { position: new V(100, 200, 300) }
+    const tgt = new V(10, 10, 10)
+    faceNode(cam, tgt, { x: 220, y: 0, z: 0 }, 528)
+    assert.deepEqual([tgt.x, tgt.y, tgt.z], [0, 0, 0])
+    assert.deepEqual([cam.position.x, cam.position.y, cam.position.z], [528, 0, 0])
+  })
+
+  it('scales an off-axis node onto the viewing sphere', () => {
+    const cam = { position: new V(0, 0, 528) }
+    const tgt = new V(0, 0, 0)
+    faceNode(cam, tgt, { x: 0, y: 110, z: 110 }, 440)
+    const s = 440 / Math.hypot(0, 110, 110)
+    assert.ok(Math.abs(cam.position.y - 110 * s) < 1e-9)
+    assert.ok(Math.abs(cam.position.z - 110 * s) < 1e-9)
+    assert.equal(cam.position.x, 0)
+  })
+
+  it('falls back to front-on when the node sits at the center', () => {
+    const cam = { position: new V(1, 2, 3) }
+    faceNode(cam, new V(9, 9, 9), { x: 0, y: 0, z: 0 }, 528)
+    assert.deepEqual([cam.position.x, cam.position.y, cam.position.z], [0, 0, 528])
+  })
+
+  it('falls back to a sane distance on bad input', () => {
+    const cam = { position: new V(1, 2, 3) }
+    faceNode(cam, new V(0, 0, 0), { x: 220, y: 0, z: 0 }, -5)
+    assert.ok(Math.abs(cam.position.x - 500) < 1e-9)
+    assert.equal(cam.position.y, 0)
+    assert.equal(cam.position.z, 0)
   })
 })
 

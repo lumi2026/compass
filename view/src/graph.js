@@ -272,6 +272,27 @@ export function spherePoint(i, n, radius) {
   return { x: Math.cos(theta) * r * radius, y: y * radius, z: Math.sin(theta) * r * radius }
 }
 
+// Face helper for event selection: spin the globe so the node sits
+// front-center. The orbit target stays locked on the globe center and
+// the camera moves onto the node's radial line at the current viewing
+// distance — the picked event faces the viewer with its neighbours
+// around it. Pure geometry like zoomCamera so it stays testable.
+export function faceNode(camera, target, pos, distance) {
+  const d = Number.isFinite(distance) && distance > 0 ? distance : 500
+  const px = pos.x ?? 0
+  const py = pos.y ?? 0
+  const pz = pos.z ?? 0
+  const len = Math.hypot(px, py, pz)
+  target.copy({ x: 0, y: 0, z: 0 })
+  if (len <= 0) {
+    camera.position.copy({ x: 0, y: 0, z: d })
+    return camera.position
+  }
+  const s = d / len
+  camera.position.copy({ x: px * s, y: py * s, z: pz * s })
+  return camera.position
+}
+
 // Focus helper for the event picker: swing the orbit target onto the
 // node's position while keeping the current view direction, parked at
 // a fixed distance. Pure geometry like zoomCamera so it stays testable.

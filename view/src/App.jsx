@@ -219,7 +219,8 @@ export default function App() {
             ))}
           </ul>
           <div className="meta">
-            nodes {counts.nodes} · edges {counts.edges} · rev {revision}
+            rendered {view.nodes.length} nodes · {view.links.length} links (live{' '}
+            {counts.nodes} nodes · {counts.edges} edges · rev {revision})
           </div>
         </aside>
       </div>

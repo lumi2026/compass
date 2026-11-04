@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import ForceGraph3D from '3d-force-graph'
 import SpriteText from 'three-spritetext'
 import * as THREE from 'three'
-import { SKELETON_KINDS, centerOnNode, spherePoint, zoomCamera } from './graph'
+import { SKELETON_KINDS, faceNode, spherePoint, zoomCamera } from './graph'
 
 // Globe radius in world units: 200 events sit ~55 apart on the shell.
 const GLOBE_R = 220
@@ -21,6 +21,7 @@ export default function GraphCanvas({ nodes, links, onSelect, controlsRef }) {
   onSelectRef.current = onSelect
   const globeOnRef = useRef(false)
   const globeResetRef = useRef(null)
+  const faceByIdRef = useRef(null)
 
   useEffect(() => {
     const el = mountRef.current
@@ -60,7 +61,10 @@ export default function GraphCanvas({ nodes, links, onSelect, controlsRef }) {
       .linkResolution(6)
       .linkDirectionalArrowLength(4)
       .linkDirectionalArrowRelPos(1)
-      .onNodeClick((n) => onSelectRef.current?.({ type: 'node', id: n.id }))
+      .onNodeClick((n) => {
+        if (n.kind === 'Event') faceByIdRef.current?.(n.id)
+        onSelectRef.current?.({ type: 'node', id: n.id })
+      })
       .onLinkClick((l) => {
         const s = typeof l.source === 'object' ? l.source.id : l.source
         const t = typeof l.target === 'object' ? l.target.id : l.target
@@ -132,6 +136,23 @@ export default function GraphCanvas({ nodes, links, onSelect, controlsRef }) {
       if (!G) return
       zoomCamera(G.camera(), G.controls().target, factor)
     }
+    // Spin the globe so the event faces front-center at the current
+    // viewing distance; the orbit target stays on the globe center.
+    // Park the spin while inspecting one event; reset re-globes.
+    const faceById = (id) => {
+      const G = graphRef.current
+      if (!G) return
+      const node = (G.graphData().nodes ?? []).find((n) => n.id === id)
+      if (!node || node.x == null) return
+      G.controls().autoRotate = false
+      const cam = G.camera()
+      const tgt = G.controls().target
+      const dist = cam.position.clone().sub(tgt).length()
+      faceNode(cam, tgt,
+        { x: node.fx ?? node.x, y: node.fy ?? node.y, z: node.fz ?? node.z },
+        dist)
+    }
+    faceByIdRef.current = faceById
     if (controlsRef) {
       controlsRef.current = {
         zoomIn: () => zoomBy(0.75),
@@ -139,15 +160,7 @@ export default function GraphCanvas({ nodes, links, onSelect, controlsRef }) {
         reset: () => {
           layoutGlobe()
         },
-        focus: (id) => {
-          const G = graphRef.current
-          if (!G) return
-          const node = (G.graphData().nodes ?? []).find((n) => n.id === id)
-          if (!node || node.x == null) return
-          // Park the spin while inspecting one event; the globe stays.
-          G.controls().autoRotate = false
-          centerOnNode(G.camera(), G.controls().target, node)
-        },
+        focus: (id) => faceById(id),
       }
     }
     const onResize = () => {
