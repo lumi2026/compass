@@ -173,6 +173,8 @@ def create_app(service: GraphService | None = None,
         response.headers["ETag"] = str(payload["revision"])
         if (request.headers.get("if-none-match") or "").strip() == str(
                 payload["revision"]):
+            print(f"[graph-api] GET /graph rev={payload['revision']} "
+                  f"unchanged -> 304", flush=True)
             return Response(status_code=304)
         return payload
 
