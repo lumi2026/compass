@@ -30,11 +30,6 @@
   graph → agents.
 - Time-travel replay: `?at=` odds scrub so the slider moves prices too
   (`valid_at` + move props already logged per batch).
-- Polish: heuristic relevance pre-filter (save LLM calls), mamdani term
-  widening, `KXTOPLLMGENERAL-30` zero-market gap, human feedback loop on
-  the workspace, view label density/mobile refinement.
-- Experiment backlog: multi-turn pair deliberation verdict DROP (single-shot
-  stays default; `--deliberate` opt-in only) — see Oct 31 section.
 
 ## 2026-10-26 — Day 1: repo init
 
@@ -989,9 +984,6 @@ widening, `KXTOPLLMGENERAL-30` gap, feedback loop).
   Includes multi-machine writers, snapshot compaction/retention, webhook
   push graph → agents.
 - Time-travel replay: `?at=` odds scrub so the slider moves prices too.
-- Polish: heuristic relevance pre-filter, mamdani term widening,
-  `KXTOPLLMGENERAL-30` zero-market gap, human feedback loop on the
-  workspace, view label density/mobile refinement.
 
 ### Structure cleanup + brain fixes
 
