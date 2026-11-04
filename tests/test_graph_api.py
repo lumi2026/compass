@@ -11,8 +11,10 @@ import threading
 from fastapi.testclient import TestClient
 
 from graph import (
+    Edge,
     GraphStore,
     GraphUpdateAPI,
+    Node,
     boot,
     commit_batch,
     replay_log,
@@ -80,6 +82,28 @@ def test_odds_history_survives_in_log(tmp_path):
     replayed = GraphUpdateAPI(GraphStore())
     replay_log(replayed, log, after_revision=0)
     assert replayed.store.nodes["market:T"].props["price_cents"] == 63
+
+
+def test_commit_batch_runs_connector_derive_without_entity(tmp_path):
+    """derive-links has no entity_id; the weak-proposal gate must allow it."""
+    api = GraphUpdateAPI(GraphStore())
+    for nid, kind in (("kalshi:A", "Event"), ("kalshi:B", "Event"),
+                      ("article:x", "Article"), ("subject:s", "Subject")):
+        api.store.add_node(Node(nid, kind, nid))
+    for src, dst, rel in (("article:x", "subject:s", "mentions"),
+                          ("article:x", "kalshi:A", "about"),
+                          ("article:x", "kalshi:B", "about")):
+        api.store.add_edge(Edge(src, dst, rel, "t"))
+    out = commit_batch(api, [{
+        "agent": "connector", "action": "derive-links",
+        "entity_id": "", "detail": "", "confidence": 0.9}],
+        log_path=str(tmp_path / "g.log"))
+    verdict = out["verdicts"][0]
+    assert verdict["committed"] and "derived" in verdict["reason"]
+    links = [e for e in api.store.edges
+             if e.rel == "shares-subject-with"]
+    assert {(e.src, e.dst) for e in links} == {
+        ("kalshi:A", "kalshi:B"), ("kalshi:B", "kalshi:A")}
 
 
 def test_happening_kind_commits(tmp_path):

@@ -64,7 +64,10 @@ def commit_batch(api: GraphUpdateAPI, proposals: list[dict],
             conf = float(p.get("confidence", 0.5))
         except (TypeError, ValueError):
             conf = 0.0
-        if not entity_id or not action or conf < Skeptic().min_confidence:
+        # derive-links has no entity of its own; the Connector recomputes
+        # the whole derived set, so an empty entity_id is valid here.
+        if not action or conf < Skeptic().min_confidence or (
+                not entity_id and action != "derive-links"):
             verdicts.append({"committed": False,
                              "reason": "vetoed: weak proposal",
                              "agent": agent, "action": action,

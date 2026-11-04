@@ -100,6 +100,18 @@ class Service:
     def set_topics(self, events: list[str], market_tickers: list[str]) -> list[str]:
         tickers = list(market_tickers)
         for ev in events:
+            # Record the event's real title/meta before the sweep posts it:
+            # a bare ticker here would overwrite a proper graph title.
+            fetch_event = getattr(self.src, "fetch_event", None)
+            if fetch_event and ev not in self.event_titles:
+                try:
+                    meta_event = fetch_event(ev)
+                    self.event_titles[ev] = meta_event.title or ev
+                    meta = self._event_meta(meta_event.raw or {})
+                    if meta:
+                        self.event_meta[ev] = meta
+                except Exception:
+                    pass
             try:
                 markets = self.src.fetch_markets(ev)
             except Exception:

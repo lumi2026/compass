@@ -73,8 +73,12 @@ Start order matters: graph first, then kalshi, then the loops, then the view.
 
 - Terminal 1 (graph API, owns the store + `data/graph_*`):
   `uv run python -m services.graph_server --port 8090`
-- Terminal 2 (kalshi service, bare — no seed needed for discovery):
-  `uv run python scripts/kalshi_service.py --port 8080`
+- Terminal 2 (kalshi service, no seed needed for discovery; `--graph-url`
+  enables odds publishing, `--sweep` primes the graph once at startup):
+  `uv run python scripts/kalshi_service.py --port 8080 --graph-url http://127.0.0.1:8090`
+  (add `--sweep` once the watchlist is non-empty; without `--event`/
+  `--ticker`/`--seed` the startup watchlist is empty, so let the news
+  loop sync it first or pass `--sweep` after a manual `POST /topics`.)
 - Terminal 3 (news loop A, one slice):
   `uv run python scripts/news_loop.py --graph-url http://127.0.0.1:8090 --kalshi-url http://127.0.0.1:8080 --loop --interval-min 15`
   (no `--event`: topics start from the graph's standing set, then up
@@ -93,7 +97,7 @@ Start order matters: graph first, then kalshi, then the loops, then the view.
   (`--once` for one pass, `--dry-run` to print verdicts without
   posting, `--model None` to keep everything without LLM calls)
 
-The loop only writes Kalshi via `sync_watchlist` (`POST /topics`); the Kalshi terminal stays quiet by design (`log_message` silenced). Kalshi→graph odds publishing stays off until `POST /publish/graph` + `POST /publish/sweep` are run by hand.
+The loop only writes Kalshi via `sync_watchlist` (`POST /topics`); the Kalshi terminal stays quiet by design (`log_message` silenced). Kalshi→graph odds publishing is enabled by `--graph-url` at startup (add `--sweep` to prime once), or at runtime with `POST /publish/graph` + `POST /publish/sweep`.
 
 Checks: `GET /health` on both services; loop stdout stage logs (`topics/terms → hits → pairs → posted/rev/followups`); view bar shows counts + `rev` and updates within one poll (5s).
 

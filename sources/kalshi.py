@@ -145,6 +145,13 @@ class KalshiSource:
     def fetch_normalized(self, limit: int = 5) -> list[MarketEvent]:
         return [self.normalize(r) for r in self.fetch_raw(limit)]
 
+    def fetch_event(self, event_ticker: str) -> MarketEvent:
+        """One event by ticker (title + display metadata)."""
+        ticker = urllib.parse.quote(event_ticker, safe="")
+        data = _get_json(f"{self.api_base}/events/{ticker}")
+        raw = data.get("event", data) if isinstance(data, dict) else {}
+        return self.normalize(raw)
+
     # -- Markets inside an event -------------------------------------------
 
     def fetch_markets(self, event_ticker: str, limit: int = 20) -> list[MarketContract]:

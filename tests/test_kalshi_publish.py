@@ -31,6 +31,11 @@ class _StubSrc:
                             raw=self._raws.get(e, {}))
                 for e in self._events[:limit]]
 
+    def fetch_event(self, event_ticker):
+        return MarketEvent(source="kalshi", external_id=event_ticker,
+                           title=f"Event {event_ticker}",
+                           raw=self._raws.get(event_ticker, {}))
+
     def fetch_markets(self, event_ticker, limit=20):
         if event_ticker in self.fail_events:
             raise RuntimeError("delisted")
@@ -84,6 +89,37 @@ def test_auto_topics_records_event_meta():
                                    "series_ticker": "KXE1",
                                    "sub_title": "Before 2040"}
     assert "E2" not in svc.event_meta
+
+
+def test_set_topics_records_event_title_and_meta():
+    svc, stub = _service()
+    stub._raws = {"E2": {"category": "Sports", "series_ticker": "KXE2",
+                         "sub_title": "After 2030"}}
+    assert svc.set_topics(["E2"], []) == ["E2-A"]
+    assert svc.event_titles["E2"] == "Event E2"
+    assert svc.event_meta["E2"] == {"category": "Sports",
+                                   "series_ticker": "KXE2",
+                                   "sub_title": "After 2030"}
+    detail = json.loads(svc._proposals_for(
+        "E2-A", {"title": "Title E2-A", "last_price": 50}, 0)[0]["detail"])
+    assert detail["title"] == "Event E2"
+    assert detail["props"] == {"category": "Sports",
+                               "series_ticker": "KXE2",
+                               "sub_title": "After 2030"}
+
+
+def test_set_topics_survives_event_lookup_failure():
+    svc, stub = _service()
+
+    def boom(_ticker):
+        raise RuntimeError("upstream down")
+
+    stub.fetch_event = boom
+    assert svc.set_topics(["E2"], []) == ["E2-A"]
+    assert "E2" not in svc.event_titles
+    detail = json.loads(svc._proposals_for(
+        "E2-A", {"title": "Title E2-A", "last_price": 50}, 0)[0]["detail"])
+    assert detail["title"] == "E2"  # falls back to the ticker, never crashes
 
 
 def test_proposals_for_event_carries_meta_props():
