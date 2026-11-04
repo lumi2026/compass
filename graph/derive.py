@@ -1,12 +1,13 @@
 """Graph derivation: Connector-only links, dispatch, and time travel.
 
-Pure functions over a GraphStore, except refresh_derived_links which
-records through the gate (idempotent: reinforcements don't count as new).
+Pure functions over a GraphStore, except sync/refresh_derived_links
+which record through the gate (idempotent: reinforcements don't count
+as new) and prune derived edges whose evidence retired.
 """
 
 from typing import TYPE_CHECKING
 
-from .store import Edge, GraphStore, Node
+from .store import DERIVED_RELS, Edge, GraphStore, Node
 
 if TYPE_CHECKING:  # avoid gate<->derive import cycle at runtime
     from .gate import GraphUpdateAPI
@@ -96,19 +97,56 @@ def followup_tasks(store: GraphStore, event_id: str) -> list[dict]:
             for eid, terms in sorted(tasks.items())]
 
 
-def refresh_derived_links(api: "GraphUpdateAPI") -> int:
-    """Recompute + record all derived links. Idempotent via record().
+def prune_derived_links(store: GraphStore,
+                        keep: set[tuple[str, str, str]] | None = None) -> int:
+    """Drop derived edges whose evidence is gone. Returns pruned count.
 
-    Call after every commit batch so the graph never goes stale.
-    Returns the number of newly recorded edges (reinforcements don't
-    count as new).
+    The derived set (subject mesh + market links) is recomputed from
+    current mentions/about/market attribution, so a DERIVED_RELS edge
+    outside it is stale — e.g. mesh laid while a since-retired article
+    bridged two events. Only derived rels are ever pruned; agent-written
+    claims (mentions, about, supports, ...) are untouched even when
+    their endpoints vanish (retire drops those incident edges itself).
+    Pass a precomputed key set to skip recomputation.
     """
+    if keep is None:
+        at = store.now()
+        keep = {(e.src, e.dst, e.rel)
+                for e in derive_shared_subject_links(store, at)}
+        keep |= {(e.src, e.dst, e.rel)
+                 for e in derive_market_links(store, at)}
+    kept = [e for e in store.edges
+            if e.rel not in DERIVED_RELS or (e.src, e.dst, e.rel) in keep]
+    pruned = len(store.edges) - len(kept)
+    store.edges = kept
+    return pruned
+
+
+def sync_derived_links(api: "GraphUpdateAPI") -> tuple[int, int]:
+    """True sync: record missing derived links, prune stale ones.
+
+    Returns (fresh, pruned). One recomputation serves both passes.
+    """
+    at = api.store.now()
+    derived = derive_shared_subject_links(api.store, at)
+    derived += derive_market_links(api.store, at)
     fresh = 0
-    derived = derive_shared_subject_links(api.store, api.store.now())
-    derived += derive_market_links(api.store, api.store.now())
     for e in derived:
         if api.record(e).reason == "recorded":
             fresh += 1
+    pruned = prune_derived_links(
+        api.store, {(e.src, e.dst, e.rel) for e in derived})
+    return fresh, pruned
+
+
+def refresh_derived_links(api: "GraphUpdateAPI") -> int:
+    """Recompute + record all derived links, prune stale ones.
+
+    Call after every commit batch so the graph never goes stale.
+    Returns the number of newly recorded edges (reinforcements and
+    prunes don't count as new).
+    """
+    fresh, _ = sync_derived_links(api)
     return fresh
 
 

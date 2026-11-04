@@ -18,7 +18,7 @@ import json
 import os
 from datetime import datetime, timezone
 
-from .derive import refresh_derived_links
+from .derive import sync_derived_links
 from .gate import GraphUpdateAPI, proposals_to_commit
 
 
@@ -79,19 +79,19 @@ def commit_batch(api: GraphUpdateAPI, proposals: list[dict],
                          "agent": agent, "action": action,
                          "entity_id": entity_id})
     try:
-        fresh = refresh_derived_links(api)
+        fresh, pruned = sync_derived_links(api)
     except Exception:
-        fresh = 0
+        fresh, pruned = 0, 0
     api.revision += 1
     record = {"revision": api.revision, "recorded_at": _utcnow(),
               "proposals": proposals, "verdicts": verdicts,
-              "derived_fresh": fresh}
+              "derived_fresh": fresh, "pruned_derived": pruned}
     if log_path:
         append_jsonl(log_path, record)
     if snapshot_path and api.revision % max(1, snapshot_every) == 0:
         api.save(snapshot_path)
     return {"revision": api.revision, "verdicts": verdicts,
-            "derived_fresh": fresh}
+            "derived_fresh": fresh, "pruned_derived": pruned}
 
 
 def commit_retire(api: GraphUpdateAPI, node_ids: list[str],
@@ -101,8 +101,11 @@ def commit_retire(api: GraphUpdateAPI, node_ids: list[str],
 
     Operator maintenance, not inference: no Skeptic gate (nothing is
     claimed, only dropped). The retire record replays like any batch,
-    so pruned nodes stay pruned across snapshot+log boots. Returns
-    {revision, retired: [{entity_id, dropped_edges}]}.
+    so pruned nodes stay pruned across snapshot+log boots. The sync
+    after retire also prunes derived edges whose evidence is gone
+    (e.g. subject mesh bridged only by the retired node). Returns
+    {revision, retired: [{entity_id, dropped_edges}], derived_fresh,
+    pruned_derived}.
     """
     retired = []
     for nid in node_ids:
@@ -110,19 +113,20 @@ def commit_retire(api: GraphUpdateAPI, node_ids: list[str],
         retired.append({"entity_id": nid, "removed": removed,
                         "dropped_edges": dropped})
     try:
-        fresh = refresh_derived_links(api)
+        fresh, pruned = sync_derived_links(api)
     except Exception:
-        fresh = 0
+        fresh, pruned = 0, 0
     api.revision += 1
     record = {"revision": api.revision, "recorded_at": _utcnow(),
               "retired": [r["entity_id"] for r in retired],
-              "verdicts": retired, "derived_fresh": fresh}
+              "verdicts": retired, "derived_fresh": fresh,
+              "pruned_derived": pruned}
     if log_path:
         append_jsonl(log_path, record)
     if snapshot_path:
         api.save(snapshot_path)
     return {"revision": api.revision, "retired": retired,
-            "derived_fresh": fresh}
+            "derived_fresh": fresh, "pruned_derived": pruned}
 
 
 def replay_log(api: GraphUpdateAPI, log_path: str,
@@ -166,7 +170,7 @@ def replay_log(api: GraphUpdateAPI, log_path: str,
                 except Exception:
                     continue
             try:
-                refresh_derived_links(api)
+                sync_derived_links(api)
             except Exception:
                 pass
             top = max(top, rev)

@@ -7,7 +7,8 @@ Thin package surface — every name below is importable straight from
 - graph.gate: CommitResult, GraphUpdateAPI, ROLE_ACTIONS,
   proposals_to_commit.
 - graph.derive: derive_shared_subject_links, followup_tasks,
-  refresh_derived_links, subgraph_as_of.
+  refresh_derived_links, sync_derived_links, prune_derived_links,
+  subgraph_as_of.
 
 ID scheme (stable URIs, shared by every agent):
   kalshi:{event_ticker}   Event    e.g. kalshi:KXSPACEXMARS-30
@@ -35,8 +36,10 @@ from .derive import (
     derive_market_links,
     derive_shared_subject_links,
     followup_tasks,
+    prune_derived_links,
     refresh_derived_links,
     subgraph_as_of,
+    sync_derived_links,
 )
 from .persist import append_finding, boot, commit_batch, replay_log
 from .gate import (
@@ -77,9 +80,11 @@ __all__ = [
     "followup_tasks",
     "happening_id",
     "proposals_to_commit",
+    "prune_derived_links",
     "refresh_derived_links",
     "replay_log",
     "subgraph_as_of",
+    "sync_derived_links",
     "subject_id",
     "to_cytoscape",
 ]

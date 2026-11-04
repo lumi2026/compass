@@ -59,6 +59,7 @@ class RetireOut(BaseModel):
     revision: int
     retired: list[RetiredOut] = Field(default_factory=list)
     derived_fresh: int = 0
+    pruned_derived: int = 0
 
 
 class VerdictOut(BaseModel):
@@ -73,6 +74,7 @@ class ProposalsOut(BaseModel):
     revision: int
     verdicts: list[VerdictOut] = Field(default_factory=list)
     derived_fresh: int = 0
+    pruned_derived: int = 0
 
 
 class HealthOut(BaseModel):
@@ -131,10 +133,12 @@ class GraphService:
             print(f"[graph-api] proposals={len(verdicts)} "
                   f"committed={n_ok} rejected={len(verdicts) - n_ok} "
                   f"derived_fresh={result['derived_fresh']} "
+                  f"pruned_derived={result.get('pruned_derived', 0)} "
                   f"revision={result['revision']}", flush=True)
             return {"revision": result["revision"],
                     "verdicts": result["verdicts"],
-                    "derived_fresh": result["derived_fresh"]}
+                    "derived_fresh": result["derived_fresh"],
+                    "pruned_derived": result.get("pruned_derived", 0)}
 
     def record_finding(self, finding: dict) -> dict:
         rec = append_finding(self.findings_path, finding)
@@ -148,6 +152,7 @@ class GraphService:
                                    log_path=self.log_path,
                                    snapshot_path=self.snapshot_path)
             print(f"[graph-api] retire={len(result['retired'])} "
+                  f"pruned_derived={result.get('pruned_derived', 0)} "
                   f"revision={result['revision']}", flush=True)
             return result
 

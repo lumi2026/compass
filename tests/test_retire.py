@@ -45,6 +45,52 @@ def test_commit_retire_logs_and_replays(tmp_path):
     assert fresh.revision == 2
 
 
+def _mesh_fixture(api):
+    """Two events bridged by one shared article (the Mars/Mamdani shape)."""
+    from graph import proposals_to_commit
+    from graph.persist import commit_batch
+    nodes = [
+        _node("kalshi:EA", "Event"), _node("kalshi:EB", "Event"),
+        _node("article:X", "Article"), _node("subject:s", "Subject")]
+    commit_batch(api, nodes, log_path=None, snapshot_path=None)
+    for src, dst, rel in [
+            ("article:X", "subject:s", "mentions"),
+            ("article:X", "kalshi:EA", "about"),
+            ("article:X", "kalshi:EB", "about")]:
+        proposals_to_commit(
+            api, "news-agent", "add-edge", f"{src}{dst}",
+            json.dumps({"src": src, "dst": dst, "rel": rel}))
+    from graph import refresh_derived_links
+    assert refresh_derived_links(api) == 2  # both mesh directions
+
+
+def test_retire_prunes_orphaned_subject_mesh():
+    from graph import refresh_derived_links
+    api = GraphUpdateAPI(GraphStore())
+    _mesh_fixture(api)
+    out = commit_retire(api, ["article:X"], log_path=None,
+                        snapshot_path=None)
+    assert out["retired"][0]["removed"] is True
+    assert out["pruned_derived"] == 2
+    mesh = [e for e in api.store.edges
+            if e.rel == "shares-subject-with"]
+    assert mesh == []
+    assert refresh_derived_links(api) == 0  # stays clean
+
+
+def test_prune_only_touches_derived_rels():
+    from graph import prune_derived_links
+    api = GraphUpdateAPI(GraphStore())
+    _mesh_fixture(api)
+    api.store.add_edge(Edge(src="article:X", dst="kalshi:EA",
+                            rel="supports", at="t"))
+    api.store.add_edge(Edge(src="kalshi:EA", dst="kalshi:NOPE",
+                            rel="has-market", at="t"))
+    assert prune_derived_links(api.store) == 1  # the dangling derived edge
+    assert any(e.rel == "supports" for e in api.store.edges)
+    assert any(e.rel == "shares-subject-with" for e in api.store.edges)
+
+
 def test_retire_survives_full_replay_from_scratch(tmp_path):
     log = str(tmp_path / "g.log")
     snap = str(tmp_path / "g.json")
