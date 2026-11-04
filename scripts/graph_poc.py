@@ -20,7 +20,7 @@ from graph import (  # noqa: E402
     GraphStore, GraphUpdateAPI, article_id, followup_tasks,
     refresh_derived_links, proposals_to_commit,
 )
-from workspace import to_cytoscape  # noqa: E402
+from graph import to_cytoscape  # noqa: E402
 
 # Fixture articles: A1 ties Elon/Mars to SpaceX; A2 ties the same subject
 # to the NATO race; A3 is pope-only (control: must stay unlinked).

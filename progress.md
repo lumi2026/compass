@@ -922,3 +922,21 @@ widening, `KXTOPLLMGENERAL-30` gap, feedback loop).
 - Proof (live, read-only): goal "report rev/counts/challenged" → graph rev 115, 629 nodes, 867 edges, 21 hypotheses, 11 challenged — 2 tool calls, 4 iterations, traced under compass-dev.
 - Offline: 189 passed (was 171 + 18 new: test_tools 5, test_supervise 6, test_orchestrate 7).
 - Note: graph rev 115 live — the user's own background news loop kept writing while this ran; :8080 stayed theirs, only read-only tool calls made here.
+
+## 2026-11-04 — wiring done, deferrals collected
+
+- Step 6 wiring marked done per operator: live stack re-run against the
+  events-first view confirmed working (graph API → kalshi → loops → view).
+
+### Future enhancements (deferred, post-demo)
+
+- Pre-public auth gate: Bearer-token check on graph routes; API stays
+  local-only with no token check until then.
+- Public-cloud deploy: Fly.io backend + staging smoke, together with auth.
+- DB migration: SQLite central store; JSONL stays the store for now.
+  Includes multi-machine writers, snapshot compaction/retention, webhook
+  push graph → agents.
+- Time-travel replay: `?at=` odds scrub so the slider moves prices too.
+- Polish: heuristic relevance pre-filter, mamdani term widening,
+  `KXTOPLLMGENERAL-30` zero-market gap, human feedback loop on the
+  workspace, view label density/mobile refinement.

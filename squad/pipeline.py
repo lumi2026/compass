@@ -3,9 +3,39 @@
 Orchestrator order: scout + news first, feed approved outputs into
 investigator, then connector. Only graph_proposals() commits —
 NewsAgent.run news_summary stays a log-only digest.
+
+Also homes the change-detection helpers (absorbed from the old
+`processing` layer, whose only consumer was this module): pure
+functions, no I/O here.
 """
 
-from processing import detect_new_items, investigation_triggers
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class ChangeEvent:
+    entity_id: str
+    kind: str  # e.g. "new_event", "new_article", "price_shift"
+    summary: str
+
+
+def detect_new_items(
+    seen_ids: set[str], items: list, kind: str = "new_item"
+) -> list[ChangeEvent]:
+    """Emit one ChangeEvent per item whose id has not been seen."""
+    changes: list[ChangeEvent] = []
+    for item in items:
+        eid = f"{item.source}:{item.external_id}"
+        if eid not in seen_ids:
+            changes.append(
+                ChangeEvent(entity_id=eid, kind=kind, summary=item.title[:120])
+            )
+    return changes
+
+
+def investigation_triggers(changes: list[ChangeEvent], threshold: int = 1) -> bool:
+    """Contract: squad runs when change count reaches threshold."""
+    return len(changes) >= threshold
 
 
 def build_investigator_context(news_proposal=None, graph_props=None,
@@ -30,5 +60,5 @@ def build_investigator_context(news_proposal=None, graph_props=None,
 
 
 def change_triggered(seen_ids: set[str], items: list, kind: str = "new_item") -> bool:
-    """Threshold gate for re-investigation (processing helpers)."""
+    """Threshold gate for re-investigation (change helpers above)."""
     return investigation_triggers(detect_new_items(seen_ids, items, kind=kind))

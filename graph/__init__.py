@@ -30,6 +30,7 @@ Edge vocabulary:
   relates-to           fallback for anything unclassified
 """
 
+from .cytoscape import MAX_VISIBLE_NODES, to_cytoscape
 from .derive import (
     derive_market_links,
     derive_shared_subject_links,
@@ -59,6 +60,7 @@ from .store import (
 __all__ = [
     "DERIVED_RELS",
     "EDGE_RELS",
+    "MAX_VISIBLE_NODES",
     "NODE_KINDS",
     "CommitResult",
     "Edge",
@@ -70,6 +72,7 @@ __all__ = [
     "article_id",
     "boot",
     "commit_batch",
+    "derive_market_links",
     "derive_shared_subject_links",
     "followup_tasks",
     "happening_id",
@@ -78,4 +81,5 @@ __all__ = [
     "replay_log",
     "subgraph_as_of",
     "subject_id",
+    "to_cytoscape",
 ]

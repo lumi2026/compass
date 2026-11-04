@@ -68,3 +68,18 @@ class Orchestrator:
             proposals.extend(agent.run(task, ctx))
         approved, _ = self.skeptic.review(proposals)
         return approved
+
+
+@dataclass(frozen=True)
+class WorkspaceTask:
+    """Human feedback mapped to a typed task for the orchestrator queue."""
+
+    kind: str  # explore | ask | challenge
+    entity_id: str
+    text: str = ""
+
+
+def feedback_to_task(kind: str, entity_id: str, text: str = "") -> WorkspaceTask:
+    if kind not in ("explore", "ask", "challenge"):
+        raise ValueError(f"unknown feedback kind: {kind}")
+    return WorkspaceTask(kind=kind, entity_id=entity_id, text=text)

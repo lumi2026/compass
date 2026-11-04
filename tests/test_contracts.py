@@ -1,7 +1,8 @@
 """Deterministic contract tests. No network: fixtures only."""
 
-from graph import CommitResult, GraphStore, GraphUpdateAPI, Node, Edge
-from processing import ChangeEvent, detect_new_items, investigation_triggers
+from graph import (CommitResult, GraphStore, GraphUpdateAPI, Node, Edge,
+                   MAX_VISIBLE_NODES, to_cytoscape)
+from squad.pipeline import ChangeEvent, detect_new_items, investigation_triggers
 from sources.base import MarketEvent
 from sources.kalshi import (
     Candle,
@@ -10,8 +11,7 @@ from sources.kalshi import (
     OrderBookSnapshot,
     best_bid,
 )
-from squad import Orchestrator, Proposal, Skeptic
-from workspace import MAX_VISIBLE_NODES, feedback_to_task, to_cytoscape
+from squad import Orchestrator, Proposal, Skeptic, feedback_to_task
 
 
 class EchoAgent:
@@ -303,7 +303,7 @@ def test_kalshi_candle_normalize():
     assert (c.end_ts, c.open, c.close, c.volume) == (123, 50, 57, 11)
 
 
-def test_workspace_contracts():
+def test_display_contracts():
     nodes = [Node(id=f"n{i}", kind="Event", title=f"t{i}") for i in range(3)]
     payload = to_cytoscape(nodes, [])
     assert len(payload["elements"]) == 3

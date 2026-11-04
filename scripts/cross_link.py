@@ -8,7 +8,7 @@ article URL (the article is the co-mention evidence).
 
 Run:
   uv run python scripts/cross_link.py --events 30 --lookback 100 \\
-      --out demo/cross_graph.json --html demo/cross_graph.html
+      --out demo/cross_graph.json
 """
 
 import json
@@ -28,8 +28,7 @@ from squad.investigator import Investigator  # noqa: E402
 from squad.news_agent import NewsAgent  # noqa: E402
 from squad.pipeline import build_investigator_context  # noqa: E402
 from squad.scout import Scout  # noqa: E402
-from workspace import to_cytoscape  # noqa: E402
-from workspace.viewer import render_page  # noqa: E402
+from graph import to_cytoscape  # noqa: E402
 
 STOP = set("""will the a an of to in on for who what when where be is are was
 were by before after than more less most its it this that with from and or as
@@ -143,9 +142,8 @@ def scan_union(tasks: list[dict], max_snapshots: int,
 @click.option("--lookback", type=int, default=100)
 @click.option("--seed", default="data/seed.json")
 @click.option("--out", default="demo/cross_graph.json")
-@click.option("--html", default="demo/cross_graph.html")
 @click.option("--max-articles", type=int, default=3)
-def main(events, lookback, seed, out, html, max_articles) -> None:
+def main(events, lookback, seed, out, max_articles) -> None:
     tasks = pick_events(events)
     print(f"[xlink] topics={len(tasks)}")
     for t in tasks:
@@ -250,13 +248,10 @@ def main(events, lookback, seed, out, html, max_articles) -> None:
     payload = to_cytoscape(list(api.store.nodes.values()), api.store.edges,
                             limit=None)  # full graph: links are the point
     api.save(out)
-    with open(html, "w") as f:
-        f.write(render_page(payload, title="Compass cross-topic graph"))
     print(f"[xlink] topics={len(tasks)} snapshots={scanned} "
           f"nodes={len(api.store.nodes)} edges={len(api.store.edges)} "
           f"elements={len(payload['elements'])}")
     print(f"[xlink] graph -> {out}")
-    print(f"[xlink] view  -> {html}")
     print("[xlink] OK")
     sys.exit(0)
 

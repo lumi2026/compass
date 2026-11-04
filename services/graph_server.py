@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 
 from graph import GraphUpdateAPI, boot, commit_batch, subgraph_as_of
 from graph.persist import append_finding, commit_retire
-from workspace import to_cytoscape
+from graph import to_cytoscape
 
 
 class ProposalIn(BaseModel):
