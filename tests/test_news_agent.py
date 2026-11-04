@@ -190,7 +190,7 @@ def _clear_model_env(monkeypatch):
     for k in ("MODEL_PROVIDER", "COMPASS_PROVIDER", "MODEL_API_KEY",
               "OPENAI_API_KEY", "DEEPSEEK_API_KEY", "COMPASS_MODEL",
               "MODEL_NAME", "MODEL_BASE_URL", "MODEL_FOR_NEWS_AGENT",
-              "MODEL_FOR_GRAPH_AGENT"):
+              "MODEL_FOR_GRAPH_AGENT", "MODEL_FOR_AUDITOR"):
         monkeypatch.delenv(k, raising=False)
 
 
@@ -205,11 +205,16 @@ def test_role_model_defaults_and_overrides(monkeypatch):
     assert resolve_model("auto",
                          role="graph-agent").model_name == \
         "muse-spark-1.3-contributor"
+    assert resolve_model("auto", role="auditor").model_name == \
+        "muse-spark-1.3-contributor"
     assert resolve_model("auto", role="unknown-role").model_name == \
         "muse-spark-1.3-contributor"  # env default
     monkeypatch.setenv("MODEL_FOR_NEWS_AGENT", "custom-fast")
     assert resolve_model("auto", role="news-agent").model_name == \
         "custom-fast"
+    monkeypatch.setenv("MODEL_FOR_AUDITOR", "audit-pick")
+    assert resolve_model("auto", role="auditor").model_name == "audit-pick"
+    monkeypatch.delenv("MODEL_FOR_AUDITOR")
     monkeypatch.delenv("MODEL_FOR_NEWS_AGENT")
     monkeypatch.setenv("COMPASS_MODEL", "global-pick")
     assert resolve_model("auto", role="news-agent").model_name == \

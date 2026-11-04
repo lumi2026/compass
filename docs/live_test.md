@@ -94,7 +94,7 @@ Start order matters: graph first, then kalshi, then the loops, then the view.
 - Terminal 6 (audit loop — only unaudited hypotheses, keeps recorded
   to `data/audit_state.json`, never re-audited, nothing deleted):
   `uv run python scripts/audit_loop.py --loop --interval-min 60`
-  (`--once` for one pass, `--dry-run` to print verdicts without
+  (one pass by default, `--dry-run` to print verdicts without
   posting, `--model None` to keep everything without LLM calls)
 
 The loop only writes Kalshi via `sync_watchlist` (`POST /topics`); the Kalshi terminal stays quiet by design (`log_message` silenced). Kalshi→graph odds publishing is enabled by `--graph-url` at startup (add `--sweep` to prime once), or at runtime with `POST /publish/graph` + `POST /publish/sweep`.

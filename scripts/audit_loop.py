@@ -6,7 +6,7 @@ is never re-audited and newly committed hypotheses are picked up on
 later passes. Fresh vetoes post Audit + `challenges` proposals;
 keeps are recorded in the state file only. Nothing is ever deleted.
 
-Run:  uv run python scripts/audit_loop.py --once
+Run:  uv run python scripts/audit_loop.py
       uv run python scripts/audit_loop.py --loop --interval-min 60
 """
 
@@ -103,6 +103,10 @@ def select_candidates(elements: list, state: dict,
                    "title": nodes.get(t, {}).get("label", t)}
                   for t in ends
                   if nodes.get(t, {}).get("kind") == "Event"]
+        # A pairwise claim needs two endpoints; auditing a single-event
+        # hypothesis with "?" placeholders produces a meaningless verdict.
+        if len(events) < 2:
+            continue
         articles = [nodes.get(t, {}).get("label", t) for t in ends
                     if nodes.get(t, {}).get("kind") == "Article"]
         out.append({"hid": hid, "title": n.get("label", hid),
@@ -151,8 +155,12 @@ def audit_pass(graph_url: str, candidates: list[dict], model_obj,
             keep, reason = r.keep, r.reason
         else:
             keep, reason = True, "no-model: keep (fail-open)"
-        verdicts[c["hid"]] = {"verdict": "keep" if keep else "veto",
-                              "reason": reason, "at": _utcnow()}
+        verdict = {"verdict": "keep" if keep else "veto",
+                   "reason": reason, "at": _utcnow()}
+        # A model/network failure is not a verdict: leave it unrecorded so
+        # the next pass retries instead of permanently marking it kept.
+        if reason.startswith("llm-error"):
+            verdict["transient"] = True
         if keep:
             kept += 1
             log(f"keep {c['hid']}: {reason}")
@@ -163,8 +171,15 @@ def audit_pass(graph_url: str, candidates: list[dict], model_obj,
                 resp = post_fn(graph_url.rstrip("/") + "/proposals",
                                {"proposals": _challenge_proposals(
                                    c["hid"], reason)})
-                posted += sum(1 for v in resp.get("verdicts", [])
-                              if v.get("committed"))
+                committed = sum(1 for v in resp.get("verdicts", [])
+                                if v.get("committed"))
+                posted += committed
+                verdict["posted"] = committed
+                # Both the Audit node and the challenges edge must land;
+                # otherwise retry rather than recording a silent veto.
+                if committed < 2:
+                    verdict["transient"] = True
+        verdicts[c["hid"]] = verdict
     return {"kept": kept, "vetoed": vetoed, "posted": posted,
             "llm_calls": llm, "verdicts": verdicts}
 
@@ -174,9 +189,16 @@ def run_once(graph_url: str, model, max_audits: int,
              state_path: str = "data/audit_state.json",
              post_fn=None) -> dict:
     """One pass: fetch, select unaudited, audit, persist verdicts."""
-    if model == "None":
-        model = None
-    model_obj = resolve_model(model, role="auditor") if model else None
+    explicit_none = model is None or model == "None"
+    if explicit_none:
+        model_obj = None
+    else:
+        model_obj = resolve_model(model, role="auditor")
+        # Do not let a missing key masquerade as a real "keep" verdict.
+        if model_obj is None:
+            return {"ok": False,
+                    "reason": "no model key configured "
+                              "(use --model None to keep without LLM)"}
     try:
         data = _get_json(graph_url.rstrip("/") + "/graph")
     except Exception as e:
@@ -189,8 +211,13 @@ def run_once(graph_url: str, model, max_audits: int,
                 "posted": 0, "llm_calls": 0}
     res = audit_pass(graph_url, candidates, model_obj, dry_run, post_fn)
     if not dry_run:
-        state.update(res["verdicts"])
+        # Transient verdicts (model error, failed challenge post) are
+        # deliberately left out of state so the next pass retries them.
+        recordable = {hid: v for hid, v in res["verdicts"].items()
+                      if not v.get("transient")}
+        state.update(recordable)
         save_state(state_path, state)
+        res["recorded"] = len(recordable)
     res["audited"] = len(candidates)
     res["ok"] = True
     return res
@@ -203,14 +230,13 @@ def run_once(graph_url: str, model, max_audits: int,
 @click.option("--max-audits", type=int, default=20,
               help="hypotheses per pass, 0 = no cap")
 @click.option("--state", "state_path", default="data/audit_state.json")
-@click.option("--once", is_flag=True, default=False)
 @click.option("--loop", is_flag=True, default=False)
 @click.option("--max-cycles", type=int, default=0,
               help="stop after N loop cycles (0 = run forever)")
 @click.option("--interval-min", type=float, default=60)
 @click.option("--dry-run", is_flag=True, default=False)
 @click.option("--langsmith-project", default=None)
-def main(graph_url, model, max_audits, state_path, once, loop,
+def main(graph_url, model, max_audits, state_path, loop,
          max_cycles, interval_min, dry_run, langsmith_project) -> None:
     from services.auth import load_dotenv  # noqa: E402
     from squad.tracing import setup_langsmith, squad_span  # noqa: E402

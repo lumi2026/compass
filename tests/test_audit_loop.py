@@ -98,6 +98,64 @@ def test_audit_pass_dry_run_posts_nothing():
     assert res["vetoed"] == 1 and res["posted"] == 0 and calls == []
 
 
+def test_select_skips_hypotheses_without_two_events():
+    els = _els() + [
+        N("hypothesis:h4", "Hypothesis", "A alone"),
+        E("hypothesis:h4", "kalshi:A", "supports"),
+    ]
+    cands = select_candidates(els, {}, 0)
+    assert [c["hid"] for c in cands] == ["hypothesis:h1", "hypothesis:h2"]
+
+
+def test_run_once_refuses_missing_model(monkeypatch, tmp_path):
+    import scripts.audit_loop as loop
+
+    monkeypatch.setattr(
+        loop, "_get_json", lambda url, timeout=30: {"elements": _els()})
+    monkeypatch.setattr(loop, "resolve_model", lambda *a, **k: None)
+    state = str(tmp_path / "audit_state.json")
+    out = run_once("http://x", "auto", 0, False, state)
+    assert out["ok"] is False and "model" in out["reason"]
+    assert load_state(state) == {}
+
+
+class _BoomModel:
+    def invoke(self, msgs):
+        raise RuntimeError("model down")
+
+
+def test_run_once_retries_llm_errors(monkeypatch, tmp_path):
+    import scripts.audit_loop as loop
+
+    monkeypatch.setattr(
+        loop, "_get_json", lambda url, timeout=30: {"elements": _els()})
+    monkeypatch.setattr(
+        loop, "resolve_model", lambda *a, **k: _BoomModel())
+    state = str(tmp_path / "audit_state.json")
+    out = run_once("http://x", "auto", 1, False, state)
+    assert out["ok"] is True and out["kept"] == 1
+    assert out["recorded"] == 0
+    assert load_state(state) == {}
+
+
+def test_run_once_retries_uncommitted_challenge(monkeypatch, tmp_path):
+    import scripts.audit_loop as loop
+
+    monkeypatch.setattr(
+        loop, "_get_json", lambda url, timeout=30: {"elements": _els()})
+    monkeypatch.setattr(
+        loop, "resolve_model", lambda *a, **k: _VetoModel())
+    monkeypatch.setattr(
+        loop, "_post_json",
+        lambda url, payload, timeout=30: {
+            "verdicts": [{"committed": False}, {"committed": False}]})
+    state = str(tmp_path / "audit_state.json")
+    out = run_once("http://x", "auto", 1, False, state)
+    assert out["vetoed"] == 1 and out["posted"] == 0
+    assert out["recorded"] == 0
+    assert load_state(state) == {}
+
+
 def test_state_roundtrip(tmp_path):
     p = str(tmp_path / "audit_state.json")
     assert load_state(p) == {}
