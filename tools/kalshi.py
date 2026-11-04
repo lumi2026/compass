@@ -67,8 +67,13 @@ def kalshi_tools(base_url: str) -> dict:
             data = _post(base_url, "/publish/sweep", {})
         except Exception as e:
             return {"ok": False, "error": f"{type(e).__name__}: {e}"}
-        return {"ok": True, "swept": data.get("swept", 0),
-                "revision": data.get("revision")}
+        published = bool(data.get("published", False))
+        return {"ok": published,
+                "published": published,
+                "tickers": data.get("tickers", 0),
+                "proposals": data.get("proposals", 0),
+                "revision": data.get("revision"),
+                "reason": data.get("reason", "")}
 
     def service_status() -> dict:
         """Health + watchlist size + publish wiring (no full ticker list)."""

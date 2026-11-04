@@ -28,11 +28,24 @@ def test_kalshi_sweep_posts_path(monkeypatch):
 
     def post(base, path, payload, timeout=30):
         seen.append((path, payload))
-        return {"swept": 3, "revision": 8}
+        return {"published": True, "tickers": 2, "proposals": 4,
+                "revision": 8}
     monkeypatch.setattr(K, "_post", post)
     out = K.kalshi_tools("http://x")["kalshi_trigger_sweep"]["func"]()
-    assert out == {"ok": True, "swept": 3, "revision": 8}
+    assert out == {"ok": True, "published": True, "tickers": 2,
+                   "proposals": 4, "revision": 8, "reason": ""}
     assert seen == [("/publish/sweep", {})]
+
+
+def test_kalshi_sweep_reports_disabled_publish(monkeypatch):
+    monkeypatch.setattr(
+        K, "_post",
+        lambda b, p, payload, timeout=30: {
+            "published": False, "reason": "no graph_url"})
+    out = K.kalshi_tools("http://x")["kalshi_trigger_sweep"]["func"]()
+    assert out == {"ok": False, "published": False, "tickers": 0,
+                   "proposals": 0, "revision": None,
+                   "reason": "no graph_url"}
 
 
 def _graph_elements():

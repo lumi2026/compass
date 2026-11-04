@@ -170,6 +170,48 @@ def test_service_set_topics_with_direct_tickers():
     assert service.set_topics([], ["B", "A", "B"]) == ["A", "B"]
 
 
+def test_wire_graph_publish_disabled_without_url():
+    from scripts.kalshi_service import wire_graph_publish
+    from services.listener import KalshiListener
+
+    service = Service(KalshiListener(None), FeedStore())
+    assert wire_graph_publish(service, "") is None
+    assert service.graph_url == ""
+    # A sweep without wiring reports the same reason as the HTTP path.
+    assert wire_graph_publish(service, "", sweep=True) == {
+        "published": False, "reason": "no graph_url"}
+    assert service.graph_url == ""
+
+
+def test_wire_graph_publish_sets_url_and_sweeps_once():
+    from scripts.kalshi_service import wire_graph_publish
+    from services.listener import KalshiListener
+
+    service = Service(KalshiListener(None), FeedStore())
+    sweeps: list[bool] = []
+    service.sweep = lambda: sweeps.append(True) or {
+        "published": True, "tickers": 2}
+    assert wire_graph_publish(
+        service, "http://127.0.0.1:8090/", 7, sweep=True) == {
+            "published": True, "tickers": 2}
+    assert service.graph_url == "http://127.0.0.1:8090"
+    assert service.move_threshold_cents == 7
+    assert sweeps == [True]
+    # Wiring without --sweep must not publish anything.
+    assert wire_graph_publish(service, "http://127.0.0.1:8090") is None
+    assert sweeps == [True]
+
+
+def test_cli_rejects_non_http_graph_url():
+    from click.testing import CliRunner
+
+    from scripts.kalshi_service import main
+
+    result = CliRunner().invoke(main, ["--graph-url", "ftp://nope"])
+    assert result.exit_code == 2
+    assert "http://" in result.output
+
+
 def test_seed_load_roundtrip(tmp_path):
     from services.feed import FeedStore
     from services.seed import load, save
