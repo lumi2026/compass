@@ -8,7 +8,7 @@ standalone viewer. Read-only for now; feedback loop stays a later step.
 Terminal 1 — graph API:
 
 ```
-uv run python -m services.graph_server --port 8090
+uv run python -m services.graph_api --port 8090
 ```
 
 Terminal 2 — view:

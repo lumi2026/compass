@@ -154,7 +154,7 @@ export default function App() {
           ) : error && view.nodes.length === 0 ? (
             <p className="pad">
               Graph API unreachable ({error}). Start it with{' '}
-              <code>uv run python -m services.graph_server --port 8090</code> then reload.
+              <code>uv run python -m services.graph_api --port 8090</code> then reload.
             </p>
           ) : view.nodes.length === 0 ? (
             <p className="pad">No linked nodes yet — run the news loop, then this view fills in.</p>

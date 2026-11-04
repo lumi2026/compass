@@ -32,7 +32,7 @@ class _StubSource:
 
 
 def test_parse_cross_section():
-    from services.seed import parse_cross_section
+    from services.feed_seed import parse_cross_section
 
     assert parse_cross_section("politics:Politics,Elections sports:Sports") == {
         "politics": ("Politics", "Elections"), "sports": ("Sports",)}
@@ -40,7 +40,7 @@ def test_parse_cross_section():
 
 
 def test_capture_cross_section_buckets(monkeypatch):
-    import services.seed as seed
+    import services.feed_seed as seed
 
     monkeypatch.setattr(seed, "KalshiSource", _StubSource)
     payload = seed.capture_cross_section(

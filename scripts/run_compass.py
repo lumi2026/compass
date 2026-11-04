@@ -42,7 +42,7 @@ def log(msg: str) -> None:
 @click.option("--langsmith-project", default=None)
 def main(graph_url, kalshi_url, model, max_iterations, loop,
          interval_min, max_cycles, langsmith_project) -> None:
-    from services.auth import load_dotenv  # noqa: E402
+    from services.kalshi_auth import load_dotenv  # noqa: E402
     from squad.models import resolve_model  # noqa: E402
     from squad.tracing import setup_langsmith, squad_span  # noqa: E402
 

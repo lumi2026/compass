@@ -20,7 +20,7 @@ def setup_langsmith(project: str | None = None,
     Returns {"enabled": bool, "project": str, "endpoint": str}.
     """
     try:
-        from services.auth import load_dotenv
+        from services.kalshi_auth import load_dotenv
         load_dotenv(dotenv_path)
     except Exception:
         pass

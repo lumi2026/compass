@@ -3,16 +3,21 @@
 import base64
 import json
 
-from services.auth import auth_headers, load_credentials, presign_text, sign_request
-from services.feed import FeedStore
-from services.listener import (
+from services.feed_store import FeedStore
+from services.kalshi_auth import (
+    auth_headers,
+    load_credentials,
+    presign_text,
+    sign_request,
+)
+from services.kalshi_listener import (
     TickerState,
     Update,
     apply_delta,
     handle_message,
     subscribe_payload,
 )
-from services.server import Service
+from services.kalshi_server import Service
 from sources.kalshi import OrderBookSnapshot
 
 
@@ -69,7 +74,7 @@ def test_sign_rsa_roundtrip():
 
 
 def test_dotenv_fills_gaps_only(tmp_path, monkeypatch):
-    from services.auth import load_credentials
+    from services.kalshi_auth import load_credentials
 
     dotenv = tmp_path / ".env"
     dotenv.write_text('KALSHI_KEY_ID=fromfile\nKALSHI_PRIVATE_KEY="k=1"\n# comment\nBLANK=\n')
@@ -154,8 +159,8 @@ def test_feed_store_snapshot_recent_and_webhooks():
 
 
 def test_merge_state_never_blanks_seed():
-    from services.feed import FeedStore
-    from services.listener import TickerState
+    from services.feed_store import FeedStore
+    from services.kalshi_listener import TickerState
 
     store = FeedStore()
     store.ingest_single("T1", TickerState(ticker="T1", last={"title": "Seed?"}))
@@ -164,7 +169,7 @@ def test_merge_state_never_blanks_seed():
 
 
 def test_service_set_topics_with_direct_tickers():
-    from services.listener import KalshiListener
+    from services.kalshi_listener import KalshiListener
 
     service = Service(KalshiListener(None), FeedStore())
     assert service.set_topics([], ["B", "A", "B"]) == ["A", "B"]
@@ -172,7 +177,7 @@ def test_service_set_topics_with_direct_tickers():
 
 def test_wire_graph_publish_disabled_without_url():
     from scripts.kalshi_service import wire_graph_publish
-    from services.listener import KalshiListener
+    from services.kalshi_listener import KalshiListener
 
     service = Service(KalshiListener(None), FeedStore())
     assert wire_graph_publish(service, "") is None
@@ -185,7 +190,7 @@ def test_wire_graph_publish_disabled_without_url():
 
 def test_wire_graph_publish_sets_url_and_sweeps_once():
     from scripts.kalshi_service import wire_graph_publish
-    from services.listener import KalshiListener
+    from services.kalshi_listener import KalshiListener
 
     service = Service(KalshiListener(None), FeedStore())
     sweeps: list[bool] = []
@@ -213,8 +218,8 @@ def test_cli_rejects_non_http_graph_url():
 
 
 def test_seed_load_roundtrip(tmp_path):
-    from services.feed import FeedStore
-    from services.seed import load, save
+    from services.feed_seed import load, save
+    from services.feed_store import FeedStore
 
     payload = {"tickers": {"T1": {
         "last": {"title": "Seed?", "last_price": 55},
@@ -236,8 +241,8 @@ def test_listener_session_against_local_socket():
 
     import websockets
 
-    from services.auth import Credentials
-    from services.listener import KalshiListener
+    from services.kalshi_auth import Credentials
+    from services.kalshi_listener import KalshiListener
 
     seen_subscribe: list[dict] = []
     received: list = []

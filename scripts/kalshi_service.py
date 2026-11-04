@@ -29,11 +29,11 @@ import click
 
 sys.path.insert(0, ".")
 
-from services.auth import load_credentials
-from services.feed import FeedStore
-from services.listener import KalshiListener
-from services.seed import load as load_seed
-from services.server import DEFAULT_MOVE_THRESHOLD_CENTS, Service, serve
+from services.feed_seed import load as load_seed
+from services.feed_store import FeedStore
+from services.kalshi_auth import load_credentials
+from services.kalshi_listener import KalshiListener
+from services.kalshi_server import DEFAULT_MOVE_THRESHOLD_CENTS, Service, serve
 
 
 def wire_graph_publish(service, graph_url: str,

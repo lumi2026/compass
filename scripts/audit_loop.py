@@ -331,7 +331,7 @@ def run_once(graph_url: str, model, max_audits: int,
 def main(graph_url, model, max_audits, state_path, loop,
          max_cycles, interval_min, dry_run, prune,
          langsmith_project) -> None:
-    from services.auth import load_dotenv  # noqa: E402
+    from services.kalshi_auth import load_dotenv  # noqa: E402
     from squad.tracing import setup_langsmith, squad_span  # noqa: E402
 
     load_dotenv()

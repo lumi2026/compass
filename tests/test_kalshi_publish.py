@@ -5,9 +5,9 @@ import threading
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from services.feed import FeedStore
-from services.listener import KalshiListener, TickerState, Update
-from services.server import Service, event_of, price_cents
+from services.feed_store import FeedStore
+from services.kalshi_listener import KalshiListener, TickerState, Update
+from services.kalshi_server import Service, event_of, price_cents
 from sources.base import MarketEvent
 from sources.kalshi import MarketContract
 
@@ -290,7 +290,7 @@ def _http(method, url, payload=None, timeout=10):
 def test_handler_routes_for_step3():
     import urllib.error  # noqa: F401 (keeps handler error path importable)
 
-    from services.server import serve
+    from services.kalshi_server import serve
 
     svc, _ = _service()
     httpd = serve(svc, 0)

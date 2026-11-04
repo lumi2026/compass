@@ -20,7 +20,7 @@ from graph import (
     replay_log,
 )
 from graph.persist import append_finding
-from services.graph_server import GraphService, create_app
+from services.graph_api import GraphService, create_app
 
 
 def _node_prop(agent, nid, kind="Event", title=None, conf=0.9):

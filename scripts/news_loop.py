@@ -929,7 +929,7 @@ def main(graph_url, kalshi_url, interval_min, event, max_pairs, mode,
          model, once, loop, max_cycles, event_limit, history_snaps,
          history_hours, history_stride_hours,
          langsmith_project, deliberate, sync_topics) -> None:
-    from services.auth import load_dotenv  # noqa: E402
+    from services.kalshi_auth import load_dotenv  # noqa: E402
     from squad.tracing import setup_langsmith, squad_span  # noqa: E402
 
     load_dotenv()

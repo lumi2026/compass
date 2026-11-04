@@ -30,7 +30,7 @@ Known gaps: `KXTOPLLMGENERAL-30` has zero markets (expect conf floor, no crash).
 - Offline check: `uv run python scripts/graph_poc.py --out /tmp/graph_poc.json` then render the HTML the same way `run_mvp.py` does.
 
 ## View (React 3D over live graph API)
-- Terminal 1: `uv run python -m services.graph_server --port 8090`
+- Terminal 1: `uv run python -m services.graph_api --port 8090`
 - Terminal 2: `cd view && npm install && npm run dev`
 - Open http://localhost:5173 in a browser.
 - Expect counts + `rev` in the bar, click node for details + neighbours.
@@ -72,7 +72,7 @@ Known gaps: `KXTOPLLMGENERAL-30` has zero markets (expect conf floor, no crash).
 Start order matters: graph first, then kalshi, then the loops, then the view.
 
 - Terminal 1 (graph API, owns the store + `data_local/graph_*`):
-  `uv run python -m services.graph_server --port 8090`
+  `uv run python -m services.graph_api --port 8090`
 - Terminal 2 (kalshi service, no seed needed for discovery; `--graph-url`
   enables odds publishing, `--sweep` primes the graph once at startup):
   `uv run python scripts/kalshi_service.py --port 8080 --graph-url http://127.0.0.1:8090`

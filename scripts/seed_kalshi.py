@@ -11,8 +11,8 @@ import click
 
 sys.path.insert(0, ".")
 
-from services.seed import (capture, capture_cross_section, capture_events,
-                           parse_cross_section, save)
+from services.feed_seed import (capture, capture_cross_section,
+                                capture_events, parse_cross_section, save)
 
 
 @click.command()

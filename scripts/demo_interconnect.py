@@ -75,7 +75,7 @@ def main(graph_url, kalshi_url, event, event_limit, cycles,
     except Exception as e:
         raise SystemExit(
             f"graph API unreachable at {graph_url} "
-            f"(start it first: uv run python -m services.graph_server "
+            f"(start it first: uv run python -m services.graph_api "
             f"--port 8090): {e}")
     tickers = tuple(event)
     if not tickers:
