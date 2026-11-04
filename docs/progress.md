@@ -1012,3 +1012,48 @@ widening, `KXTOPLLMGENERAL-30` gap, feedback loop).
 - Note: Nov 3 log entries naming `scripts/orchestrate.py` /
   `scripts/supervise.py` describe the pre-`brain` shape; the code is
   now `squad/brain.py` + `scripts/run_compass.py` + three tool sets.
+
+**Day 10 (cont.): folder reviews, READMEs, autonomous next steps, live-bug fixes**
+
+- Local-only data: `data/` → `data_local/`, `demo/` → `demo_local/`,
+  both untracked + gitignored (8 tracked files removed from remote
+  tree, history kept). All defaults + docs follow the rename.
+  `progress.md` → `docs/`; stale `run_squad.py` refs repointed at
+  `run_news_agent.py` / `run_compass.py`.
+- Module review: `services/` renamed by purpose (`kalshi_auth`,
+  `kalshi_listener`, `feed_store`, `feed_seed`, `kalshi_server`,
+  `graph_api`; 6 `git mv`, importers updated). `sources/`, `squad/`,
+  `tools/` names already fit — no renames (20+ importers, zero
+  behavior gain); one import normalized, stale "prototype" docstrings
+  fixed, deleted `scripts/orchestrate.py` reference removed.
+- READMEs: new `services/`, `sources/`, `tools/` READMEs, rewritten
+  `squad/README.md`; top README gains an architecture section + honest
+  scope (MVP, not hackathon; human ask-and-challenge loop marked
+  future; "near-real-time" → "recurring"); `view/README.md` is now a
+  full init guide (env, services in start order, view, troubleshooting).
+  Future-enhancement list trimmed (polish + deliberation dropped).
+- Autonomous "what's next" (operator chose act-over-recommend):
+  `squad/next_steps.py` computes next-cycle params from recent
+  summaries (follow-up endpoints first, challenged links re-scanned
+  deep, deep round after two quiet rounds, failed cycles neutral);
+  `news_loop --loop` applies them (`--no-auto-next` off-ramp,
+  explicit `--mode`/`--event` always win). Then structural: the loop
+  proposes one executable step (`news_propose_step`) and the brain
+  starts each pass by executing it (`run_goal(first_step=...)`,
+  shown as the opening transcript action); `run_compass` proposes
+  fresh every cycle. `run_compass --interval-min` default 15 → 1.
+- Live-bug fixes from real loop output: Kalshi error bodies kept on
+  `HTTPError` (type/code preserved) + one retry on transient 400s;
+  `news_loop` GETs retry once on transient 502s; `run_news_batch`
+  accepts `batches=` alias, `graph_post_finding` accepts `note=` /
+  `finding=` (dict posts as-is); STANDING_GOAL pins exact tool shapes.
+  Real defect found by probing: Kalshi caps `/events?limit` at 200
+  (201+ → the exact 400 seen), and discovery sent `limit + graph-size`
+  upstream — clamped at both layers (`EVENTS_LIMIT_MAX`), single
+  follow-up endpoints no longer pin (pairs need 2+ topics).
+- Verified: full suite 224 green (14 new tests: next-steps rules,
+  propose mapping, first-step execution, aliases, retry, clamps);
+  offline POC OK; entrypoints `--help`-clean.
+- Open: cursor pagination past the 200-event first page (clamp hides
+  it); same error-body treatment for `sources/gdelt.py` offered,
+  declined for now.
