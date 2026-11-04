@@ -103,6 +103,7 @@ def discover_topics(kalshi_url: str, event_slice: tuple = (),
         topics = [{"event_ticker": e["event_ticker"],
                    "title": e.get("title", e["event_ticker"]),
                    "terms": extract_terms(e.get("title", e["event_ticker"])),
+                   "category": e.get("category", ""),
                    "new": False} for e in picked]
         return [t for t in topics if t["terms"]]
     known = set(_graph_events(graph_url)) if graph_url else set()
@@ -122,9 +123,10 @@ def discover_topics(kalshi_url: str, event_slice: tuple = (),
             continue
         topic = {"event_ticker": ticker,
                  "title": e.get("title", ticker),
-                 "terms": terms, "new": ticker not in known}
+                 "terms": terms, "category": e.get("category", ""),
+                 "new": ticker not in known}
         (standing if ticker in known else fresh).append(topic)
-    return standing + fresh[:limit]
+    return standing + _stratify_fresh(fresh)[:limit]
 
 
 def _ensure_event_nodes(graph_url: str, topics: list[dict]) -> int:
@@ -204,6 +206,51 @@ def _cap_pairs(pairs: list, max_pairs: int) -> list:
     return pairs if max_pairs <= 0 else pairs[:max_pairs]
 
 
+SAME_FAMILY_CAP = 2
+
+
+def _stratify_fresh(fresh: list[dict]) -> list[dict]:
+    """Round-robin newcomers across Kalshi categories, order preserved.
+
+    Discovery order clusters by family (Economics runs long); taking
+    the head verbatim builds single-family slices, and same-family
+    topics then pair with each other every cycle. Buckets keep
+    discovery order; categories interleave from first appearance.
+    """
+    buckets: dict[str, list[dict]] = {}
+    for t in fresh:
+        buckets.setdefault(t.get("category") or "Unknown", []).append(t)
+    out: list[dict] = []
+    while any(buckets.values()):
+        for cat in buckets:
+            if buckets[cat]:
+                out.append(buckets[cat].pop(0))
+    return out
+
+
+def _prefer_cross_family(pairs: list[dict], topics: list[dict],
+                         cap: int = SAME_FAMILY_CAP) -> list[dict]:
+    """Cross-category pairs first; same-family pairs capped per cycle.
+
+    Pairs rank by evidence count, and same-family topics share the most
+    evidence — without this, GDP x GDP always outranks Mars x Mamdani
+    and the graph blobs by family. Topics without a category never
+    count as same-family. When nothing crosses families, the cap lifts
+    rather than returning an empty cycle.
+    """
+    cat = {t["event_ticker"]: t.get("category") or "" for t in topics}
+    cross, same = [], []
+    for p in pairs:
+        ca, cb = cat.get(p["a"], ""), cat.get(p["b"], "")
+        if ca and ca == cb:
+            same.append(p)
+        else:
+            cross.append(p)
+    if not cross:
+        return pairs
+    return cross + same[:max(0, cap)]
+
+
 def shared_url_pairs(topics: list[dict], mentions: dict,
                      max_pairs: int = 10) -> list[dict]:
     """Co-mention: topic pairs sharing article URLs in one snapshot."""
@@ -217,6 +264,7 @@ def shared_url_pairs(topics: list[dict], mentions: dict,
                 pairs.append({"a": a, "b": b, "urls": shared,
                               "mode": "co-mention"})
     pairs.sort(key=lambda p: -len(p["urls"]))
+    pairs = _prefer_cross_family(pairs, topics)
     return _cap_pairs(pairs, max_pairs)
 
 
@@ -241,6 +289,7 @@ def shared_subject_pairs(topics: list[dict], mentions: dict,
                                   "mode": "shared-subject",
                                   "subject": term})
     pairs.sort(key=lambda p: -len(p["urls"]))
+    pairs = _prefer_cross_family(pairs, topics)
     return _cap_pairs(pairs, max_pairs)
 
 
@@ -298,6 +347,8 @@ def entity_overlap_pairs(topics: list[dict], kept: list[dict],
                 pairs.append({"a": a, "b": b, "urls": urls,
                               "mode": "entity-overlap", "entity": e})
                 break
+    pairs.sort(key=lambda p: -len(p["urls"]))
+    pairs = _prefer_cross_family(pairs, topics)
     return _cap_pairs(pairs, max_pairs)
 
 

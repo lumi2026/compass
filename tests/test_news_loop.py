@@ -173,6 +173,92 @@ def test_stage_discover_graph_first_and_watch():
     assert "kalshi:EA" in api.store.nodes  # newcomers landed
 
 
+def _cat_topics():
+    return [{"event_ticker": "EA", "title": "A GDP", "terms": ["gdp"],
+             "category": "Economics"},
+            {"event_ticker": "EB", "title": "B GDP", "terms": ["gdp"],
+             "category": "Economics"},
+            {"event_ticker": "EC", "title": "C Mars", "terms": ["mars"],
+             "category": "Science and Technology"},
+            {"event_ticker": "ED", "title": "D CPI", "terms": ["cpi"],
+             "category": "Economics"}]
+
+
+def test_stratify_fresh_round_robins_categories():
+    fresh = [{"event_ticker": f"E{i}", "category": "Economics"}
+             for i in range(3)]
+    fresh.insert(2, {"event_ticker": "P1", "category": "Politics"})
+    fresh.append({"event_ticker": "S1", "category": "Sports"})
+    out = nl._stratify_fresh(fresh)
+    assert [t["event_ticker"] for t in out] == [
+        "E0", "P1", "S1", "E1", "E2"]
+
+
+def test_stratify_fresh_keeps_discovery_order_within_family():
+    fresh = [{"event_ticker": "E2", "category": "Economics"},
+             {"event_ticker": "E1", "category": "Economics"}]
+    assert [t["event_ticker"] for t in nl._stratify_fresh(fresh)] == [
+        "E2", "E1"]
+
+
+def test_prefer_cross_family_ranks_first_and_caps_same():
+    topics = _cat_topics()
+    pairs = [
+        {"a": "EA", "b": "EB", "urls": [f"u{i}" for i in range(10)]},
+        {"a": "EA", "b": "ED", "urls": ["u1", "u2", "u3", "u4"]},
+        {"a": "EB", "b": "ED", "urls": ["u1", "u2", "u3"]},
+        {"a": "EA", "b": "EC", "urls": ["u1", "u2"]},
+        {"a": "EB", "b": "EC", "urls": ["u1"]},
+    ]
+    out = nl._prefer_cross_family(pairs, topics)
+    assert [(p["a"], p["b"]) for p in out] == [
+        ("EA", "EC"), ("EB", "EC"), ("EA", "EB"), ("EA", "ED")]
+    # same-family capped at SAME_FAMILY_CAP even with more evidence
+
+
+def test_prefer_cross_family_lifts_cap_when_nothing_crosses():
+    topics = [t for t in _cat_topics()
+              if t["category"] == "Economics"]
+    pairs = [{"a": "EA", "b": "EB", "urls": ["u1"]},
+             {"a": "EA", "b": "ED", "urls": ["u1"]},
+             {"a": "EB", "b": "ED", "urls": ["u1"]}]
+    out = nl._prefer_cross_family(pairs, topics)
+    assert len(out) == 3  # never empties a mono-family cycle
+
+
+def test_prefer_cross_family_ignores_missing_categories():
+    topics = [{"event_ticker": "EA", "title": "A", "terms": ["t1"]},
+              {"event_ticker": "EB", "title": "B", "terms": ["t2"]}]
+    pairs = [{"a": "EA", "b": "EB", "urls": ["u1"]}]
+    assert nl._prefer_cross_family(pairs, topics) == pairs
+
+
+def test_shared_url_pairs_prefers_cross_family(monkeypatch):
+    topics = _cat_topics()
+    mentions = {"gdp": {"urls": [f"u{i}" for i in range(10)]},
+                "mars": {"urls": ["m1", "u0"]},
+                "cpi": {"urls": [f"u{i}" for i in range(1, 6)]}}
+    pairs = nl.shared_url_pairs(topics, mentions, 10)
+    first = (pairs[0]["a"], pairs[0]["b"])
+    assert "EC" in first  # the cross-family Mars link outranks GDPxGDP
+
+
+def test_discover_carries_category(monkeypatch):
+    def fake(url, timeout=30):
+        if url.endswith("/graph"):
+            return {"elements": []}
+        return {"events": [
+            {"event_ticker": "EX", "title": "Example GDP Numbers",
+             "category": "Economics"}]}
+
+    monkeypatch.setattr(nl, "_get_json", fake)
+    sliced = nl.discover_topics("http://k", ("EX",), 5)
+    assert sliced[0]["category"] == "Economics"
+    assert sliced[0]["terms"]
+    full = nl.discover_topics("http://k", (), 5, graph_url="http://g")
+    assert full[0]["category"] == "Economics"
+
+
 def test_cap_pairs_zero_means_uncapped():
     topics = [{"event_ticker": "EA", "title": "A", "terms": ["t1"]},
               {"event_ticker": "EB", "title": "B", "terms": ["t2"]},
