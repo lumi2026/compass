@@ -69,6 +69,8 @@ LEGACY_MODE_TYPE = {
     "shared-subject": "shared_context",
     "burst": "co_mention",
     "entity-overlap": "co_mention",
+    "co-location": "co_location",
+    "transitive": "shared_context",
     "odds-correlation": "co_outcome",
 }
 

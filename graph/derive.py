@@ -31,6 +31,10 @@ def _subject_events(store: GraphStore) -> dict[str, set[str]]:
 def derive_shared_subject_links(store: GraphStore, at: str) -> list[Edge]:
     """Connector derivation: events sharing a Subject get linked.
 
+    Untyped mesh, separate from the news loop's typed Hypotheses
+    (co_mention/co_location/shared_context/co_outcome): the view
+    always filters this mesh so the typed links stay readable.
+
     An event counts for a subject when an article that mentions the
     subject is also `about` that event. Emits both directions so the
     workspace renders the link either way. Pure: caller records them.

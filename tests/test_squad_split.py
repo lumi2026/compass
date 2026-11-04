@@ -91,6 +91,22 @@ def test_investigator_empty_kept_returns_none():
     assert Investigator().run({"event_ticker": "E1"}, {"kept": []}) == []
 
 
+def test_investigator_carries_typed_relation():
+    kept = [{"url": "https://t.test/a1", "title": "A1"}]
+    props = Investigator().run(
+        {"event_ticker": "E1", "mode": "co-location"}, {"kept": kept})
+    detail = json.loads(props[0].detail)
+    assert detail["props"]["type"] == "co_location"
+    assert detail["props"]["mode"] == "co-location"
+    props = Investigator().run(
+        {"event_ticker": "E1", "hypothesis_type": "shared_context"},
+        {"kept": kept})
+    assert json.loads(props[0].detail)["props"]["type"] == "shared_context"
+    # Legacy default stays extractive-safe.
+    props = Investigator().run({"event_ticker": "E1"}, {"kept": kept})
+    assert json.loads(props[0].detail)["props"]["type"] == "co_mention"
+
+
 def test_connector_derive_and_followups():
     api = GraphUpdateAPI(GraphStore())
     for n in [Node(id="kalshi:E1", kind="Event", title="E1"),

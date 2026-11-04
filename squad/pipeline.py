@@ -40,7 +40,8 @@ def investigation_triggers(changes: list[ChangeEvent], threshold: int = 1) -> bo
 
 def build_investigator_context(news_proposal=None, graph_props=None,
                                kept=None, markets=None,
-                               lead_question=None) -> dict:
+                               lead_question=None, hypothesis_type=None,
+                               mode=None) -> dict:
     """Context for Investigator.run from prior squad outputs."""
     ctx: dict = {}
     if news_proposal is not None:
@@ -54,6 +55,10 @@ def build_investigator_context(news_proposal=None, graph_props=None,
         ctx["markets"] = markets
     if lead_question:
         ctx["lead_question"] = lead_question
+    if hypothesis_type:
+        ctx["hypothesis_type"] = hypothesis_type
+    if mode:
+        ctx["mode"] = mode
     triggers = investigation_triggers([])
     ctx["triggers"] = triggers
     return ctx

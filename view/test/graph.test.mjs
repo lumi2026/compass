@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { HYPOTHESIS_COLORS, centerOnNode, eventSummary, hypothesisType, spherePoint, transformElements, zoomCamera } from '../src/graph.js'
+import { HYPOTHESIS_COLORS, HYPOTHESIS_DESCRIPTIONS, centerOnNode, eventSummary, hypothesisType, spherePoint, transformElements, zoomCamera } from '../src/graph.js'
 
 class V {
   constructor(x = 0, y = 0, z = 0) {
@@ -319,8 +319,17 @@ describe('hypothesis types', () => {
     assert.equal(hypothesisType({ type: 'co_location' }), 'co_location')
     assert.equal(hypothesisType({ mode: 'shared-subject' }), 'shared_context')
     assert.equal(hypothesisType({ mode: 'odds-correlation' }), 'co_outcome')
+    assert.equal(hypothesisType({ mode: 'co-location' }), 'co_location')
+    assert.equal(hypothesisType({ mode: 'transitive' }), 'shared_context')
     assert.equal(hypothesisType({}), 'co_mention')
     assert.equal(hypothesisType({ type: 'bogus' }), 'co_mention')
+  })
+
+  it('describes every relation type without identifiers', () => {
+    for (const t of Object.keys(HYPOTHESIS_COLORS)) {
+      assert.ok(HYPOTHESIS_DESCRIPTIONS[t])
+      assert.ok(!HYPOTHESIS_DESCRIPTIONS[t].includes('co_'))
+    }
   })
 
   it('colors collapsed links by relation type and carries it', () => {

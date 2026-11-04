@@ -46,10 +46,20 @@ def _parse_reason(lines: list[str], default: str = "") -> str:
     return lines[1].strip()[:300] if len(lines) > 1 else default
 
 
+KNOWN_MODES = ("co-mention", "shared-subject", "burst",
+               "entity-overlap", "co-location", "odds-correlation",
+               "transitive")
+
+
 def audit_pair(topic_a: str, title_a: str, topic_b: str, title_b: str,
                evidence_titles: list[str], mode: str,
                model=None) -> AuditResult:
     """Judge one linked pair against its shared evidence.
+
+    Handles every detection mode (co-mention, shared-subject,
+    co-location, odds-correlation, plus burst/entity-overlap aliases
+    and transitive metas): the check is the same substantive-mismatch
+    test, so unknown modes stay fail-open rather than vetoed.
 
     Veto ONLY when the shared articles are substantively about a
     different country, market, or entity than the link claims (e.g. a

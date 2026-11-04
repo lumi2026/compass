@@ -27,11 +27,19 @@ export const HYPOTHESIS_COLORS = {
   co_outcome: '#059669',
 }
 
+export const HYPOTHESIS_DESCRIPTIONS = {
+  co_mention: 'shared articles',
+  co_location: 'shared place',
+  shared_context: 'shared theme',
+  co_outcome: 'correlated odds',
+}
+
 export const LEGACY_MODE_TYPE = {
   'co-mention': 'co_mention',
   'shared-subject': 'shared_context',
   burst: 'co_mention',
   'entity-overlap': 'co_mention',
+  'co-location': 'co_location',
   transitive: 'shared_context',
   'odds-correlation': 'co_outcome',
 }
