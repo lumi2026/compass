@@ -122,13 +122,28 @@ export function transformElements(elements, cap = 200, opts = {}) {
   }
   nodeRows = nodeRows.filter((d) => !collapsed.has(d.id))
   const totalNodes = nodeRows.length
-  // Events pin first so the cap never drops the skeleton for evidence.
+  // Split budget: Events pin first up to the cap, but evidence gets its
+  // own share so it is never starved out once Events fill the cap (with
+  // 200 Events a single shared budget rendered toggles dead). Opted-in
+  // markets bypass the evidence budget: the toggle is an explicit
+  // request for all of them.
+  const isEvent = (d) => (d.kind || 'Market') === 'Event'
   nodeRows.sort((a, b) => {
-    const ae = (a.kind || 'Market') === 'Event' ? 1 : 0
-    const be = (b.kind || 'Market') === 'Event' ? 1 : 0
+    const ae = isEvent(a) ? 1 : 0
+    const be = isEvent(b) ? 1 : 0
     return be - ae || (degree[b.id] ?? 0) - (degree[a.id] ?? 0)
   })
-  if (cap != null) nodeRows = nodeRows.slice(0, cap)
+  if (cap != null) {
+    const evts = nodeRows.filter(isEvent).slice(0, cap)
+    let rest = nodeRows.filter((d) => !isEvent(d))
+    let extra = []
+    if (showMarkets) {
+      extra = rest.filter((d) => (d.kind || 'Market') === 'Market')
+      rest = rest.filter((d) => (d.kind || 'Market') !== 'Market')
+    }
+    rest = rest.slice(0, Math.floor(cap / 2))
+    nodeRows = evts.concat(rest, extra)
+  }
   const kept = new Set(nodeRows.map((d) => d.id))
   // Drop non-Events left neighbourless by hiding/collapse (a spent
   // audit, an article whose only linker collapsed away): with no
@@ -163,8 +178,14 @@ export function transformElements(elements, cap = 200, opts = {}) {
     }
   })
   const totalLinks = raw.filter((d) => 'source' in d).length
+  // The Event-to-Event subject mesh (one edge per pair per shared
+  // subject) is always filtered: it is a full mesh that buries the
+  // hypothesis links. The count is reported for transparency.
+  const subjectLinksHidden = raw.filter(
+    (d) => 'source' in d && (d.label ?? '') === 'shares-subject-with').length
   const links = raw
     .filter((d) => 'source' in d && kept.has(d.source) && kept.has(d.target))
+    .filter((d) => (d.label ?? '') !== 'shares-subject-with')
     .map((d) => ({
       source: d.source,
       target: d.target,
@@ -173,7 +194,7 @@ export function transformElements(elements, cap = 200, opts = {}) {
       w: d.label === 'shares-subject-with' ? 3 : 1,
     }))
     .concat(hypothesisLinks.filter((l) => kept.has(l.source) && kept.has(l.target)))
-  return { nodes, links, totalNodes, totalLinks, capped: totalNodes > nodes.length, marketsHidden, subjectsHidden }
+  return { nodes, links, totalNodes, totalLinks, capped: totalNodes > nodes.length, marketsHidden, subjectsHidden, subjectLinksHidden }
 }
 
 // Focus helper for the event picker: swing the orbit target onto the

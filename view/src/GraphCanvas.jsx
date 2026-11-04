@@ -11,13 +11,11 @@ function escapeHtml(s) {
 // Vanilla 3d-force-graph (same pinned lib as the standalone viewer)
 // mounted inside React: avoids the react wrapper's peer-version risk
 // while keeping identical colors, labels, and controls.
-export default function GraphCanvas({ nodes, links, showAll, onSelect, controlsRef }) {
+export default function GraphCanvas({ nodes, links, onSelect, controlsRef }) {
   const mountRef = useRef(null)
   const graphRef = useRef(null)
   const onSelectRef = useRef(onSelect)
   onSelectRef.current = onSelect
-  const showAllRef = useRef(showAll)
-  showAllRef.current = showAll
 
   useEffect(() => {
     const el = mountRef.current
@@ -41,7 +39,9 @@ export default function GraphCanvas({ nodes, links, showAll, onSelect, controlsR
         return html
       })
       .nodeThreeObject((n) => {
-        if (!showAllRef.current && !SKELETON_KINDS.includes(n.kind)) return null
+        // Labels on skeleton kinds only (Events, Subjects, Hypotheses,
+        // Happenings); Article/Market dots stay unlabeled for readability.
+        if (!SKELETON_KINDS.includes(n.kind)) return null
         const s = new SpriteText(n.short, 6, '#111111')
         s.backgroundColor = 'rgba(255,255,255,0.85)'
         s.material.depthWrite = false

@@ -250,3 +250,51 @@ describe('hypothesis as edge', () => {
     assert.equal(eventSummary(byId.get('kalshi:B'), byId, v.links).hypotheses, 1)
   })
 })
+
+describe('evidence budget', () => {
+  const els = [
+    NM('kalshi:A', 'Event', 'A'),
+    NM('kalshi:B', 'Event', 'B'),
+    NM('kalshi:C', 'Event', 'C'),
+    NM('article:1', 'Article', 'story one'),
+    NM('article:2', 'Article', 'story two'),
+    NM('market:A-1', 'Market', 'm1'),
+    E('article:1', 'kalshi:A', 'about'),
+    E('article:1', 'kalshi:B', 'about'),
+    E('article:2', 'kalshi:C', 'about'),
+    E('market:A-1', 'kalshi:A', 'about'),
+  ]
+
+  it('reserves evidence room past a full event cap', () => {
+    const v = transformElements(els, 2)
+    assert.equal(v.nodes.filter((n) => n.kind === 'Event').length, 2)
+    // floor(2/2) = 1 slot goes to the highest-degree article
+    assert.ok(v.nodes.some((n) => n.id === 'article:1'))
+    assert.ok(!v.nodes.some((n) => n.id === 'article:2'))
+  })
+
+  it('shows opted-in markets past the evidence budget', () => {
+    const off = transformElements(els, 4)
+    assert.ok(!off.nodes.some((n) => n.kind === 'Market'))
+    const on = transformElements(els, 4, { showMarkets: true })
+    assert.ok(on.nodes.some((n) => n.id === 'market:A-1'))
+  })
+})
+
+describe('subject link filter', () => {
+  // derive emits the mesh in both directions, like the live graph
+  const mesh = [
+    NM('kalshi:A', 'Event', 'A'),
+    NM('kalshi:B', 'Event', 'B'),
+    E('kalshi:A', 'kalshi:B', 'shares-subject-with'),
+    E('kalshi:B', 'kalshi:A', 'shares-subject-with'),
+    E('kalshi:A', 'kalshi:B', 'hypothesizes'),
+  ]
+
+  it('always filters the subject mesh but keeps hypothesis links', () => {
+    const v = transformElements(mesh, 200)
+    assert.ok(!v.links.some((l) => l.rel === 'shares-subject-with'))
+    assert.ok(v.links.some((l) => l.rel === 'hypothesizes'))
+    assert.equal(v.subjectLinksHidden, 2)
+  })
+})

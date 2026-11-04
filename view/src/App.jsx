@@ -58,7 +58,6 @@ function PropsTable({ props }) {
 }
 
 export default function App() {
-  const [showAll, setShowAll] = useState(false)
   const [showMarkets, setShowMarkets] = useState(false)
   const [showSubjects, setShowSubjects] = useState(false)
   const [sel, setSel] = useState(null)
@@ -83,6 +82,7 @@ export default function App() {
   const centerOnEvent = (id) => {
     setSel(id ? { type: 'node', id } : null)
     if (id) controlsRef.current?.focus(id)
+    else controlsRef.current?.reset()
   }
 
   let detail = <p>Click a node or link.</p>
@@ -138,14 +138,10 @@ export default function App() {
         <h1>Compass graph</h1>
         <span>
           {view.nodes.length} nodes, {view.links.length} links (rev {revision})
-          {view.capped ? ` — showing 200 of ${view.totalNodes}` : ''}
+          {view.capped ? ` — showing ${view.nodes.length} of ${view.totalNodes}` : ''}
           {hiddenText}
         </span>
         <span className="dim">drag moves · right-drag rotates · scroll zooms</span>
-        <label title="Labels always show on Events; tick this to also label every Article/Market node (busier).">
-          <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} /> all
-          labels
-        </label>
         <label>
           Event{' '}
           <select aria-label="Center on event" value={selEventId} onChange={(e) => centerOnEvent(e.target.value)}>
@@ -182,7 +178,6 @@ export default function App() {
             <GraphCanvas
               nodes={view.nodes}
               links={view.links}
-              showAll={showAll}
               onSelect={setSel}
               controlsRef={controlsRef}
             />
