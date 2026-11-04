@@ -953,6 +953,36 @@ class ScriptModel:
         return type("R", (), {"content": r})()
 
 
+def test_normalize_hypothesis_type_maps_legacy_modes():
+    from squad.auditor import normalize_hypothesis_type
+
+    assert normalize_hypothesis_type("co_mention") == "co_mention"
+    assert normalize_hypothesis_type("co-mention") == "co_mention"
+    assert normalize_hypothesis_type("shared-subject") == "shared_context"
+    assert normalize_hypothesis_type("co-location") == "co_location"
+    assert normalize_hypothesis_type("odds-correlation") == "co_outcome"
+    assert normalize_hypothesis_type("transitive") == "shared_context"
+    assert normalize_hypothesis_type("re-audit") is None
+    assert normalize_hypothesis_type("") is None
+    assert normalize_hypothesis_type(None) is None
+
+
+def test_audit_pair_judges_claimed_type():
+    from squad.auditor import audit_pair
+
+    seen = []
+
+    class Spy:
+        def invoke(self, messages):
+            seen.extend(messages)
+            return type("R", (), {"content": "YES\nsame city\n0.8"})()
+
+    r = audit_pair("EA", "t", "EB", "t", ["x"], "co-location", Spy())
+    assert r.keep
+    text = " ".join(str(getattr(m, "content", "")) for m in seen)
+    assert "co_location" in text
+
+
 def test_deliberate_keep_threads_history():
     from squad.auditor import deliberate_pair
 

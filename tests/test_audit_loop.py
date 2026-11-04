@@ -312,3 +312,110 @@ def test_run_once_prune_empty_retires_nothing(monkeypatch, tmp_path):
                    retire_fn=lambda u, p: calls.append((u, p)))
     assert out["ok"] is True and out["pruned"] == 0
     assert out["vetoed"] == 0 and calls == []
+
+
+def test_run_once_retires_fresh_veto(monkeypatch, tmp_path):
+    import scripts.audit_loop as loop
+
+    monkeypatch.setattr(
+        loop, "_get_json", lambda url, timeout=30: {"elements": _els()})
+    monkeypatch.setattr(loop, "resolve_model", lambda *a, **k: _VetoModel())
+    state = str(tmp_path / "audit_state.json")
+    retired = []
+
+    def retire(url, payload):
+        retired.append((url, payload))
+        return {"retired": [{"entity_id": hid, "removed": True,
+                             "dropped_edges": 3}
+                            for hid in payload["node_ids"]]}
+
+    out = run_once("http://x", "auto", 1, False, state,
+                   post_fn=_ok_post, retire_fn=retire)
+    assert out["ok"] is True
+    assert out["vetoed"] == 1 and out["pruned"] == 1
+    assert retired == [("http://x/retire",
+                        {"node_ids": ["hypothesis:h1"]})]
+    saved = load_state(state)
+    assert saved["hypothesis:h1"]["verdict"] == "veto"
+    assert saved["hypothesis:h1"]["pruned"] is True
+
+
+def test_run_once_no_retire_on_veto_opt_out(monkeypatch, tmp_path):
+    import scripts.audit_loop as loop
+
+    monkeypatch.setattr(
+        loop, "_get_json", lambda url, timeout=30: {"elements": _els()})
+    monkeypatch.setattr(loop, "resolve_model", lambda *a, **k: _VetoModel())
+    state = str(tmp_path / "audit_state.json")
+    calls = []
+    out = run_once("http://x", "auto", 1, False, state,
+                   post_fn=_ok_post, retire_on_veto=False,
+                   retire_fn=lambda u, p: calls.append((u, p)))
+    assert out["ok"] is True
+    assert out["vetoed"] == 1 and out["pruned"] == 0
+    assert calls == []
+
+
+def test_select_force_reaudits_challenged_and_known():
+    cands = select_candidates(
+        _els(), {"hypothesis:h1": {"verdict": "keep"},
+                 "hypothesis:h2": {"verdict": "keep"}}, 0, force=True)
+    assert [c["hid"] for c in cands] == ["hypothesis:h1",
+                                         "hypothesis:h2",
+                                         "hypothesis:h3"]
+
+
+def test_run_once_force_reaudits_everything(monkeypatch, tmp_path):
+    import scripts.audit_loop as loop
+
+    monkeypatch.setattr(
+        loop, "_get_json", lambda url, timeout=30: {"elements": _els()})
+    state = str(tmp_path / "audit_state.json")
+    save_state(state, {"hypothesis:h1": {"verdict": "keep"},
+                       "hypothesis:h2": {"verdict": "keep"}})
+    out = run_once("http://x", None, 0, False, state, force=True)
+    assert out["ok"] is True
+    assert (out["audited"], out["kept"], out["vetoed"]) == (3, 3, 0)
+    assert set(load_state(state)) == {"hypothesis:h1",
+                                      "hypothesis:h2",
+                                      "hypothesis:h3"}
+
+
+def test_select_candidates_carries_hypothesis_type():
+    els = [
+        N("kalshi:A", "Event", "A"),
+        N("kalshi:B", "Event", "B"),
+        N("hypothesis:typed", "Hypothesis", "A x B",
+          {"type": "co_location", "mode": "co-location"}),
+        N("hypothesis:legacy", "Hypothesis", "A x B",
+          {"mode": "shared-subject"}),
+        N("hypothesis:bare", "Hypothesis", "A x B"),
+        E("hypothesis:typed", "kalshi:A", "supports"),
+        E("hypothesis:typed", "kalshi:B", "supports"),
+        E("hypothesis:legacy", "kalshi:A", "supports"),
+        E("hypothesis:legacy", "kalshi:B", "supports"),
+        E("hypothesis:bare", "kalshi:A", "supports"),
+        E("hypothesis:bare", "kalshi:B", "supports"),
+    ]
+    by_hid = {c["hid"]: c for c in select_candidates(els, {}, 0)}
+    assert by_hid["hypothesis:typed"]["htype"] == "co_location"
+    assert by_hid["hypothesis:legacy"]["htype"] == "shared_context"
+    assert by_hid["hypothesis:bare"]["htype"] is None
+
+
+def test_audit_pass_forwards_claimed_type_to_model():
+    seen = []
+
+    class TypeSpy:
+        def invoke(self, msgs):
+            seen.extend(msgs)
+            return SimpleNamespace(content="NO\nno shared place\n0.7")
+
+    cands = [{"hid": "hypothesis:t", "title": "A x B",
+              "events": [{"ticker": "A", "title": "A"},
+                         {"ticker": "B", "title": "B"}],
+              "articles": ["ev one"], "htype": "co_location"}]
+    res = audit_pass("http://x", cands, TypeSpy(), post_fn=_ok_post)
+    assert res["vetoed"] == 1
+    text = " ".join(str(getattr(m, "content", "")) for m in seen)
+    assert "co_location" in text

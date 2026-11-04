@@ -2,9 +2,9 @@
 
 Lane: ROLE_ACTIONS["auditor"] == ("add-node", "add-edge").
 New links are audited pre-commit (veto = skip the pair's proposals).
-Bad links that already committed are flagged, not deleted: an Audit
-node plus a `challenges` edge, both reversible and auditable. Hard
-removal (tombstones) is a later migration.
+Bad links that already committed are flagged (an Audit node plus a
+`challenges` edge, both reversible and auditable) and retired via
+POST /retire in the audit loop.
 
 Fail-open like the rest of the squad: no model, or an unparseable
 reply, keeps the link. Vetoes require an explicit NO.
@@ -46,9 +46,70 @@ def _parse_reason(lines: list[str], default: str = "") -> str:
     return lines[1].strip()[:300] if len(lines) > 1 else default
 
 
-KNOWN_MODES = ("co-mention", "shared-subject", "burst",
-               "entity-overlap", "co-location", "odds-correlation",
-               "transitive")
+# Closed hypothesis relation taxonomy: every Hypothesis node carries
+# props.type in this set. Detection modes (hyphenated) and legacy
+# aliases map onto it; unknown modes stay generic (fail-open).
+HYPOTHESIS_TYPES = ("co_mention", "co_location", "shared_context",
+                    "co_outcome")
+
+_MODE_TO_TYPE = {
+    "co-mention": "co_mention",
+    "shared-subject": "shared_context",
+    "burst": "co_mention",
+    "entity-overlap": "co_mention",
+    "co-location": "co_location",
+    "transitive": "shared_context",
+    "odds-correlation": "co_outcome",
+}
+
+# What each claimed type must show in the evidence. The audit vetoes
+# when the evidence does not support the CLAIMED type, not just when
+# the articles are off-topic.
+_TYPE_CHECKS = {
+    "co_mention": "the same articles must genuinely mention or cover "
+                  "both topics (one shared story touching both)",
+    "co_location": "the evidence must show a real shared place "
+                   "(same city, country, venue, or route)",
+    "shared_context": "the topics must share a genuine subject, "
+                      "office, event type, or unfolding story, even "
+                      "across countries",
+    "co_outcome": "the topics' outcomes must plausibly move together "
+                  "(linked markets, odds, or consequences)",
+}
+
+
+def normalize_hypothesis_type(mode) -> str | None:
+    """Map a detection mode or stored type to the closed taxonomy.
+
+    Returns the closed type, or None for unknown/empty modes (the
+    audit then falls back to the generic mismatch test, fail-open).
+    """
+    if not mode:
+        return None
+    m = str(mode).strip()
+    if m in HYPOTHESIS_TYPES:
+        return m
+    return _MODE_TO_TYPE.get(m)
+
+
+def _type_criterion(mode: str) -> tuple[str | None, str, str]:
+    """System/human prompt fragments for the claimed link type.
+
+    Returns (htype, system_criterion, human_claim). Unknown modes fall
+    back to the generic substantive-mismatch test (fail-open).
+    """
+    htype = normalize_hypothesis_type(mode)
+    check = _TYPE_CHECKS.get(htype) if htype else None
+    if check:
+        return (htype,
+                f"The claimed link type is {htype}: {check}. Reply NO "
+                "if the evidence does not support that type of link.",
+                f"\nClaimed type: {htype} ({check})")
+    return (None,
+            "Reply NO only if the shared articles are substantively "
+            "about a different country, market, or entity than the "
+            "link claims.",
+            "")
 
 
 def audit_pair(topic_a: str, title_a: str, topic_b: str, title_b: str,
@@ -56,19 +117,21 @@ def audit_pair(topic_a: str, title_a: str, topic_b: str, title_b: str,
                model=None) -> AuditResult:
     """Judge one linked pair against its shared evidence.
 
-    Handles every detection mode (co-mention, shared-subject,
-    co-location, odds-correlation, plus burst/entity-overlap aliases
-    and transitive metas): the check is the same substantive-mismatch
-    test, so unknown modes stay fail-open rather than vetoed.
+    The mode (detection mode or stored closed type) selects the test:
+    the evidence must support the CLAIMED type (e.g. co_location
+    needs a real shared place, co_outcome needs linked outcomes).
+    Unknown modes fall back to the generic substantive-mismatch test,
+    fail-open rather than vetoed.
 
-    Veto ONLY when the shared articles are substantively about a
-    different country, market, or entity than the link claims (e.g. a
-    Mexico GDP article linking two US GDP markets). Same office or
-    event type across countries (two prime-minister races sharing
-    prime-minister coverage) is a genuine link: keep it.
+    Veto ONLY when the evidence does not support the claimed link
+    (e.g. a Mexico GDP article linking two US GDP markets). Same
+    office or event type across countries (two prime-minister races
+    sharing prime-minister coverage) is a genuine shared_context
+    link: keep it.
     """
     if model is None:
         return AuditResult(True, "no-model: keep (fail-open)", 0.5)
+    htype, criterion, claim = _type_criterion(mode)
     try:
         from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -76,17 +139,14 @@ def audit_pair(topic_a: str, title_a: str, topic_b: str, title_b: str,
             SystemMessage(
                 "You audit topic links in a prediction-market knowledge "
                 "graph. Two market topics were linked because the same "
-                "news articles matched both. Reply NO only if the shared "
-                "articles are substantively about a different country, "
-                "market, or entity than the link claims. Reply YES if the "
-                "articles genuinely concern both topics, the same office "
-                "or event type, or the same unfolding story, even across "
-                "countries. Then a one-line reason, then a confidence "
-                "number 0-1 on its own line."),
+                "news articles matched both. " + criterion + " Reply YES "
+                "if the articles genuinely support the claimed link, "
+                "even across countries. Then a one-line reason, then a "
+                "confidence number 0-1 on its own line."),
             HumanMessage(
                 f"Topic A: {topic_a} ({title_a})\n"
                 f"Topic B: {topic_b} ({title_b})\n"
-                f"Mode: {mode}\n"
+                f"Mode: {mode}{claim}\n"
                 f"Shared articles: {'; '.join(evidence_titles[:5]) or '(none)'}"),
         ])
         lines = str(msg.content).strip().splitlines()
@@ -128,17 +188,20 @@ def deliberate_pair(topic_a: str, title_a: str, topic_b: str, title_b: str,
                                   "no-model: keep (fail-open)", 0.5, 0)
     from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
+    htype, criterion, claim = _type_criterion(mode)
     ev = "; ".join(evidence_titles[:5]) or "(none)"
     context = (f"Topic A: {topic_a} ({title_a})\n"
                f"Topic B: {topic_b} ({title_b})\n"
-               f"Mode: {mode}\nShared articles: {ev}")
+               f"Mode: {mode}{claim}\nShared articles: {ev}")
     turns = 0
     try:
         msgs = [SystemMessage(
                     "You are a prediction-market analyst linking topics "
                     "through world news. Propose one sentence stating how "
                     "the two topics are related, grounded in the shared "
-                    "articles."),
+                    "articles."
+                    + (f" The claimed link type is {htype}."
+                       if htype else "")),
                 HumanMessage(context + "\nPropose the link in one sentence.")]
         t1 = model.invoke(msgs)
         turns = 1
@@ -147,11 +210,9 @@ def deliberate_pair(topic_a: str, title_a: str, topic_b: str, title_b: str,
         msgs += [AIMessage(str(t1.content)),
                  HumanMessage(
                      "Now audit your own proposal against the same "
-                     "evidence. Reply NO only if the shared articles are "
-                     "substantively about a different country, market, or "
-                     "entity than your claim. Reply YES if it holds. Then "
-                     "a one-line reason, then a confidence number 0-1 on "
-                     "its own line.")]
+                     "evidence. " + criterion + " Reply YES if it holds. "
+                     "Then a one-line reason, then a confidence number "
+                     "0-1 on its own line.")]
         t2 = model.invoke(msgs)
         turns = 2
         lines = str(t2.content).strip().splitlines()
