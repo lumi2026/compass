@@ -36,7 +36,7 @@ def log(msg: str) -> None:
               help="Tool-call budget per goal; 0 = no cap (default).")
 @click.option("--loop", is_flag=True, default=False,
               help="Repeat the goal forever; without it, run once.")
-@click.option("--interval-min", type=float, default=15)
+@click.option("--interval-min", type=float, default=1)
 @click.option("--max-cycles", type=int, default=0,
               help="Stop after N service cycles (0 = run forever).")
 @click.option("--langsmith-project", default=None)
