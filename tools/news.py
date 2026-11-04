@@ -100,13 +100,32 @@ def news_tools(graph_url: str, kalshi_url: str,
         return {"ok": all(r.get("ok") for r in results),
                 "results": results}
 
-    def next_steps() -> dict:
-        """Autonomous next-cycle params from recent cycle summaries."""
+    def propose_step() -> dict:
+        """Propose the next executable step from recent cycle summaries.
+
+        Returns {"step": {"tool", "args"}, "reasons"} — the brain
+        executes the step first, then continues. Deterministic;
+        follow-up digs beat challenge re-scans beat deep rounds.
+        """
         try:
             nxt = compute_next_steps(_RECENT)
         except Exception as e:
             return {"ok": False, "error": f"{type(e).__name__}: {e}"}
-        return {"ok": True, **nxt}
+        if nxt["event_filter"]:
+            step = {"tool": "news_run_batch",
+                    "args": {"cycles": [
+                        {"event_filter": nxt["event_filter"],
+                         "mode_pin": nxt["mode_pin"] or ""}]}}
+        elif nxt["deep"]:
+            step = {"tool": "news_run_cycle",
+                    "args": {"mode_pin": nxt["mode_pin"] or "",
+                             "history_snaps": nxt["history_snaps"],
+                             "history_hours": nxt["history_hours"],
+                             "history_stride_hours":
+                                 nxt["history_stride_hours"]}}
+        else:
+            step = {"tool": "news_run_cycle", "args": {}}
+        return {"ok": True, "step": step, "reasons": nxt["reasons"]}
 
     return {
         "news_run_cycle": {
@@ -118,10 +137,10 @@ def news_tools(graph_url: str, kalshi_url: str,
                            "concurrently over selected event sets "
                            "(JSON list); results in input order.",
             "func": run_news_batch},
-        "news_next_steps": {
-            "description": "Next-cycle params from recent summaries "
-                           "(follow-up focus, challenge re-scan, deep "
-                           "rounds). Pass event_filter/mode_pin/history_* "
-                           "into the next cycle jobs.",
-            "func": next_steps},
+        "news_propose_step": {
+            "description": "Propose the next executable step from "
+                           "recent summaries (follow-up dig, challenge "
+                           "re-scan, deep round). Execute the returned "
+                           "step first, then continue.",
+            "func": propose_step},
     }

@@ -61,17 +61,27 @@ def main(graph_url, kalshi_url, model, max_iterations, loop,
         log("FAIL: no model key configured (MODEL_API_KEY / provider key).")
         sys.exit(1)
     registry = build_registry(graph_url, kalshi_url, model)
+    propose = registry["news_propose_step"]["func"]
     active_goal = STANDING_GOAL
     log(f"tools={len(registry)} max_iterations="
         f"{'unbounded' if max_iterations <= 0 else max_iterations}")
     cycle = 0
     while True:
+        try:
+            prop = propose()
+            first = prop.get("step") if prop.get("ok") else None
+        except Exception as e:  # proposing never stops the pass
+            first, prop = None, {"ok": False,
+                                 "error": f"{type(e).__name__}: {e}"}
+        log(f"cycle={cycle} proposed first step: "
+            f"{first or prop.get('error', prop)}")
         with squad_span("brain-goal",
                          {"cycle": cycle, "graph_url": graph_url,
                           "kalshi_url": kalshi_url, "model": model}) as span:
             try:
                 summary = run_goal(active_goal, registry, model_obj,
-                                   max_iterations=max_iterations)
+                                   max_iterations=max_iterations,
+                                   first_step=first)
             except Exception as e:  # keep the service alive
                 summary = {"ok": False,
                            "reason": f"{type(e).__name__}: {e}"}

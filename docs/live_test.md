@@ -1,4 +1,4 @@
-# Live test — squad split
+# Live test — full loop
 
 ## Baseline (must pass pre-change)
 - `uv run python scripts/graph_poc.py` — derived Elon<->NATO link, re-run 0, save/load roundtrip.
@@ -30,11 +30,16 @@ Known gaps: `KXTOPLLMGENERAL-30` has zero markets (expect conf floor, no crash).
 - Wide cross-section seed (politics, economics, science, culture, sports — 2 events each, native `category` field):
   `uv run python scripts/seed_kalshi.py --cross-section --per-category 2 --out data_local/seed_wide.json`
   (override buckets with `--buckets 'politics:Politics,Elections sports:Sports'`; `data_local/seed.json` stays the small POC seed)
-- Live run (news scan + graph + page):
-  `uv run python scripts/run_mvp.py --seed data_local/seed_mvp.json`
-  (defaults write `demo_local/mvp_graph.json` + `demo_local/mvp_graph.html`)
-- Open `demo_local/mvp_graph.html` in a browser (standalone Cytoscape page, no server).
-- Offline check: `uv run python scripts/graph_poc.py --out /tmp/graph_poc.json` then render the HTML the same way `run_mvp.py` does.
+- Drive the slice through the live stack (graph + kalshi terminals in
+  Wiring first):
+  `uv run python scripts/demo_interconnect.py --event KXWARSHOUT-26JUL --event KXSPACEXMARS-30 --event KXGDPQ3-25 --cycles 2`
+  — runs news-team cycles, prints rev before/after, new Hypothesis ids,
+  and a `?at=<start>` scrub pair.
+- Open the view (Wiring Terminal 5) to see the interconnect. Time travel
+  is API-only since the as-of slider was removed: compare
+  `curl '127.0.0.1:8090/graph?at=<start_ts>'` against `GET /graph`
+  (nodes rewind, odds stay live until replay lands).
+- Offline check: `uv run python scripts/graph_poc.py --out /tmp/graph_poc.json` (17 nodes / 17 edges, spacex link, control isolated).
 
 ## View (React 3D over live graph API)
 - Terminal 1: `uv run python -m services.graph_api --port 8090`
@@ -116,5 +121,5 @@ Checks: `GET /health` on both services; loop stdout stage logs (`topics/terms �
 - `uv run python scripts/demo_interconnect.py --event KXWARSHOUT-26JUL --event KXSPACEXMARS-30 --event KXGDPQ3-25 --cycles 2`
 - With no `--event` flags it discovers the first 3 events from the kalshi service instead.
 - The script runs that many news-team cycles (rotating modes) against the live graph API, then prints rev before/after, the new Hypothesis ids, and a `?at=<start>` scrub pair.
-- In the view, drag the as-of slider from the printed start timestamp to now to watch the interconnect arrive. Odds stay live on older frames until replay lands.
+- Scrub via the API (`curl '127.0.0.1:8090/graph?at=<start_ts>'`): nodes rewind to the printed start timestamp, then `GET /graph` shows now. Odds stay live on older frames until replay lands. (The view's as-of slider was removed; `?at=` stays in the API.)
 - Pass `--model None` for a free offline-LLM run (extractive hypotheses).

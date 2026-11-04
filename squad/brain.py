@@ -47,10 +47,10 @@ STANDING_GOAL = """Run one full Compass upkeep pass:
    to the chosen events, kalshi_trigger_sweep for newcomers,
    then fan out news work — one news_run_cycle for a narrow set,
    or news_run_batch with one entry per event set (distinct
-   event_filter each) for wide coverage. First call news_next_steps
-   and pass its event_filter/mode_pin/history_* into the cycle jobs
-   (skip keys that are empty) — the loop carries follow-up digs,
-   challenge re-scans, and deep rounds between cycles on its own.
+   event_filter each) for wide coverage. Start with news_propose_step
+   and execute the returned step first — the loop proposes its own
+   next move (follow-up dig, challenge re-scan, deep round) from
+   recent cycles. Then continue the pass.
    Each news agent builds the graph internally
    (discover->scan->pair->propose->commit). A failing news agent
    is not fatal: note it, ignore it, and continue with the rest.
@@ -85,17 +85,54 @@ def _extract_json(raw: str) -> dict:
     return obj
 
 
+def _execute(registry: dict, name, args) -> tuple:
+    """Run one tool call. Returns (result, counted).
+
+    Unknown tools and malformed args are feedback, not calls — the
+    model is not charged for them.
+    """
+    spec = registry.get(name)
+    if spec is None:
+        return ({"ok": False,
+                 "error": f"unknown tool: {name} "
+                          f"(have: {sorted(registry)})"}, False)
+    if not isinstance(args, dict):
+        return ({"ok": False, "error": "args must be an object"}, False)
+    try:
+        return (spec["func"](**args), True)
+    except TypeError as e:
+        return ({"ok": False, "error": f"bad args: {e}"}, True)
+    except Exception as e:
+        return ({"ok": False,
+                 "error": f"{type(e).__name__}: {e}"}, True)
+
+
 def run_goal(goal: str, registry: dict, model_obj,
-             max_iterations: int = 10) -> dict:
+             max_iterations: int = 10, first_step: dict | None = None) -> dict:
     """Drive one goal to an answer or the budget. Returns
     {ok, answer?, tool_calls, iterations, reason?}.
 
     max_iterations <= 0 means no cap: run until the model answers
-    (Ctrl-C stops the service loop outside).
+    (Ctrl-C stops the service loop outside). `first_step` is an
+    already-decided {"tool", "args"} (e.g. from news_propose_step):
+    it executes before the model reasons, and the transcript shows it
+    as the opening action, so the brain starts from there.
     """
     transcript = [SystemMessage(BRAIN_PROMPT), HumanMessage(goal)]
     tool_calls = 0
     i = 0
+    if isinstance(first_step, dict) and first_step.get("tool"):
+        name, args = first_step.get("tool"), first_step.get("args", {})
+        result, counted = _execute(registry, name, args)
+        if counted:
+            tool_calls += 1
+        call_id = "sup-first"
+        raw_first = json.dumps({"tool": name, "args": args or {}})
+        transcript += [
+            AIMessage(content=raw_first,
+                      tool_calls=[{"name": name, "args": args or {},
+                                   "id": call_id, "type": "tool_call"}]),
+            ToolMessage(content=json.dumps(result), tool_call_id=call_id)]
     while True:
         if max_iterations > 0 and i >= max_iterations:
             break
@@ -118,22 +155,9 @@ def run_goal(goal: str, registry: dict, model_obj,
             return {"ok": True, "answer": act["answer"],
                     "tool_calls": tool_calls, "iterations": i + 1}
         name, args = act.get("tool"), act.get("args", {})
-        spec = registry.get(name)
-        if spec is None:
-            result = {"ok": False,
-                      "error": f"unknown tool: {name} "
-                               f"(have: {sorted(registry)})"}
-        elif not isinstance(args, dict):
-            result = {"ok": False, "error": "args must be an object"}
-        else:
+        result, counted = _execute(registry, name, args)
+        if counted:
             tool_calls += 1
-            try:
-                result = spec["func"](**args)
-            except TypeError as e:
-                result = {"ok": False, "error": f"bad args: {e}"}
-            except Exception as e:
-                result = {"ok": False,
-                          "error": f"{type(e).__name__}: {e}"}
         call_id = f"sup{i}"
         transcript += [
             AIMessage(content=raw,

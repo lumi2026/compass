@@ -169,4 +169,4 @@ def test_as_structured_keeps_names():
     by_name = {t.name: t.description for t in tools}
     assert by_name["kalshi_discover_events"].startswith("List open")
     assert "gated" in by_name["graph_post_proposals"]
-    assert "event_filter" in by_name["news_next_steps"]
+    assert "Execute the returned" in by_name["news_propose_step"]

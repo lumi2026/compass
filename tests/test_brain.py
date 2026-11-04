@@ -69,3 +69,35 @@ def test_model_error_ends_run():
             raise RuntimeError("down")
     out = run_goal("x", REG, M())
     assert out["ok"] is False and "model error" in out["reason"]
+
+
+def test_first_step_executes_before_model():
+    seen = []
+    reg = {"t": {"description": "d",
+                 "func": lambda v=1: seen.append(v) or {"ok": True,
+                                                       "v": v}}}
+    transcripts = []
+
+    class M:
+        def invoke(self, transcript):
+            transcripts.append(list(transcript))
+            return SimpleNamespace(content='{"answer": "after"}')
+
+    out = run_goal("go", reg, M(),
+                   first_step={"tool": "t", "args": {"v": 7}})
+    assert out == {"ok": True, "answer": "after", "tool_calls": 1,
+                   "iterations": 1}
+    assert seen == [7]
+    kinds = [type(m).__name__ for m in transcripts[0]]
+    assert kinds[:2] == ["SystemMessage", "HumanMessage"]
+    assert any(type(m).__name__ == "ToolMessage"
+               for m in transcripts[0])
+
+
+def test_unknown_first_step_fed_back_not_counted():
+    out = run_goal(
+        "go", REG,
+        _model('{"answer": "recovered"}'),
+        first_step={"tool": "nope", "args": {}})
+    assert out["ok"] is True and out["answer"] == "recovered"
+    assert out["tool_calls"] == 0 and out["iterations"] == 1

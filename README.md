@@ -74,9 +74,10 @@ time travel replays it.
 discover Kalshi events → sync watchlist → fan out `news_loop` stage
 cycles (discover → scan → pair → propose → commit, auditor vetoing bad
 pairs) → Connector derives cross-event links → findings note. Between
-cycles the loop acts on its own next steps (`squad/next_steps.py`,
+cycles the loop proposes its own next move (`squad/next_steps.py`,
 no model cost): follow-up endpoints first, challenged links re-scanned
-deep, one deep history round after two quiet rounds. Each
+deep, one deep history round after two quiet rounds — and each pass
+starts by executing the proposed step. Each
 agent writes only `Proposal`s; the graph API gate is the single commit
 point.
 

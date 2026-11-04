@@ -84,6 +84,47 @@ def test_engine_depth_applies_only_on_deep():
     assert nxt["event_slice"] == ()
 
 
+def _propose(recent, monkeypatch):
+    import tools.news as N
+
+    monkeypatch.setattr(N, "_RECENT", list(recent))
+    out = N.news_tools("http://g", "http://k")[
+        "news_propose_step"]["func"]()
+    assert out["ok"] is True
+    return out
+
+
+def test_propose_followups_become_batch(monkeypatch):
+    fups = [{"event_ticker": "EB", "via": "co-mention"}]
+    out = _propose([_summ(pairs=2, followups=fups)], monkeypatch)
+    assert out["step"]["tool"] == "news_run_batch"
+    job = out["step"]["args"]["cycles"][0]
+    assert job["event_filter"] == ["EB"] and job["mode_pin"] == "co-mention"
+
+
+def test_propose_challenged_rescans_deep(monkeypatch):
+    out = _propose([_summ(mode="burst", pairs=1, vetoed=2)],
+                   monkeypatch)
+    assert out["step"] == {
+        "tool": "news_run_cycle",
+        "args": {"mode_pin": "burst", "history_snaps": 8,
+                 "history_hours": 48.0, "history_stride_hours": 6.0}}
+
+
+def test_propose_quiet_goes_deep_without_pin(monkeypatch):
+    out = _propose([_summ(pairs=0), _summ(pairs=0)], monkeypatch)
+    assert out["step"]["tool"] == "news_run_cycle"
+    assert out["step"]["args"]["history_snaps"] == 8
+    assert out["step"]["args"]["mode_pin"] == ""
+
+
+def test_propose_defaults_to_plain_cycle(monkeypatch):
+    out = _propose([_summ(pairs=3)], monkeypatch)
+    assert out["step"] == {"tool": "news_run_cycle", "args": {}}
+    out = _propose([], monkeypatch)
+    assert out["step"] == {"tool": "news_run_cycle", "args": {}}
+
+
 def test_commit_summary_carries_followup_events(monkeypatch):
     from scripts import news_loop as nl
 

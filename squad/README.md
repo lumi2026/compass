@@ -84,7 +84,9 @@ lanes take injected data or call `sources/` + `tools/articles.py`.
   merges with operator pins). Follow-up endpoints first, challenged
   links get a same-mode deep dig, two quiet rounds trigger one deep
   history round. Consumed by the `news_loop --loop` runner and the
-  `news_next_steps` brain tool; explicit `--mode`/`--event` always win.
+  `news_propose_step` brain tool (which returns the step executable —
+  the brain runs it first, then continues); explicit `--mode`/`--event`
+  always win.
 
 ## How it fits together
 
