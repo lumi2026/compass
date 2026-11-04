@@ -19,6 +19,23 @@ API_BASE = "https://api.elections.kalshi.com/trade-api/v2"
 TIMEOUT_S = 20
 
 
+def _error_with_body(e) -> Exception:
+    """Same HTTPError type/code, but the reason carries the body snippet.
+
+    Kalshi's 4xx bodies name the offending field; without them the
+    service log can only say "400: Bad Request". Preserves type and
+    code so existing `except HTTPError` callers keep working.
+    """
+    import urllib.error
+
+    try:
+        body = (e.read() or b"").decode("utf-8", "ignore")[:300]
+    except Exception:
+        body = ""
+    reason = f"{e.code} {e.reason}" + (f": {body}" if body else "")
+    return urllib.error.HTTPError(e.url, e.code, reason, e.headers, None)
+
+
 def _get_json(url: str, retries: int = 3) -> dict:
     import urllib.error
 
@@ -32,10 +49,17 @@ def _get_json(url: str, retries: int = 3) -> dict:
                 return json.load(resp)
         except urllib.error.HTTPError as e:
             last = e
-            if e.code != 429 or attempt == retries - 1:
-                raise
-            time.sleep(2 * (attempt + 1))
-    raise last  # pragma: no cover
+            if e.code == 429 and attempt < retries - 1:
+                time.sleep(2 * (attempt + 1))
+                continue
+            if e.code == 400 and attempt == 0:
+                # Transient upstream 400s observed on identical /events
+                # params (next attempt 200s). One retry, then give up
+                # loudly with the body attached.
+                time.sleep(2)
+                continue
+            raise _error_with_body(e)
+    raise _error_with_body(last)  # pragma: no cover
 
 
 @dataclass(frozen=True)
