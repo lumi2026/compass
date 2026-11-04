@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import ForceGraph3D from '3d-force-graph'
 import SpriteText from 'three-spritetext'
 import * as THREE from 'three'
-import { SKELETON_KINDS, zoomCamera } from './graph'
+import { SKELETON_KINDS, centerOnNode, zoomCamera } from './graph'
 
 function escapeHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -42,7 +42,7 @@ export default function GraphCanvas({ nodes, links, showAll, onSelect, controlsR
       })
       .nodeThreeObject((n) => {
         if (!showAllRef.current && !SKELETON_KINDS.includes(n.kind)) return null
-        const s = new SpriteText(n.short, 4, '#111111')
+        const s = new SpriteText(n.short, 6, '#111111')
         s.backgroundColor = 'rgba(255,255,255,0.85)'
         s.material.depthWrite = false
         return s
@@ -84,6 +84,13 @@ export default function GraphCanvas({ nodes, links, showAll, onSelect, controlsR
         reset: () => {
           const G = graphRef.current
           if (G && typeof G.zoomToFit === 'function') G.zoomToFit(500)
+        },
+        focus: (id) => {
+          const G = graphRef.current
+          if (!G) return
+          const node = (G.graphData().nodes ?? []).find((n) => n.id === id)
+          if (!node || node.x == null) return
+          centerOnNode(G.camera(), G.controls().target, node)
         },
       }
     }

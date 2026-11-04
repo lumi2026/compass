@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { eventSummary, transformElements, zoomCamera } from '../src/graph.js'
+import { centerOnNode, eventSummary, transformElements, zoomCamera } from '../src/graph.js'
 
 class V {
   constructor(x = 0, y = 0, z = 0) {
@@ -64,6 +64,20 @@ describe('zoomCamera', () => {
     const cam = { position: new V(5, 5, 5) }
     zoomCamera(cam, new V(5, 5, 5), 0.5)
     assert.deepEqual([cam.position.x, cam.position.y, cam.position.z], [5, 5, 5])
+  })
+})
+
+describe('centerOnNode', () => {
+  it('swings the orbit target onto the node at a fixed distance', () => {
+    const cam = { position: new V(0, 0, 100) }
+    centerOnNode(cam, new V(0, 0, 0), { x: 10, y: 20, z: 30 })
+    assert.deepEqual([cam.position.x, cam.position.y, cam.position.z], [10, 20, 280])
+  })
+
+  it('recovers when the camera sits exactly on the target', () => {
+    const cam = { position: new V(5, 5, 5) }
+    centerOnNode(cam, new V(5, 5, 5), { x: 1, y: 2, z: 3 })
+    assert.deepEqual([cam.position.x, cam.position.y, cam.position.z], [1, 2, 253])
   })
 })
 

@@ -176,6 +176,25 @@ export function transformElements(elements, cap = 200, opts = {}) {
   return { nodes, links, totalNodes, totalLinks, capped: totalNodes > nodes.length, marketsHidden, subjectsHidden }
 }
 
+// Focus helper for the event picker: swing the orbit target onto the
+// node's position while keeping the current view direction, parked at
+// a fixed distance. Pure geometry like zoomCamera so it stays testable.
+export function centerOnNode(camera, target, pos, distance = 250, limits = [10, 3000]) {
+  const [lo, hi] = limits
+  const d = Math.min(hi, Math.max(lo, distance))
+  const off = camera.position.clone().sub(target)
+  const len = off.length()
+  if (!Number.isFinite(len) || len <= 0) {
+    off.x = 0
+    off.y = 0
+    off.z = 1
+  }
+  off.setLength(d)
+  target.copy({ x: pos.x ?? 0, y: pos.y ?? 0, z: pos.z ?? 0 })
+  camera.position.copy(target).add(off)
+  return camera.position
+}
+
 // Zoom step for the zoom buttons: move the camera toward/away from
 // the orbit target. Pure geometry over {position}-shaped objects so
 // the math is unit-testable without a renderer.

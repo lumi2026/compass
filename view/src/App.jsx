@@ -75,6 +75,15 @@ export default function App() {
   if (!showSubjects && view.subjectsHidden > 0) hiddenBits.push(`${view.subjectsHidden} subjects`)
   const hiddenText = hiddenBits.length ? ` — ${hiddenBits.join(', ')} hidden` : ''
   const byId = useMemo(() => new Map(view.nodes.map((n) => [n.id, n])), [view.nodes])
+  const events = useMemo(
+    () => view.nodes.filter((n) => n.kind === 'Event').sort((a, b) => a.label.localeCompare(b.label)),
+    [view.nodes],
+  )
+  const selEventId = sel?.type === 'node' && byId.get(sel.id)?.kind === 'Event' ? sel.id : ''
+  const centerOnEvent = (id) => {
+    setSel(id ? { type: 'node', id } : null)
+    if (id) controlsRef.current?.focus(id)
+  }
 
   let detail = <p>Click a node or link.</p>
   if (sel?.type === 'node' && byId.get(sel.id)) {
@@ -133,9 +142,20 @@ export default function App() {
           {hiddenText}
         </span>
         <span className="dim">drag moves · right-drag rotates · scroll zooms</span>
-        <label>
+        <label title="Labels always show on Events; tick this to also label every Article/Market node (busier).">
           <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} /> all
           labels
+        </label>
+        <label>
+          Event{' '}
+          <select aria-label="Center on event" value={selEventId} onChange={(e) => centerOnEvent(e.target.value)}>
+            <option value="">all — reset view</option>
+            {events.map((n) => (
+              <option key={n.id} value={n.id}>
+                {n.label}
+              </option>
+            ))}
+          </select>
         </label>
         <label title="Show the grey Market odds nodes (hidden by default so the news links dominate).">
           <input type="checkbox" checked={showMarkets} onChange={(e) => setShowMarkets(e.target.checked)} />{' '}
