@@ -940,3 +940,31 @@ widening, `KXTOPLLMGENERAL-30` gap, feedback loop).
 - Polish: heuristic relevance pre-filter, mamdani term widening,
   `KXTOPLLMGENERAL-30` zero-market gap, human feedback loop on the
   workspace, view label density/mobile refinement.
+
+## 2026-11-04 — structure cleanup + brain fixes
+
+- Removed dead weight: untracked `tmp/vtest/` Vite template; absorbed
+  `processing/` into `squad/pipeline.py` (its only consumer); dissolved
+  `workspace/` (`to_cytoscape` → new `graph/cytoscape.py`, feedback task →
+  `squad`, viewer → `scripts/demo_page.py`, then dropped entirely with
+  `cross_link --html` and `test_mvp.py` — the React view is the display
+  now, `run_mvp.py` was already gone). Small fix along the way:
+  `derive_market_links` added to `graph` `__all__`.
+- New `graph/README.md`: node id scheme, edge vocab + derived-only rels,
+  role lanes, commit/merge flow, rerun dedup behavior, bitemporal stamps,
+  log/snapshot persistence.
+- Log-only: `[graph-api] GET /graph rev=N unchanged -> 304` next to
+  uvicorn's access line (ETag polls from the view's 5s refresh); no
+  behavior change. `run_compass` now logs next-cycle wake time instead
+  of sleeping silently 15 min.
+- Brain fixes from a live cycle-0 read (rev 144→148, 17 calls, 1 GDP
+  pair, 3 empty cycles): `news_run_batch` takes `cycles` (plain list)
+  as well as `cycles_json` (the model passed the natural shape and
+  failed on arg name); service-to-service HTTP defaults 30s → 120s
+  (tools, news_loop, kalshi sweep). Per-article fetch and per-tick
+  publish timeouts untouched.
+- Verified: full suite 197 green; offline POC OK. Pushed through
+  `91c6c93` (`012ea9f` cleanup, `02d02eb` docs/log, `91c6c93` fixes).
+- Note: Nov 3 log entries naming `scripts/orchestrate.py` /
+  `scripts/supervise.py` describe the pre-`brain` shape; the code is
+  now `squad/brain.py` + `scripts/run_compass.py` + three tool sets.
