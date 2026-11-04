@@ -11,7 +11,7 @@ function EventAbout({ node, byId, links }) {
       {meta && <div className="kind">{meta}</div>}
       {s.lead && (
         <div>
-          Lead: {s.lead.label} — {s.lead.price}¢
+          Lead: {s.lead.label} — {s.lead.price}%
         </div>
       )}
       <div>
@@ -141,27 +141,29 @@ export default function App() {
           {view.capped ? ` — showing ${view.nodes.length} of ${view.totalNodes}` : ''}
           {hiddenText}
         </span>
-        <span className="dim">drag moves · right-drag rotates · scroll zooms</span>
-        <label>
-          Event{' '}
-          <select aria-label="Center on event" value={selEventId} onChange={(e) => centerOnEvent(e.target.value)}>
-            <option value="">all — reset view</option>
-            {events.map((n) => (
-              <option key={n.id} value={n.id}>
-                {n.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label title="Show the grey Market odds nodes (hidden by default so the news links dominate).">
-          <input type="checkbox" checked={showMarkets} onChange={(e) => setShowMarkets(e.target.checked)} />{' '}
-          markets
-        </label>
-        <label title="Show the amber Subject nodes (internal matching logic, hidden by default).">
-          <input type="checkbox" checked={showSubjects} onChange={(e) => setShowSubjects(e.target.checked)} />{' '}
-          subjects
-        </label>
+        <span className="dim">drag rotates · scroll zooms · reset for the globe</span>
         {stale && <span className="warn">stale — retrying</span>}
+        <div id="controls">
+          <label>
+            Event{' '}
+            <select aria-label="Center on event" value={selEventId} onChange={(e) => centerOnEvent(e.target.value)}>
+              <option value="">all — reset view</option>
+              {events.map((n) => (
+                <option key={n.id} value={n.id}>
+                  {n.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label title="Show the grey Market odds nodes (hidden by default so the news links dominate).">
+            <input type="checkbox" checked={showMarkets} onChange={(e) => setShowMarkets(e.target.checked)} />{' '}
+            markets
+          </label>
+          <label title="Show the amber Subject nodes (internal matching logic, hidden by default).">
+            <input type="checkbox" checked={showSubjects} onChange={(e) => setShowSubjects(e.target.checked)} />{' '}
+            subjects
+          </label>
+        </div>
       </div>
       <div id="wrap">
         <div id="view3d">

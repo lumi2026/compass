@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { centerOnNode, eventSummary, transformElements, zoomCamera } from '../src/graph.js'
+import { centerOnNode, eventSummary, spherePoint, transformElements, zoomCamera } from '../src/graph.js'
 
 class V {
   constructor(x = 0, y = 0, z = 0) {
@@ -64,6 +64,28 @@ describe('zoomCamera', () => {
     const cam = { position: new V(5, 5, 5) }
     zoomCamera(cam, new V(5, 5, 5), 0.5)
     assert.deepEqual([cam.position.x, cam.position.y, cam.position.z], [5, 5, 5])
+  })
+})
+
+describe('spherePoint', () => {
+  it('places every slot on the shell', () => {
+    for (let i = 0; i < 200; i += 7) {
+      const p = spherePoint(i, 200, 220)
+      assert.ok(Math.abs(Math.hypot(p.x, p.y, p.z) - 220) < 1e-6)
+    }
+  })
+
+  it('is deterministic and spreads neighbors apart', () => {
+    const a = spherePoint(3, 200, 220)
+    const b = spherePoint(3, 200, 220)
+    assert.deepEqual(a, b)
+    const c = spherePoint(4, 200, 220)
+    assert.ok(Math.hypot(a.x - c.x, a.y - c.y, a.z - c.z) > 10)
+  })
+
+  it('handles a single node without crashing', () => {
+    const p = spherePoint(0, 1, 220)
+    assert.equal(Math.hypot(p.x, p.y, p.z), 220)
   })
 })
 

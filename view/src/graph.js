@@ -197,10 +197,21 @@ export function transformElements(elements, cap = 200, opts = {}) {
   return { nodes, links, totalNodes, totalLinks, capped: totalNodes > nodes.length, marketsHidden, subjectsHidden, subjectLinksHidden }
 }
 
+// Fibonacci-lattice point on a sphere: even, deterministic globe slots
+// for N events. Pure geometry like the camera helpers, tested below.
+export function spherePoint(i, n, radius) {
+  if (n <= 1) return { x: 0, y: radius, z: 0 }
+  const golden = Math.PI * (3 - Math.sqrt(5))
+  const y = 1 - (i / (n - 1)) * 2
+  const r = Math.sqrt(Math.max(0, 1 - y * y))
+  const theta = golden * i
+  return { x: Math.cos(theta) * r * radius, y: y * radius, z: Math.sin(theta) * r * radius }
+}
+
 // Focus helper for the event picker: swing the orbit target onto the
 // node's position while keeping the current view direction, parked at
 // a fixed distance. Pure geometry like zoomCamera so it stays testable.
-export function centerOnNode(camera, target, pos, distance = 250, limits = [10, 3000]) {
+export function centerOnNode(camera, target, pos, distance = 250, limits = [2, 3000]) {
   const [lo, hi] = limits
   const d = Math.min(hi, Math.max(lo, distance))
   const off = camera.position.clone().sub(target)
@@ -219,7 +230,7 @@ export function centerOnNode(camera, target, pos, distance = 250, limits = [10, 
 // Zoom step for the zoom buttons: move the camera toward/away from
 // the orbit target. Pure geometry over {position}-shaped objects so
 // the math is unit-testable without a renderer.
-export function zoomCamera(camera, target, factor, limits = [10, 3000]) {
+export function zoomCamera(camera, target, factor, limits = [2, 3000]) {
   const off = camera.position.clone().sub(target).multiplyScalar(factor)
   const len = off.length()
   if (!Number.isFinite(len) || len <= 0) return camera.position

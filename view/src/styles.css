@@ -5,6 +5,7 @@ body { margin: 0; font-family: system-ui, -apple-system, sans-serif; font-size: 
 #bar .dim { color: #777; }
 #bar .warn { color: #b45309; }
 #bar label { font-size: 14px; color: #333; }
+#controls { flex-basis: 100%; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
 #bar select { font-size: 14px; max-width: 320px; padding: 2px 6px; }
 #zoom { position: absolute; right: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 6px; }
 #zoom button { width: 32px; height: 32px; font-size: 18px; line-height: 1; border: 1px solid #ccc; border-radius: 6px; background: #fff; color: #333; cursor: pointer; }
