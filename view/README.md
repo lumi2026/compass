@@ -54,17 +54,29 @@ publish wiring.
 
 ## 3. Builders (optional — the graph already has data)
 
-- Main agent (standalone — talks to the local `:8090` / `:8080`
-  defaults, no URLs needed):
-  `uv run python scripts/run_compass.py --loop`
-  (add `--interval-min 15` to slow the cycle; `--max-cycles N` to stop
-  after N cycles).
-- News loop (one slice, exits after N cycles):
-  `uv run python scripts/news_loop.py --graph-url
-  http://127.0.0.1:8090 --kalshi-url http://127.0.0.1:8080 --once`
-  (add `--loop --interval-min 15` to keep building).
-- Audit loop (flags bad links, never deletes):
-  `uv run python scripts/audit_loop.py --loop --interval-min 60`.
+Main agent (standalone — talks to the local `:8090` / `:8080`
+defaults, no URLs needed):
+
+```sh
+uv run python scripts/run_compass.py --loop
+```
+
+Add `--interval-min 15` to slow the cycle; `--max-cycles N` to stop
+after N cycles.
+
+News loop (one slice, exits after N cycles):
+
+```sh
+uv run python scripts/news_loop.py --graph-url http://127.0.0.1:8090 --kalshi-url http://127.0.0.1:8080 --once
+```
+
+Add `--loop --interval-min 15` to keep building.
+
+Audit loop (flags bad links, never deletes):
+
+```sh
+uv run python scripts/audit_loop.py --loop --interval-min 60
+```
 
 Skip these for a first look — the frozen `data_local/` state already
 renders.
