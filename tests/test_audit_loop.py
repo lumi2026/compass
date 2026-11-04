@@ -4,7 +4,7 @@ import json
 from types import SimpleNamespace
 
 from scripts.audit_loop import (audit_pass, load_state, run_once, save_state,
-                                select_candidates)
+                                select_candidates, select_vetoed)
 
 
 def N(i, kind, label=None, props=None):
@@ -179,3 +179,136 @@ def test_run_once_persists_keeps(monkeypatch, tmp_path):
     # second pass finds nothing new
     out2 = run_once("http://x", None, 0, False, state)
     assert out2["audited"] == 0
+
+
+def _ok_post(url, payload):
+    return {"verdicts": [{"committed": True}, {"committed": True}]}
+
+
+def test_audit_pass_prune_removes_vetoed():
+    retired = []
+
+    def retire(url, payload):
+        retired.append((url, payload))
+        return {"retired": [{"entity_id": "hypothesis:h1",
+                             "removed": True, "dropped_edges": 3}]}
+
+    res = audit_pass("http://x", select_candidates(_els(), {}, 1),
+                     _VetoModel(), post_fn=_ok_post,
+                     prune=True, retire_fn=retire)
+    assert res["vetoed"] == 1 and res["pruned"] == 1
+    assert retired == [("http://x/retire",
+                        {"node_ids": ["hypothesis:h1"]})]
+    assert res["verdicts"]["hypothesis:h1"]["pruned"] is True
+
+
+def test_audit_pass_prune_off_by_default_and_skipped_on_dry_run():
+    calls = []
+    res = audit_pass("http://x", select_candidates(_els(), {}, 1),
+                     _VetoModel(), post_fn=_ok_post,
+                     retire_fn=lambda u, p: calls.append((u, p)))
+    assert res["pruned"] == 0 and calls == []
+    res = audit_pass("http://x", select_candidates(_els(), {}, 1),
+                     _VetoModel(), dry_run=True,
+                     post_fn=_ok_post, prune=True,
+                     retire_fn=lambda u, p: calls.append((u, p)))
+    assert res["pruned"] == 0 and calls == []
+
+
+def test_audit_pass_prune_skipped_when_challenge_transient():
+    calls = []
+
+    def bad_post(url, payload):
+        return {"verdicts": [{"committed": False},
+                             {"committed": False}]}
+
+    res = audit_pass("http://x", select_candidates(_els(), {}, 1),
+                     _VetoModel(), post_fn=bad_post,
+                     prune=True,
+                     retire_fn=lambda u, p: calls.append((u, p)))
+    assert res["verdicts"]["hypothesis:h1"].get("transient") is True
+    assert res["pruned"] == 0 and calls == []
+
+
+def test_select_vetoed_unions_state_and_challenges():
+    vetoed = select_vetoed(
+        _els(), {"hypothesis:h1": {"verdict": "veto"},
+                 "hypothesis:h2": {"verdict": "keep"},
+                 "hypothesis:gone": {"verdict": "veto"}})
+    assert vetoed == ["hypothesis:h1", "hypothesis:h3"]
+
+
+def test_run_once_prune_removes_all_vetoed_no_reaudit(
+        monkeypatch, tmp_path):
+    import scripts.audit_loop as loop
+
+    monkeypatch.setattr(
+        loop, "_get_json", lambda url, timeout=30: {"elements": _els()})
+
+    def _no_model(*a, **k):
+        raise AssertionError("prune must not resolve a model")
+
+    monkeypatch.setattr(loop, "resolve_model", _no_model)
+    state = str(tmp_path / "audit_state.json")
+    save_state(state, {"hypothesis:h1": {"verdict": "veto"}})
+    calls = []
+
+    def retire(url, payload):
+        calls.append((url, payload))
+        return {"retired": [{"entity_id": hid, "removed": True,
+                             "dropped_edges": 3}
+                            for hid in payload["node_ids"]]}
+
+    out = run_once("http://x", "auto", 0, False, state,
+                   prune=True, retire_fn=retire)
+    assert out["ok"] is True and out["mode"] == "prune"
+    assert out["audited"] == 0 and out["llm_calls"] == 0
+    assert out["vetoed"] == 2 and out["pruned"] == 2
+    assert out["retired"] == ["hypothesis:h1", "hypothesis:h3"]
+    assert calls == [("http://x/retire",
+                      {"node_ids": ["hypothesis:h1",
+                                    "hypothesis:h3"]})]
+
+
+def test_run_once_prune_dry_run_lists_without_retire(
+        monkeypatch, tmp_path):
+    import scripts.audit_loop as loop
+
+    monkeypatch.setattr(
+        loop, "_get_json", lambda url, timeout=30: {"elements": _els()})
+    monkeypatch.setattr(
+        loop, "resolve_model",
+        lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("prune must not resolve a model")))
+    state = str(tmp_path / "audit_state.json")
+    save_state(state, {"hypothesis:h1": {"verdict": "veto"}})
+    calls = []
+    out = run_once("http://x", "auto", 0, True, state,
+                   prune=True,
+                   retire_fn=lambda u, p: calls.append((u, p)))
+    assert out["ok"] is True and out["pruned"] == 0
+    assert out["vetoed"] == 2
+    assert out["vetoed_ids"] == ["hypothesis:h1", "hypothesis:h3"]
+    assert calls == []
+
+
+def test_run_once_prune_empty_retires_nothing(monkeypatch, tmp_path):
+    import scripts.audit_loop as loop
+
+    els = [e for e in _els()
+           if not (isinstance(e.get("data", {}).get("source"), str)
+                   and e["data"].get("label") == "challenges")]
+    monkeypatch.setattr(
+        loop, "_get_json", lambda url, timeout=30: {"elements": els})
+    monkeypatch.setattr(
+        loop, "resolve_model",
+        lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("prune must not resolve a model")))
+    state = str(tmp_path / "audit_state.json")
+    save_state(state, {})
+    calls = []
+    out = run_once("http://x", "auto", 0, False, state,
+                   prune=True,
+                   retire_fn=lambda u, p: calls.append((u, p)))
+    assert out["ok"] is True and out["pruned"] == 0
+    assert out["vetoed"] == 0 and calls == []

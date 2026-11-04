@@ -9,6 +9,7 @@ append-only commit log after each batch.
   GET  /graph?at=<ts>       time travel (valid_at <= ts, "" always kept)
   POST /proposals           {proposals: [{agent, action, entity_id,
                              detail, confidence?}]} -> per-proposal verdicts
+  POST /retire              {node_ids: [...]} -> remove nodes + edges
   POST /findings            {finding: {...}} raw ungated append
 
 Polling: send If-None-Match: <revision>, get 304 when unchanged.
@@ -23,7 +24,7 @@ from fastapi import FastAPI, Request, Response
 from pydantic import BaseModel, Field
 
 from graph import GraphUpdateAPI, boot, commit_batch, subgraph_as_of
-from graph.persist import append_finding
+from graph.persist import append_finding, commit_retire
 from workspace import to_cytoscape
 
 
@@ -42,6 +43,22 @@ class ProposalsIn(BaseModel):
 
 class FindingIn(BaseModel):
     finding: dict[str, Any] = Field(default_factory=dict)
+
+
+class RetireIn(BaseModel):
+    node_ids: list[str] = Field(default_factory=list)
+
+
+class RetiredOut(BaseModel):
+    entity_id: str = ""
+    removed: bool = False
+    dropped_edges: int = 0
+
+
+class RetireOut(BaseModel):
+    revision: int
+    retired: list[RetiredOut] = Field(default_factory=list)
+    derived_fresh: int = 0
 
 
 class VerdictOut(BaseModel):
@@ -125,6 +142,15 @@ class GraphService:
               flush=True)
         return rec
 
+    def retire(self, node_ids: list[str]) -> dict:
+        with self.lock:
+            result = commit_retire(self.api, node_ids,
+                                   log_path=self.log_path,
+                                   snapshot_path=self.snapshot_path)
+            print(f"[graph-api] retire={len(result['retired'])} "
+                  f"revision={result['revision']}", flush=True)
+            return result
+
 
 def create_app(service: GraphService | None = None,
                snapshot_path: str = "data/graph_snapshot.json",
@@ -159,6 +185,10 @@ def create_app(service: GraphService | None = None,
                 q["agent"] = body.agent
             norm.append(q)
         return svc.submit(norm)
+
+    @app.post("/retire", response_model=RetireOut)
+    def post_retire(body: RetireIn) -> dict:
+        return svc.retire(body.node_ids)
 
     @app.post("/findings")
     def post_findings(body: dict) -> dict:

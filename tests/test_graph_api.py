@@ -261,3 +261,25 @@ def test_proposals_validation_and_defaults(tmp_path):
     # malformed shape rejected by pydantic, not a 500
     r = client.post("/proposals", json={"proposals": "nope"})
     assert r.status_code == 422
+
+
+def test_retire_endpoint_removes_node_and_edges(tmp_path):
+    svc = GraphService(snapshot_path=str(tmp_path / "s.json"),
+                       log_path=str(tmp_path / "g.log"),
+                       findings_path=str(tmp_path / "f.jsonl"))
+    client = TestClient(create_app(service=svc))
+    client.post("/proposals", json={
+        "proposals": [
+            _node_prop("news-agent", "kalshi:A"),
+            _node_prop("news-agent", "hypothesis:h1",
+                       kind="Hypothesis"),
+            _edge_prop("news-agent", "hypothesis:h1", "kalshi:A",
+                       rel="supports"),
+        ]})
+    r = client.post("/retire", json={"node_ids": ["hypothesis:h1"]})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["retired"][0]["removed"] is True
+    r = client.get("/graph")
+    ids = [el["data"].get("id") for el in r.json()["elements"]]
+    assert "hypothesis:h1" not in ids

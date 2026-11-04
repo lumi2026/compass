@@ -4,10 +4,14 @@ Each pass audits only hypotheses with no verdict yet (no Audit
 challenge on the graph, no entry in the state file), so a kept link
 is never re-audited and newly committed hypotheses are picked up on
 later passes. Fresh vetoes post Audit + `challenges` proposals;
-keeps are recorded in the state file only. Nothing is ever deleted.
+keeps are recorded in the state file only. Nothing is ever deleted,
+unless --prune is passed: then all vetoed hypotheses still on the
+graph are retired (removed with their incident edges) via one
+POST /retire call, with no model resolution and no re-audit.
 
 Run:  uv run python scripts/audit_loop.py
       uv run python scripts/audit_loop.py --loop --interval-min 60
+      uv run python scripts/audit_loop.py --prune --dry-run
 """
 
 import datetime
@@ -132,14 +136,47 @@ def _challenge_proposals(hid: str, reason: str) -> list[dict]:
     ]
 
 
+def select_vetoed(elements: list, state: dict) -> list[str]:
+    """All vetoed hypotheses still on the graph: state vetoes plus
+    Audit-challenged nodes, intersected with existing Hypothesis ids."""
+    nodes = {}
+    for el in elements:
+        d = el.get("data", {})
+        if "source" not in d:
+            nodes[d.get("id")] = d
+    challenged = set()
+    for el in elements:
+        d = el.get("data", {})
+        if d.get("label") != "challenges":
+            continue
+        challenged.add(d.get("target", ""))
+        src = nodes.get(d.get("source", ""), {})
+        if src.get("props", {}).get("target"):
+            challenged.add(src["props"]["target"])
+    existing = {hid for hid, n in nodes.items()
+                if n.get("kind") == "Hypothesis"}
+    vetoed = {hid for hid in existing if hid in challenged}
+    for hid, v in state.items():
+        if (isinstance(v, dict) and v.get("verdict") == "veto"
+                and hid in existing):
+            vetoed.add(hid)
+    return sorted(vetoed)
+
+
 def audit_pass(graph_url: str, candidates: list[dict], model_obj,
-               dry_run: bool = False, post_fn=None) -> dict:
+               dry_run: bool = False, post_fn=None,
+               prune: bool = False, retire_fn=None) -> dict:
     """Audit each candidate; fresh vetoes post challenges unless dry_run.
 
-    Returns {kept, vetoed, posted, llm_calls, verdicts: {hid: {...}}}.
+    With prune=True, vetoed hypotheses with a committed challenge are
+    also retired via POST /retire (skipped on dry_run and transient
+    verdicts). Programmatic use only: the CLI --prune flag takes the
+    prune-all path in run_once and never calls this. Returns {kept,
+    vetoed, posted, pruned, llm_calls, verdicts: {hid: {...}}}.
     """
     post_fn = post_fn or _post_json
-    kept = vetoed = posted = llm = 0
+    retire_fn = retire_fn or _post_json
+    kept = vetoed = posted = pruned = llm = 0
     verdicts: dict = {}
     for c in candidates:
         ev = [t for t in c["articles"] if t][:5]
@@ -179,16 +216,73 @@ def audit_pass(graph_url: str, candidates: list[dict], model_obj,
                 # otherwise retry rather than recording a silent veto.
                 if committed < 2:
                     verdict["transient"] = True
+                elif prune:
+                    try:
+                        resp = retire_fn(
+                            graph_url.rstrip("/") + "/retire",
+                            {"node_ids": [c["hid"]]})
+                    except Exception as e:
+                        log(f"prune failed {c['hid']}: {e}")
+                        verdict["pruned"] = False
+                    else:
+                        retired = resp.get("retired", [])
+                        removed = any(
+                            v.get("entity_id") == c["hid"]
+                            and v.get("removed")
+                            for v in retired)
+                        verdict["pruned"] = bool(removed)
+                        if removed:
+                            pruned += 1
+                            log(f"pruned {c['hid']}")
         verdicts[c["hid"]] = verdict
     return {"kept": kept, "vetoed": vetoed, "posted": posted,
-            "llm_calls": llm, "verdicts": verdicts}
+            "pruned": pruned, "llm_calls": llm, "verdicts": verdicts}
 
 
 def run_once(graph_url: str, model, max_audits: int,
              dry_run: bool = False,
              state_path: str = "data/audit_state.json",
-             post_fn=None) -> dict:
-    """One pass: fetch, select unaudited, audit, persist verdicts."""
+             post_fn=None, prune: bool = False,
+             retire_fn=None) -> dict:
+    """One pass: fetch, select unaudited, audit, persist verdicts.
+
+    With prune=True, retire all vetoed hypotheses still on the graph
+    (state vetoes plus Audit-challenged nodes) in one POST /retire
+    call. No model resolution, no LLM calls, no re-audit.
+    """
+    try:
+        data = _get_json(graph_url.rstrip("/") + "/graph")
+    except Exception as e:
+        return {"ok": False, "reason": f"graph unreachable: {e}"}
+    state = load_state(state_path)
+    elements = data.get("elements", [])
+    if prune:
+        vetoed = select_vetoed(elements, state)
+        if not vetoed:
+            return {"ok": True, "mode": "prune", "audited": 0,
+                    "kept": 0, "vetoed": 0, "posted": 0,
+                    "pruned": 0, "llm_calls": 0, "retired": []}
+        if dry_run:
+            return {"ok": True, "mode": "prune", "audited": 0,
+                    "kept": 0, "vetoed": len(vetoed), "posted": 0,
+                    "pruned": 0, "llm_calls": 0, "retired": [],
+                    "vetoed_ids": vetoed}
+        retire = retire_fn or _post_json
+        try:
+            resp = retire(graph_url.rstrip("/") + "/retire",
+                          {"node_ids": vetoed})
+        except Exception as e:
+            return {"ok": False,
+                    "reason": f"prune failed: {e}"}
+        retired = resp.get("retired", [])
+        removed = [v.get("entity_id") for v in retired
+                   if v.get("removed")]
+        for hid in removed:
+            log(f"pruned {hid}")
+        return {"ok": True, "mode": "prune", "audited": 0,
+                "kept": 0, "vetoed": len(vetoed), "posted": 0,
+                "pruned": len(removed), "llm_calls": 0,
+                "retired": removed}
     explicit_none = model is None or model == "None"
     if explicit_none:
         model_obj = None
@@ -199,17 +293,12 @@ def run_once(graph_url: str, model, max_audits: int,
             return {"ok": False,
                     "reason": "no model key configured "
                               "(use --model None to keep without LLM)"}
-    try:
-        data = _get_json(graph_url.rstrip("/") + "/graph")
-    except Exception as e:
-        return {"ok": False, "reason": f"graph unreachable: {e}"}
-    state = load_state(state_path)
-    candidates = select_candidates(data.get("elements", []), state,
-                                   max_audits)
+    candidates = select_candidates(elements, state, max_audits)
     if not candidates:
         return {"ok": True, "audited": 0, "kept": 0, "vetoed": 0,
-                "posted": 0, "llm_calls": 0}
-    res = audit_pass(graph_url, candidates, model_obj, dry_run, post_fn)
+                "posted": 0, "pruned": 0, "llm_calls": 0}
+    res = audit_pass(graph_url, candidates, model_obj, dry_run, post_fn,
+                     False, retire_fn)
     if not dry_run:
         # Transient verdicts (model error, failed challenge post) are
         # deliberately left out of state so the next pass retries them.
@@ -235,9 +324,13 @@ def run_once(graph_url: str, model, max_audits: int,
               help="stop after N loop cycles (0 = run forever)")
 @click.option("--interval-min", type=float, default=60)
 @click.option("--dry-run", is_flag=True, default=False)
+@click.option("--prune", is_flag=True, default=False,
+              help="retire ALL vetoed hypotheses via POST /retire, "
+                   "no re-audit")
 @click.option("--langsmith-project", default=None)
 def main(graph_url, model, max_audits, state_path, loop,
-         max_cycles, interval_min, dry_run, langsmith_project) -> None:
+         max_cycles, interval_min, dry_run, prune,
+         langsmith_project) -> None:
     from services.auth import load_dotenv  # noqa: E402
     from squad.tracing import setup_langsmith, squad_span  # noqa: E402
 
@@ -250,7 +343,8 @@ def main(graph_url, model, max_audits, state_path, loop,
         with squad_span("audit-loop-cycle", {"cycle": cycle}) as span:
             try:
                 summary = run_once(graph_url, model, max_audits,
-                                   dry_run, state_path)
+                                   dry_run, state_path,
+                                   prune=prune)
             except Exception as e:  # keep the loop alive; record and retry
                 summary = {"ok": False,
                            "reason": f"{type(e).__name__}: {e}"}

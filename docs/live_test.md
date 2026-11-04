@@ -92,7 +92,8 @@ Start order matters: graph first, then kalshi, then the loops, then the view.
 - Terminal 5 (view):
   `cd view && npm install && npm run dev` — open http://localhost:5173
 - Terminal 6 (audit loop — only unaudited hypotheses, keeps recorded
-  to `data/audit_state.json`, never re-audited, nothing deleted):
+  to `data/audit_state.json`, never re-audited, nothing deleted
+  unless `--prune` retires ALL vetoed hypotheses with no re-audit):
   `uv run python scripts/audit_loop.py --loop --interval-min 60`
   (one pass by default, `--dry-run` to print verdicts without
   posting, `--model None` to keep everything without LLM calls)
