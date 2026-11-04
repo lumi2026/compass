@@ -9,7 +9,7 @@
 Known gaps: `KXTOPLLMGENERAL-30` has zero markets (expect conf floor, no crash). LLM path needs `MODEL_API_KEY` in `.env`.
 
 ## New: full squad
-- Offline: `uv run python scripts/run_squad.py --event KXSPACEXMARS-30 --snapshot <fixture.gz> --seed data/seed.json --out /tmp/squad_graph.json`
+- Offline: `uv run python scripts/run_squad.py --event KXSPACEXMARS-30 --snapshot <fixture.gz> --seed data_local/seed.json --out /tmp/squad_graph.json`
 - Live: `uv run python scripts/run_squad.py --event KXSPACEXMARS-30 --terms spacex starlink "elon musk"`
 - The runner walks back up to `--lookback 8` snapshots (default) until term quotas fill, so thin newest snapshots don't blank the run. `--snapshot` pins one fixture file instead.
 - Success: exit 0, `nodes=`/`edges=` printed, `followups:` list, out JSON loads, `refresh re-run == 0` on second derive (covered in tests).
@@ -19,14 +19,14 @@ Known gaps: `KXTOPLLMGENERAL-30` has zero markets (expect conf floor, no crash).
 
 ## MVP (multi-event + viewer)
 - Seed across categories (frozen 3-event set):
-  `uv run python scripts/seed_kalshi.py --event KXWARSHOUT-26JUL --event KXSPACEXMARS-30 --event KXTOPLLMGENERAL-30 --out data/seed_mvp.json`
+  `uv run python scripts/seed_kalshi.py --event KXWARSHOUT-26JUL --event KXSPACEXMARS-30 --event KXTOPLLMGENERAL-30 --out data_local/seed_mvp.json`
 - Wide cross-section seed (politics, economics, science, culture, sports — 2 events each, native `category` field):
-  `uv run python scripts/seed_kalshi.py --cross-section --per-category 2 --out data/seed_wide.json`
-  (override buckets with `--buckets 'politics:Politics,Elections sports:Sports'`; `data/seed.json` stays the small POC seed)
+  `uv run python scripts/seed_kalshi.py --cross-section --per-category 2 --out data_local/seed_wide.json`
+  (override buckets with `--buckets 'politics:Politics,Elections sports:Sports'`; `data_local/seed.json` stays the small POC seed)
 - Live run (news scan + graph + page):
-  `uv run python scripts/run_mvp.py --seed data/seed_mvp.json`
-  (defaults write `demo/mvp_graph.json` + `demo/mvp_graph.html`)
-- Open `demo/mvp_graph.html` in a browser (standalone Cytoscape page, no server).
+  `uv run python scripts/run_mvp.py --seed data_local/seed_mvp.json`
+  (defaults write `demo_local/mvp_graph.json` + `demo_local/mvp_graph.html`)
+- Open `demo_local/mvp_graph.html` in a browser (standalone Cytoscape page, no server).
 - Offline check: `uv run python scripts/graph_poc.py --out /tmp/graph_poc.json` then render the HTML the same way `run_mvp.py` does.
 
 ## View (React 3D over live graph API)
@@ -71,7 +71,7 @@ Known gaps: `KXTOPLLMGENERAL-30` has zero markets (expect conf floor, no crash).
 
 Start order matters: graph first, then kalshi, then the loops, then the view.
 
-- Terminal 1 (graph API, owns the store + `data/graph_*`):
+- Terminal 1 (graph API, owns the store + `data_local/graph_*`):
   `uv run python -m services.graph_server --port 8090`
 - Terminal 2 (kalshi service, no seed needed for discovery; `--graph-url`
   enables odds publishing, `--sweep` primes the graph once at startup):
@@ -92,7 +92,7 @@ Start order matters: graph first, then kalshi, then the loops, then the view.
 - Terminal 5 (view):
   `cd view && npm install && npm run dev` — open http://localhost:5173
 - Terminal 6 (audit loop — only unaudited hypotheses, keeps recorded
-  to `data/audit_state.json`, never re-audited, nothing deleted
+  to `data_local/audit_state.json`, never re-audited, nothing deleted
   unless `--prune` retires ALL vetoed hypotheses with no re-audit):
   `uv run python scripts/audit_loop.py --loop --interval-min 60`
   (one pass by default, `--dry-run` to print verdicts without

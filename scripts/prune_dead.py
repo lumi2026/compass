@@ -46,7 +46,7 @@ def _get_json(url: str, timeout: int = 30, retries: int = 4) -> dict:
 
 
 @click.command()
-@click.option("--data-dir", default="data")
+@click.option("--data-dir", default="data_local")
 @click.option("--kalshi-base", default=API_BASE)
 @click.option("--apply", is_flag=True, default=False,
               help="retire + save (default is a dry run)")

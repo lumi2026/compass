@@ -2,7 +2,7 @@
 
 ## Now — current state (as of 2026-11-04, HEAD `6025e2a`)
 
-- Stack: graph API `:8090` owns the store (`data/graph_snapshot.json`,
+- Stack: graph API `:8090` owns the store (`data_local/graph_snapshot.json`,
   `graph_log.jsonl`, `findings.jsonl` via `--data-dir`/`COMPASS_DATA_DIR`);
   kalshi service `:8080`; news team as `squad/brain.py` +
   `scripts/run_compass.py` (staged `scripts/news_loop.py` underneath,
@@ -17,7 +17,7 @@
 - Wiring (step 6) marked done per operator: graph → kalshi → loops → view
   re-run confirmed against the events-first view.
 - Note: HEAD `6025e2a` is a progress-log commit on top of the code push
-  `91c6c93`; `data/audit_state.json` was dirty at review time (runtime
+  `91c6c93`; `data_local/audit_state.json` was dirty at review time (runtime
   state, not a code change).
 
 ## Future enhancements (deferred, post-demo)

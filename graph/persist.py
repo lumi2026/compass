@@ -1,6 +1,6 @@
 """Append-only persistence for the living graph (storage v1).
 
-Three files, all under data/ by default:
+Three files, all under data_local/ by default:
 
 - graph_log.jsonl: one record per committed batch. This IS the
   time-travel source and the audit trail; history is never rewritten.

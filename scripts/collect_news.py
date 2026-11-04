@@ -3,7 +3,7 @@
 Run:  python3 scripts/collect_news.py --once [--topic Q ...] [--limit 10]
       python3 scripts/collect_news.py --loop [--interval-min 15]
 
-Writes data/news_digest.json (atomic): per-topic articles + extractive
+Writes data_local/news_digest.json (atomic): per-topic articles + extractive
 summary (counts, freshness lag, top domains, title keywords, headlines).
 Agents investigating Kalshi price moves read the digest as background info.
 
@@ -189,7 +189,7 @@ def collect_once(topics, timespan, limit, gap_sec, out):
               help="doc only: spacing between topic requests")
 @click.option("--snapshot", default=None,
               help="ngrams only: pin a snapshot .json.gz path")
-@click.option("--out", default="data/news_digest.json")
+@click.option("--out", default="data_local/news_digest.json")
 @click.option("--once", is_flag=True, default=False,
               help="single round (default; --loop repeats)")
 @click.option("--loop", is_flag=True, default=False)

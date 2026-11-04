@@ -8,7 +8,7 @@ article URL (the article is the co-mention evidence).
 
 Run:
   uv run python scripts/cross_link.py --events 30 --lookback 100 \\
-      --out demo/cross_graph.json
+      --out demo_local/cross_graph.json
 """
 
 import json
@@ -140,8 +140,8 @@ def scan_union(tasks: list[dict], max_snapshots: int,
 @click.command()
 @click.option("--events", type=int, default=30)
 @click.option("--lookback", type=int, default=100)
-@click.option("--seed", default="data/seed.json")
-@click.option("--out", default="demo/cross_graph.json")
+@click.option("--seed", default="data_local/seed.json")
+@click.option("--out", default="demo_local/cross_graph.json")
 @click.option("--max-articles", type=int, default=3)
 def main(events, lookback, seed, out, max_articles) -> None:
     tasks = pick_events(events)

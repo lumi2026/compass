@@ -45,7 +45,7 @@ Base URL: `https://api.gdeltproject.org/api/v2/doc/doc`
 - Poll cadence: 15 min (GDELT update resolution). Use `startdatetime`/`enddatetime` windows; expect ~10–33s latency per request and aggressive 429s (max 1 req / 5s per client; shared egress IPs get throttled harder — consecutive successes needed minutes of spacing on Oct 28) — background thread, cache, never block request path.
 - Dedupe by URL hash (already in `sources/gdelt.py` `normalize`).
 - Measured Oct 28 (Day 2 probe): `sourcecountry:US` artlist + `datedesc` returned 10 rows, all `seendate` 20261027T051500Z (~19.5h stale; v1 agreed, `lastminutes:360` empty). `timelinevolraw` unobtainable (429 even after 5-min cooldown) — stall vs frozen shard undetermined, recheck later. `sourcecountry:US` alone is noisy (ads, local filler) — add `theme:`/`repeat:`/tone/domain filters for a usable feed.
-- Background watcher: `scripts/collect_news.py` (`DEFAULT_TOPICS`) writes `data/news_digest.json` for agents; `--once` or `--loop --interval-min 15`, `--gap-sec` spacing between topics (default 240s).
+- Background watcher: `scripts/collect_news.py` (`DEFAULT_TOPICS`) writes `data_local/news_digest.json` for agents; `--once` or `--loop --interval-min 15`, `--gap-sec` spacing between topics (default 240s).
 
 ## Related (legacy)
 

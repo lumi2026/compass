@@ -1,8 +1,8 @@
 """Capture a frozen Kalshi seed for offline runs.
 
-Run:  uv run python scripts/seed_kalshi.py --out data/seed.json
+Run:  uv run python scripts/seed_kalshi.py --out data_local/seed.json
 Wide: uv run python scripts/seed_kalshi.py --cross-section \\
-          --per-category 2 --out data/seed_wide.json
+          --per-category 2 --out data_local/seed_wide.json
 """
 
 import sys
@@ -16,7 +16,7 @@ from services.seed import (capture, capture_cross_section, capture_events,
 
 
 @click.command()
-@click.option("--out", default="data/seed.json")
+@click.option("--out", default="data_local/seed.json")
 @click.option("--events", type=int, default=3)
 @click.option("--markets", type=int, default=3)
 @click.option("--event", multiple=True, default=(),

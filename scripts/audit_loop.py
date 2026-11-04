@@ -241,7 +241,7 @@ def audit_pass(graph_url: str, candidates: list[dict], model_obj,
 
 def run_once(graph_url: str, model, max_audits: int,
              dry_run: bool = False,
-             state_path: str = "data/audit_state.json",
+             state_path: str = "data_local/audit_state.json",
              post_fn=None, prune: bool = False,
              retire_fn=None) -> dict:
     """One pass: fetch, select unaudited, audit, persist verdicts.
@@ -318,7 +318,7 @@ def run_once(graph_url: str, model, max_audits: int,
               help="LLM model spec (auto|None|model-id); None = keep all")
 @click.option("--max-audits", type=int, default=20,
               help="hypotheses per pass, 0 = no cap")
-@click.option("--state", "state_path", default="data/audit_state.json")
+@click.option("--state", "state_path", default="data_local/audit_state.json")
 @click.option("--loop", is_flag=True, default=False)
 @click.option("--max-cycles", type=int, default=0,
               help="stop after N loop cycles (0 = run forever)")

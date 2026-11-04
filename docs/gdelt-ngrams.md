@@ -40,11 +40,11 @@ New source plugin `sources/ngrams.py`:
    pre/post rules. Keep `lang == en` (+ translations later).
 3. **Two outputs**:
    - a. **Burst signal**: per-term mention counts per snapshot → tiny time
-     series (`data/ngram_counts.json`). Spike = candidate explanation for a
+     series (`data_local/ngram_counts.json`). Spike = candidate explanation for a
      Kalshi price move; complements `timelinevolraw` without touching the
      throttled API.
    - b. **Provenance**: matched records → `{url, pre, ngram, post, pos}` —
-     feeds `data/news_digest.json` topics and agent context. `pos <= 20`
+     feeds `data_local/news_digest.json` topics and agent context. `pos <= 20`
      ranks lead-paragraph hits first.
 4. **Retention**: discard raw snapshots (31 MB × 96/day too heavy); keep only
    matched lines + counts.

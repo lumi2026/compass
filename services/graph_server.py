@@ -92,9 +92,9 @@ class GraphOut(BaseModel):
 class GraphService:
     """Thread-safe owner of the curated graph + its log/snapshot."""
 
-    def __init__(self, snapshot_path: str = "data/graph_snapshot.json",
-                 log_path: str = "data/graph_log.jsonl",
-                 findings_path: str = "data/findings.jsonl") -> None:
+    def __init__(self, snapshot_path: str = "data_local/graph_snapshot.json",
+                 log_path: str = "data_local/graph_log.jsonl",
+                 findings_path: str = "data_local/findings.jsonl") -> None:
         self.snapshot_path = snapshot_path
         self.log_path = log_path
         self.findings_path = findings_path
@@ -153,9 +153,9 @@ class GraphService:
 
 
 def create_app(service: GraphService | None = None,
-               snapshot_path: str = "data/graph_snapshot.json",
-               log_path: str = "data/graph_log.jsonl",
-               findings_path: str = "data/findings.jsonl") -> FastAPI:
+               snapshot_path: str = "data_local/graph_snapshot.json",
+               log_path: str = "data_local/graph_log.jsonl",
+               findings_path: str = "data_local/findings.jsonl") -> FastAPI:
     svc = service or GraphService(snapshot_path=snapshot_path,
                                   log_path=log_path,
                                   findings_path=findings_path)
@@ -216,7 +216,7 @@ def _resolve(base: str, path: str) -> str:
 @click.option("--snapshot", default="graph_snapshot.json")
 @click.option("--log", default="graph_log.jsonl")
 @click.option("--findings", default="findings.jsonl")
-@click.option("--data-dir", default="data", envvar="COMPASS_DATA_DIR",
+@click.option("--data-dir", default="data_local", envvar="COMPASS_DATA_DIR",
               help="state directory (COMPASS_DATA_DIR also works)")
 def main(port, snapshot, log, findings, data_dir) -> None:
     import uvicorn

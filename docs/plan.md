@@ -15,7 +15,7 @@ Authoritative for "what did we set out to build"; progress is tracked in
   Graph Update API (Validate|Commit|Record). Workspace: Cytoscape.js +
   human feedback loop to new tasks.
 - **Seed**: `scripts/seed_kalshi.py` captures events+markets+books+candles to
-  `data/seed.json`; service `--seed` serves it offline; `merge_state` never
+  `data_local/seed.json`; service `--seed` serves it offline; `merge_state` never
   blanks seeded detail with empty polls.
 - **Kalshi surface**: events, markets per event, orderbook (single+batch),
   candles (batch, 1/60/1440min). Far-future markets may have zero liquidity;

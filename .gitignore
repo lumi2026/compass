@@ -222,12 +222,10 @@ __marimo__/
 # Local agent plans and scratch
 .agents/
 
-# Local news accumulator state (large, machine-local)
-data/news.db*
-# Graph API runtime state (rebuilt from seeds + live loops; never commit)
-data/graph_snapshot.json
-data/graph_log.jsonl
-data/findings.jsonl
+# Local-only runtime state and demo artifacts (renamed from data/, demo/;
+# untracked — rebuilt from seeds + live loops, never commit)
+data_local/
+demo_local/
 /tmp/
 view/node_modules/
 view/dist/

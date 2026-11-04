@@ -1,6 +1,6 @@
 """Offline event-graph POC: seed markets + fixture articles -> linked events.
 
-No network. Loads data/seed.json (7 Kalshi markets in 3 event families),
+No network. Loads data_local/seed.json (7 Kalshi markets in 3 event families),
 adds 3 hand-written fixture articles with subjects, writes nodes/edges
 through each agent lane (scout / news-agent / connector) via the gated
 GraphUpdateAPI, derives event-to-event links, and checks the workspace
@@ -52,7 +52,7 @@ def event_of(market_ticker: str) -> str:
 @click.option("--out", default="/tmp/graph_poc.json")
 def main(out) -> None:
 
-    seed = json.load(open("data/seed.json"))["tickers"]
+    seed = json.load(open("data_local/seed.json"))["tickers"]
     api = GraphUpdateAPI(GraphStore())
 
     # Scout lane: events + markets.
