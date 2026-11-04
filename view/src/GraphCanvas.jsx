@@ -51,9 +51,23 @@ export default function GraphCanvas({ nodes, links, onSelect, controlsRef }) {
         const s = new SpriteText(n.short, 6, '#111111')
         s.backgroundColor = 'rgba(255,255,255,0.85)'
         s.material.depthWrite = false
-        return s
+        if (n.kind !== 'Event') return s
+        // Events render as faceted gem balls (icosahedra), not dots:
+        // they catch the light while keeping a round silhouette.
+        // Radius matches the default dot (cbrt(val) * nodeRelSize 4),
+        // upsized ~1.18x since an icosahedron packs less volume.
+        const r = Math.cbrt(n.val || 1) * 4 * 1.18
+        const group = new THREE.Group()
+        group.add(new THREE.Mesh(
+          new THREE.IcosahedronGeometry(r, 0),
+          new THREE.MeshLambertMaterial({
+            color: n.color, transparent: true, opacity: 0.75,
+          }),
+        ))
+        group.add(s)
+        return group
       })
-      .nodeThreeObjectExtend(true)
+      .nodeThreeObjectExtend((n) => n.kind !== 'Event')
       .linkSource('source')
       .linkTarget('target')
       .linkColor((l) => l.color)

@@ -1,5 +1,5 @@
 export const KIND_COLORS = {
-  Event: '#2f6fed',
+  Event: '#ea580c',
   Market: '#6b7fa3',
   Article: '#1f9d55',
   Subject: '#d97706',
@@ -10,7 +10,7 @@ export const KIND_COLORS = {
 
 export const EDGE_COLORS = {
   'shares-subject-with': '#d92d20',
-  about: '#2f6fed',
+  about: '#ea580c',
   mentions: '#1f9d55',
   supports: '#7c3aed',
   'has-market': '#94a3b8',
@@ -22,13 +22,13 @@ export const EDGE_COLORS = {
 // props.mode and fall back through LEGACY_MODE_TYPE.
 export const HYPOTHESIS_COLORS = {
   co_mention: '#7c3aed',
-  co_location: '#0284c7',
+  co_location: '#14b8a6',
   shared_context: '#d97706',
-  co_outcome: '#059669',
+  co_outcome: '#c026d3',
 }
 
 export const HYPOTHESIS_DESCRIPTIONS = {
-  co_mention: 'shared articles',
+  co_mention: 'mentioned together',
   co_location: 'shared place',
   shared_context: 'shared theme',
   co_outcome: 'correlated odds',

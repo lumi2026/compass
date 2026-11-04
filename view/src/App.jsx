@@ -111,7 +111,7 @@ export default function App() {
       <div>
         <h2>{h?.title ?? sel.rel}</h2>
         <div className="kind">
-          {h ? `hypothesis link · ${HYPOTHESIS_DESCRIPTIONS[h.type] ?? h.type ?? 'shared articles'}` : 'link'}
+          {h ? `hypothesis link · ${HYPOTHESIS_DESCRIPTIONS[h.type] ?? h.type ?? 'mentioned together'}` : 'link'}
         </div>
         <div>
           {byId.get(sel.source)?.label ?? sel.source} →{' '}
