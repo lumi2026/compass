@@ -130,10 +130,29 @@ class Service:
         for t in market_tickers:
             self.ticker_event.setdefault(t, event_of(t))
         tickers = sorted(set(tickers))
+        self._retain_topics(tickers)
         self.listener.watch(tickers)
         _log(f"topics set: events watched, tickers={len(tickers)} "
              f"live_ws={self.listener.live}")
         return tickers
+
+    def _retain_topics(self, tickers: list[str]) -> None:
+        """Prune metadata and feed state for tickers no longer watched.
+
+        The news loop rewrites the watchlist every cycle. Keeping every
+        ticker/event ever seen would grow this process for weeks.
+        """
+        keep = set(tickers)
+        events = {self.ticker_event.get(t) or event_of(t) for t in keep}
+        self.ticker_event = {t: e for t, e in self.ticker_event.items()
+                             if t in keep}
+        self.event_titles = {e: title for e, title in self.event_titles.items()
+                             if e in events}
+        self.event_meta = {e: meta for e, meta in self.event_meta.items()
+                           if e in events}
+        self._last_pub_price = {t: p for t, p in self._last_pub_price.items()
+                                if t in keep}
+        self.store.retain_tickers(keep)
 
     def discover_events(self, limit: int = 10) -> list[dict]:
         """Open Kalshi events for the graph API / news loop to choose from."""
@@ -175,6 +194,7 @@ class Service:
                 self.ticker_event[m.ticker] = ev.external_id
                 tickers.append(m.ticker)
         tickers = sorted(set(tickers))
+        self._retain_topics(tickers)
         self.listener.watch(tickers)
         _log(f"auto topics: top_k={top_k} tickers={len(tickers)} "
              f"live_ws={self.listener.live}")
@@ -380,7 +400,9 @@ def make_handler(service: Service):
                                  "tickers": service.listener.tickers,
                                  "graph_url": service.graph_url,
                                  "move_threshold_cents":
-                                     service.move_threshold_cents})
+                                     service.move_threshold_cents,
+                                 "bus_qsize": service.store._bus.qsize(),
+                                 "bus_dropped": service.store.dropped})
             elif parsed.path == "/topics":
                 self._send(200, {"tickers": service.listener.tickers})
             elif parsed.path == "/events":

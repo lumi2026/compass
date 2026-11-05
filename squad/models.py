@@ -71,6 +71,14 @@ PRESETS = {
 }
 
 
+_CHAT_MODEL_CACHE: dict = {}
+
+
+def _reset_model_cache() -> None:
+    """Test hook: drop cached chat models."""
+    _CHAT_MODEL_CACHE.clear()
+
+
 def make_chat_model(provider: str | None = None,
                     model: str | None = None):
     """Return a LangChain chat model, or None when unconfigured.
@@ -78,6 +86,10 @@ def make_chat_model(provider: str | None = None,
     `provider` overrides MODEL_PROVIDER/COMPASS_PROVIDER; `model`
     overrides COMPASS_MODEL/MODEL_NAME. "custom" provider requires
     MODEL_BASE_URL. Unknown names raise ValueError.
+
+    Instances are cached per (provider, base_url, model, key) so a
+    weekly loop that resolves a model per task/cycle does not leak
+    an httpx session per call. Env changes naturally miss the cache.
     """
     prov = (provider or os.environ.get("MODEL_PROVIDER")
             or os.environ.get("COMPASS_PROVIDER") or "meta").lower()
@@ -100,16 +112,23 @@ def make_chat_model(provider: str | None = None,
     api_key = next((os.environ[k] for k in key_envs if os.environ.get(k)), "")
     if not api_key:
         return None
+    model_id = (model or os.environ.get("COMPASS_MODEL")
+                or os.environ.get("MODEL_NAME") or default_model)
+    cache_key = (prov, base_url, model_id, api_key)
+    cached = _CHAT_MODEL_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     # Generic name on purpose: this is the OpenAI-compatible chat
     # client, not necessarily OpenAI itself (see MODEL_PROVIDER).
     from langchain_openai import ChatOpenAI as ChatModel
 
-    return ChatModel(
+    inst = ChatModel(
         base_url=base_url,
         api_key=api_key,
-        model=model or os.environ.get("COMPASS_MODEL")
-        or os.environ.get("MODEL_NAME") or default_model,
+        model=model_id,
     )
+    _CHAT_MODEL_CACHE[cache_key] = inst
+    return inst
 
 
 def resolve_model(spec="auto", role=None):

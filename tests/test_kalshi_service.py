@@ -158,6 +158,66 @@ def test_feed_store_snapshot_recent_and_webhooks():
     assert store.unsubscribe_webhook("http://agent:9/hook") is False
 
 
+def test_feed_bus_drops_oldest_at_capacity():
+    from services.feed_store import BUS_LEN, FeedStore
+
+    store = FeedStore()
+    for i in range(BUS_LEN + 5):
+        store.publish(Update(kind="ticker", ticker="T1",
+                             payload={"i": i}, ts_ms=i))
+    assert store._bus.qsize() == BUS_LEN
+    assert store.dropped == 5
+    first = store._bus.get_nowait()
+    assert first.payload == {"i": 5}
+
+
+def test_retain_tickers_prunes_state_and_history():
+    from services.feed_store import FeedStore
+
+    store = FeedStore()
+    store.ingest_state({
+        "T1": TickerState(ticker="T1", last={"last_price": 1}),
+        "T2": TickerState(ticker="T2", last={"last_price": 2}),
+    })
+    store.publish(Update(kind="ticker", ticker="T1", payload={}, ts_ms=1))
+    store.publish(Update(kind="ticker", ticker="T2", payload={}, ts_ms=2))
+    store.retain_tickers(["T1"])
+    assert list(store.state) == ["T1"]
+    assert list(store.history) == ["T1"]
+    assert store.recent("T2") == []
+
+
+def test_listener_watch_prunes_stale_state():
+    from services.kalshi_listener import KalshiListener
+
+    listener = KalshiListener(None)
+    listener.state = {"A": TickerState(ticker="A"),
+                      "B": TickerState(ticker="B")}
+    listener.watch(["A", "C", "A"])
+    assert listener.tickers == ["A", "C"]
+    assert list(listener.state) == ["A"]
+
+
+def test_service_retain_topics_prunes_metadata_and_feed():
+    from services.kalshi_listener import KalshiListener
+
+    service = Service(KalshiListener(None), FeedStore())
+    service.ticker_event = {"T1": "E1", "T2": "E2"}
+    service.event_titles = {"E1": "one", "E2": "two"}
+    service.event_meta = {"E1": {"a": 1}, "E2": {"b": 2}}
+    service._last_pub_price = {"T1": 10, "T2": 20}
+    service.store.ingest_state({
+        "T1": TickerState(ticker="T1"),
+        "T2": TickerState(ticker="T2"),
+    })
+    service._retain_topics(["T1"])
+    assert list(service.ticker_event) == ["T1"]
+    assert list(service.event_titles) == ["E1"]
+    assert list(service.event_meta) == ["E1"]
+    assert list(service._last_pub_price) == ["T1"]
+    assert list(service.store.state) == ["T1"]
+
+
 def test_merge_state_never_blanks_seed():
     from services.feed_store import FeedStore
     from services.kalshi_listener import TickerState
