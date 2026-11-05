@@ -177,6 +177,35 @@ def test_news_run_batch_fans_out_in_order(monkeypatch):
     assert [r["events"] for r in out["results"]] == [["E7"]]
 
 
+def test_news_batch_tag_prefers_batch_over_cycle():
+    import scripts.news_loop as nl
+
+    assert nl._tag({"cycle": 7}) == "cycle=7"
+    assert nl._tag({"cycle": 7, "batch": 2}) == "batch=2"
+    assert nl._tag({"cycle": 0, "batch": None}) == "cycle=0"
+
+
+def test_news_tools_pass_batch_through(monkeypatch):
+    import scripts.news_loop as nl
+
+    seen = {}
+
+    def fake_run_cycle(graph_url, kalshi_url, cycle=0, event_slice=(),
+                       max_pairs=10, mode_pin=None, model="auto",
+                       event_limit=30, history_snaps=1, batch=None, **kw):
+        seen["cycle"] = cycle
+        seen["batch"] = batch
+        return {"ok": True, "mode": "co-mention", "pairs": 0}
+
+    monkeypatch.setattr(nl, "run_cycle", fake_run_cycle)
+    reg = N.news_tools("http://g", "http://k", "m")
+    reg["news_run_batch"]["func"](cycles=[{"event_filter": "E1"},
+                                          {"event_filter": "E2"}])
+    assert seen == {"cycle": 1, "batch": 1}
+    reg["news_run_cycle"]["func"]()
+    assert seen == {"cycle": 0, "batch": 0}
+
+
 def test_news_run_batch_accepts_batches_alias(monkeypatch):
     import scripts.news_loop as nl
 

@@ -257,6 +257,19 @@ def log(msg: str) -> None:
     print(f"[news-loop] {msg}", flush=True)
 
 
+def _tag(ctx: dict) -> str:
+    """Log tag: batch jobs log batch=N, standalone loop logs cycle=N.
+
+    The brain fans out news work as a batch (one entry per event
+    set); sharing the name `cycle` with the outer brain loop made
+    interleaved batch logs read as a rewound loop. Mode rotation
+    still uses `cycle`, so this only affects the display tag.
+    """
+    if ctx.get("batch") is not None:
+        return f"batch={ctx.get('batch')}"
+    return f"cycle={ctx.get('cycle', 0)}"
+
+
 def _topic_urls(topics: list[dict], mentions: dict) -> dict[str, set[str]]:
     out: dict[str, set[str]] = {}
     for t in topics:
@@ -898,7 +911,7 @@ def stage_scan(ctx: dict) -> dict:
     topics, mode = ctx["topics"], ctx["mode"]
     union = sorted({t for topic in topics for t in topic["terms"]})
     new_n = sum(1 for t in topics if t.get("new"))
-    log(f"cycle={ctx.get('cycle', 0)} mode={mode} topics={len(topics)} "
+    log(f"{_tag(ctx)} mode={mode} topics={len(topics)} "
         f"(new={new_n}) terms={len(union)}")
     if ctx.get("history_snaps", 1) > 1:
         try:
@@ -923,7 +936,7 @@ def stage_scan(ctx: dict) -> dict:
         burst_new, burst_old = new_m, old_m
     hit_terms = sum(1 for t in union if new_m.get(t, {}).get("count"))
     total_hits = sum(new_m.get(t, {}).get("count", 0) for t in union)
-    log(f"cycle={ctx.get('cycle', 0)} scan hits: {hit_terms}/{len(union)} "
+    log(f"{_tag(ctx)} scan hits: {hit_terms}/{len(union)} "
         f"terms, {total_hits} mentions")
     return {"mentions": new_m, "snap_ts": new_ts,
             "burst_new": burst_new, "burst_old": burst_old}
@@ -963,14 +976,15 @@ def stage_pair(ctx: dict) -> dict:
         return {"pairs": [],
                 "done": _odds_cycle(ctx["graph_url"], ctx["kalshi_url"],
                                     topics, max_pairs, ctx.get("model"))}
-    log(f"cycle={ctx.get('cycle', 0)} pairs={len(pairs)} " +
+    log(f"{_tag(ctx)} pairs={len(pairs)} " +
         (", ".join(f"{p['a']}x{p['b']}:{len(p['urls'])}" for p in pairs[:5])
          if pairs else "none"))
     if not pairs:
         _post_json(ctx["graph_url"].rstrip("/") + "/findings",
                    {"finding": {"loop": "news", "mode": mode,
                                 "pairs": 0,
-                                "cycle": ctx.get("cycle", 0)}})
+                                "cycle": ctx.get("cycle", 0),
+                                "batch": ctx.get("batch")}})
         return {"pairs": [],
                 "done": {"ok": True, "mode": mode, "pairs": 0}}
     return {"pairs": pairs}
@@ -978,10 +992,10 @@ def stage_pair(ctx: dict) -> dict:
 
 def stage_propose(ctx: dict) -> dict:
     """ctx: topics, pairs, mentions, snap_ts, graph_url, model,
-    deliberate, cycle. Returns {all_props, pairs (live only),
+    deliberate, cycle, batch. Returns {all_props, pairs (live only),
     vetoed, llm_calls}."""
     topics, pairs = ctx["topics"], ctx["pairs"]
-    model, cycle = ctx.get("model"), ctx.get("cycle", 0)
+    model = ctx.get("model")
     deliberate = ctx.get("deliberate", False)
     arts = articles_from_mentions(ctx["mentions"], ctx["snap_ts"])
     kept = _kept_from_articles(arts, ctx["snap_ts"], topics)
@@ -1022,7 +1036,7 @@ def stage_propose(ctx: dict) -> dict:
             live_pairs.append((p, dtitle, dconf))
             continue
         vetoed += 1
-        log(f"cycle={cycle} veto {p['a']}x{p['b']}: {reason}")
+        log(f"{_tag(ctx)} veto {p['a']}x{p['b']}: {reason}")
         if hid in existing_hids:
             aid = f"audit:{hid}"
             all_props.append(Proposal(
@@ -1096,10 +1110,11 @@ def stage_propose(ctx: dict) -> dict:
 
 def stage_commit(ctx: dict) -> dict:
     """ctx: all_props, pairs, topics, graph_url, mode, cycle,
-    llm_calls, vetoed. Posts, derives, fans out followups, and
+    batch, llm_calls, vetoed. Posts, derives, fans out followups, and
     returns the cycle summary."""
     all_props, pairs = ctx["all_props"], ctx["pairs"]
-    topics, mode, cycle = ctx["topics"], ctx["mode"], ctx.get("cycle", 0)
+    topics, mode = ctx["topics"], ctx["mode"]
+    cycle = ctx.get("cycle", 0)
     graph_url = ctx["graph_url"]
     approved, _ = Skeptic().review(all_props)
     posted = _post_json(
@@ -1130,6 +1145,7 @@ def stage_commit(ctx: dict) -> dict:
                                   "via": p["mode"]})
     _post_json(graph_url.rstrip("/") + "/findings",
                {"finding": {"loop": "news", "mode": mode, "cycle": cycle,
+                            "batch": ctx.get("batch"),
                             "pairs": len(pairs),
                             "metas": ctx.get("metas", 0),
                             "revision": posted.get("revision"),
@@ -1137,7 +1153,7 @@ def stage_commit(ctx: dict) -> dict:
                             "followups": followups,
                             "llm_calls": ctx.get("llm_calls", 0),
                             "vetoed": ctx.get("vetoed", 0)}})
-    log(f"cycle={cycle} posted {len(approved)} proposals "
+    log(f"{_tag(ctx)} posted {len(approved)} proposals "
         f"rev={posted.get('revision')} derived_fresh={fresh} "
         f"followups={len(followups)} llm_calls={ctx.get('llm_calls', 0)} "
         f"vetoed={ctx.get('vetoed', 0)} metas={ctx.get('metas', 0)}")
@@ -1151,7 +1167,8 @@ def stage_commit(ctx: dict) -> dict:
                 {"event_ticker": f["event_ticker"], "via": f["via"]}
                 for f in followups],
             "llm_calls": ctx.get("llm_calls", 0),
-            "vetoed": ctx.get("vetoed", 0)}
+            "vetoed": ctx.get("vetoed", 0),
+            "batch": ctx.get("batch")}
 
 
 def run_cycle(graph_url: str, kalshi_url: str, cycle: int = 0,
@@ -1161,15 +1178,20 @@ def run_cycle(graph_url: str, kalshi_url: str, cycle: int = 0,
               history_hours: float = 48,
               history_stride_hours: float = 6,
               deliberate: bool = False,
-              sync_topics: bool = True) -> dict:
+              sync_topics: bool = True,
+              batch: int | None = None) -> dict:
     """One full explore -> propose -> commit cycle. Returns a summary.
 
     Reference dispatcher over STAGES (discover -> scan -> pair ->
     propose -> commit); an orchestrator may call run_stage directly.
+
+    `cycle` drives mode rotation and the findings `cycle` field.
+    `batch` only changes the log tag: batch jobs log `batch=N` so
+    they cannot be mistaken for the outer brain `cycle=N` loop.
     """
     ctx: dict = {
         "graph_url": graph_url, "kalshi_url": kalshi_url,
-        "cycle": cycle, "event_slice": event_slice,
+        "cycle": cycle, "batch": batch, "event_slice": event_slice,
         "max_pairs": max_pairs, "mode": next_mode(cycle, mode_pin),
         "model": model, "event_limit": event_limit,
         "history_snaps": history_snaps, "history_hours": history_hours,
