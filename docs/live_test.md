@@ -87,7 +87,7 @@ Start order matters: graph first, then kalshi, then the loops, then the view.
   `uv run python -m services.graph_api --port 8090`
 - Terminal 2 (kalshi service, no seed needed for discovery; `--graph-url`
   enables odds publishing, `--sweep` primes the graph once at startup):
-  `uv run python scripts/kalshi_service.py --port 8080 --graph-url http://127.0.0.1:8090`
+  `uv run python -m services.kalshi_server --port 8080 --graph-url http://127.0.0.1:8090`
   (add `--sweep` once the watchlist is non-empty; without `--event`/
   `--ticker`/`--seed` the startup watchlist is empty, so let the news
   loop sync it first or pass `--sweep` after a manual `POST /topics`.)

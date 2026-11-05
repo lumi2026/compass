@@ -14,23 +14,7 @@ import re
 
 from graph import article_id
 from squad import Proposal
-
-
-HYPOTHESIS_TYPES = ("co_mention", "co_location", "shared_context",
-                    "co_outcome")
-
-# Detection mode -> relation type (mirrors MODE_HYPOTHESIS_TYPE in
-# scripts/news_loop.py). The Investigator never detects pairs itself;
-# the loop detects and passes the relation through task/context.
-MODE_HYPOTHESIS_TYPE = {
-    "co-mention": "co_mention",
-    "shared-subject": "shared_context",
-    "burst": "co_mention",
-    "entity-overlap": "co_mention",
-    "co-location": "co_location",
-    "transitive": "shared_context",
-    "odds-correlation": "co_outcome",
-}
+from squad.taxonomy import HYPOTHESIS_TYPES, LEGACY_MODE_TYPE
 
 
 def hypothesis_id(event_ticker: str, n: int = 1) -> str:
@@ -53,15 +37,15 @@ def resolve_relation(task: dict | str, context: dict | None = None) -> tuple[str
     if not raw_type:
         raw_type = str(ctx.get("hypothesis_type") or ctx.get("relation") or "")
     if raw_type in HYPOTHESIS_TYPES:
-        inv = {v: k for k, v in MODE_HYPOTHESIS_TYPE.items()}
+        inv = {v: k for k, v in LEGACY_MODE_TYPE.items()}
         return raw_type, inv.get(raw_type, "co-mention")
     raw_mode = ""
     if isinstance(task, dict):
         raw_mode = str(task.get("mode") or "")
     if not raw_mode:
         raw_mode = str(ctx.get("mode") or "")
-    htype = MODE_HYPOTHESIS_TYPE.get(raw_mode, "co_mention")
-    return htype, (raw_mode if raw_mode in MODE_HYPOTHESIS_TYPE else "co-mention")
+    htype = LEGACY_MODE_TYPE.get(raw_mode, "co_mention")
+    return htype, (raw_mode if raw_mode in LEGACY_MODE_TYPE else "co-mention")
 
 
 def _task_ticker(task: dict | str) -> str:

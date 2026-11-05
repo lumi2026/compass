@@ -23,6 +23,26 @@ def test_kalshi_discover_shape_and_soft_fail(monkeypatch):
     assert out["ok"] is False and "error" in out
 
 
+def test_kalshi_event_markets_uses_service_event_param(monkeypatch):
+    # Contract with services/kalshi_server.py: /markets reads `event`,
+    # not `event_ticker`.
+    seen = {}
+
+    def get(base, path, params=None, timeout=30):
+        seen.update(path=path, params=params)
+        return {"markets": [{"ticker": "E1-A", "title": "A",
+                             "last_price": 12, "status": "open"}]}
+
+    monkeypatch.setattr(K, "_get", get)
+    out = K.kalshi_tools("http://x")["kalshi_event_markets"]["func"]("E1")
+    assert out["ok"] is True
+    assert seen["path"] == "/markets"
+    assert seen["params"]["event"] == "E1"
+    assert "event_ticker" not in seen["params"]
+    assert out["markets"] == [{"ticker": "E1-A", "title": "A",
+                               "last_price": 12, "status": "open"}]
+
+
 def test_kalshi_sweep_posts_path(monkeypatch):
     seen = []
 

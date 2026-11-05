@@ -1,3 +1,5 @@
+import taxonomy from '../../shared/hypothesis_taxonomy.json' with { type: 'json' }
+
 export const KIND_COLORS = {
   Event: '#ea580c',
   Market: '#6b7fa3',
@@ -16,10 +18,13 @@ export const EDGE_COLORS = {
   'has-market': '#94a3b8',
 }
 
-// Closed hypothesis relation taxonomy (mirrors HYPOTHESIS_TYPES in
-// scripts/news_loop.py): each link type gets its own edge color so the
-// globe reads by relation, not just by link. Legacy nodes carry only
-// props.mode and fall back through LEGACY_MODE_TYPE.
+// Closed hypothesis relation taxonomy, shared with the Python squad via
+// shared/hypothesis_taxonomy.json (the single source of truth). Each
+// link type gets its own edge color so the globe reads by relation,
+// not just by link. Legacy nodes carry only props.mode and fall back
+// through the shared mode map.
+export const HYPOTHESIS_TYPES = taxonomy.types
+
 export const HYPOTHESIS_COLORS = {
   co_mention: '#7c3aed',
   co_location: '#14b8a6',
@@ -34,15 +39,7 @@ export const HYPOTHESIS_DESCRIPTIONS = {
   co_outcome: 'correlated odds',
 }
 
-export const LEGACY_MODE_TYPE = {
-  'co-mention': 'co_mention',
-  'shared-subject': 'shared_context',
-  burst: 'co_mention',
-  'entity-overlap': 'co_mention',
-  'co-location': 'co_location',
-  transitive: 'shared_context',
-  'odds-correlation': 'co_outcome',
-}
+export const LEGACY_MODE_TYPE = taxonomy.mode_to_type
 
 export function hypothesisType(props = {}) {
   if (props.type && HYPOTHESIS_COLORS[props.type]) return props.type

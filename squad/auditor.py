@@ -12,6 +12,8 @@ reply, keeps the link. Vetoes require an explicit NO.
 
 from dataclasses import dataclass
 
+from .taxonomy import normalize_hypothesis_type
+
 
 @dataclass
 class AuditResult:
@@ -46,21 +48,8 @@ def _parse_reason(lines: list[str], default: str = "") -> str:
     return lines[1].strip()[:300] if len(lines) > 1 else default
 
 
-# Closed hypothesis relation taxonomy: every Hypothesis node carries
-# props.type in this set. Detection modes (hyphenated) and legacy
-# aliases map onto it; unknown modes stay generic (fail-open).
-HYPOTHESIS_TYPES = ("co_mention", "co_location", "shared_context",
-                    "co_outcome")
-
-_MODE_TO_TYPE = {
-    "co-mention": "co_mention",
-    "shared-subject": "shared_context",
-    "burst": "co_mention",
-    "entity-overlap": "co_mention",
-    "co-location": "co_location",
-    "transitive": "shared_context",
-    "odds-correlation": "co_outcome",
-}
+# Taxonomy (HYPOTHESIS_TYPES, mode mapping, normalize) is shared with
+# the squad and the view via shared/hypothesis_taxonomy.json.
 
 # What each claimed type must show in the evidence. The audit vetoes
 # when the evidence does not support the CLAIMED type, not just when
@@ -76,20 +65,6 @@ _TYPE_CHECKS = {
     "co_outcome": "the topics' outcomes must plausibly move together "
                   "(linked markets, odds, or consequences)",
 }
-
-
-def normalize_hypothesis_type(mode) -> str | None:
-    """Map a detection mode or stored type to the closed taxonomy.
-
-    Returns the closed type, or None for unknown/empty modes (the
-    audit then falls back to the generic mismatch test, fail-open).
-    """
-    if not mode:
-        return None
-    m = str(mode).strip()
-    if m in HYPOTHESIS_TYPES:
-        return m
-    return _MODE_TO_TYPE.get(m)
 
 
 def _type_criterion(mode: str) -> tuple[str | None, str, str]:

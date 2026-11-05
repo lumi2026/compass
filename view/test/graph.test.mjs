@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { HYPOTHESIS_COLORS, HYPOTHESIS_DESCRIPTIONS, centerOnNode, eventSummary, faceNode, hypothesisType, spherePoint, transformElements, zoomCamera } from '../src/graph.js'
+import taxonomy from '../../shared/hypothesis_taxonomy.json' with { type: 'json' }
+import { HYPOTHESIS_COLORS, HYPOTHESIS_DESCRIPTIONS, HYPOTHESIS_TYPES, LEGACY_MODE_TYPE, centerOnNode, eventSummary, faceNode, hypothesisType, spherePoint, transformElements, zoomCamera } from '../src/graph.js'
 
 class V {
   constructor(x = 0, y = 0, z = 0) {
@@ -372,6 +373,18 @@ describe('hypothesis types', () => {
     for (const t of Object.keys(HYPOTHESIS_COLORS)) {
       assert.ok(HYPOTHESIS_DESCRIPTIONS[t])
       assert.ok(!HYPOTHESIS_DESCRIPTIONS[t].includes('co_'))
+    }
+  })
+
+  it('reads the taxonomy from the file shared with the Python squad', () => {
+    assert.deepEqual(HYPOTHESIS_TYPES, taxonomy.types)
+    assert.deepEqual(LEGACY_MODE_TYPE, taxonomy.mode_to_type)
+    assert.deepEqual(Object.keys(HYPOTHESIS_COLORS).sort(),
+      [...taxonomy.types].sort())
+    assert.deepEqual(Object.keys(HYPOTHESIS_DESCRIPTIONS).sort(),
+      [...taxonomy.types].sort())
+    for (const mode of taxonomy.detection_modes) {
+      assert.ok(taxonomy.mode_to_type[mode], `${mode} needs a type`)
     }
   })
 

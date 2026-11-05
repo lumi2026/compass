@@ -42,37 +42,14 @@ from sources.ngrams import (  # noqa: E402
     snapshot_candidates,
 )
 from squad import Proposal, Skeptic  # noqa: E402
+from squad import taxonomy  # noqa: E402
 from squad.models import resolve_model  # noqa: E402
 from squad.news_agent import NewsAgent  # noqa: E402
 
-MODES = ("co-mention", "shared-subject", "burst",
-         "entity-overlap", "co-location", "odds-correlation")
-
-# Closed hypothesis relation taxonomy (user-pinned, 2026-11-05): every
-# Hypothesis node carries props.type in this set. detectors map their
-# trigger mode via MODE_HYPOTHESIS_TYPE; legacy nodes without a type
-# fall back through LEGACY_MODE_TYPE (old mode strings) in the view.
-HYPOTHESIS_TYPES = ("co_mention", "co_location", "shared_context",
-                    "co_outcome")
-
-MODE_HYPOTHESIS_TYPE = {
-    "co-mention": "co_mention",
-    "shared-subject": "shared_context",
-    "burst": "co_mention",  # bursting topics linked by shared articles
-    "entity-overlap": "co_mention",  # shared mention-level content
-    "co-location": "co_location",
-    "odds-correlation": "co_outcome",
-}
-
-LEGACY_MODE_TYPE = {
-    "co-mention": "co_mention",
-    "shared-subject": "shared_context",
-    "burst": "co_mention",
-    "entity-overlap": "co_mention",
-    "co-location": "co_location",
-    "transitive": "shared_context",
-    "odds-correlation": "co_outcome",
-}
+# Alias the shared taxonomy; no relation data is restated here.
+HYPOTHESIS_TYPES = taxonomy.HYPOTHESIS_TYPES
+MODE_HYPOTHESIS_TYPE = taxonomy.MODE_HYPOTHESIS_TYPE
+MODES = taxonomy.DETECTION_MODES
 
 # Place cues for co_location: multi-word entities ending in one of
 # these, or any entity in PLACES (countries + major cities). Precision

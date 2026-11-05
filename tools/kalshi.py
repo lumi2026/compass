@@ -41,8 +41,10 @@ def kalshi_tools(base_url: str) -> dict:
     def event_markets(event_ticker: str, limit: int = 50) -> dict:
         """Open markets inside one event (tickers, titles, prices)."""
         try:
+            # The service query param is `event` (see kalshi_server
+            # `/markets`); `event_ticker` here silently 400s.
             data = _get(base_url, "/markets",
-                        {"event_ticker": event_ticker, "limit": limit,
+                        {"event": event_ticker, "limit": limit,
                          "status": "open"})
         except Exception as e:
             return {"ok": False, "error": f"{type(e).__name__}: {e}"}

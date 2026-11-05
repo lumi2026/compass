@@ -176,7 +176,7 @@ def test_service_set_topics_with_direct_tickers():
 
 
 def test_wire_graph_publish_disabled_without_url():
-    from scripts.kalshi_service import wire_graph_publish
+    from services.kalshi_server import wire_graph_publish
     from services.kalshi_listener import KalshiListener
 
     service = Service(KalshiListener(None), FeedStore())
@@ -189,7 +189,7 @@ def test_wire_graph_publish_disabled_without_url():
 
 
 def test_wire_graph_publish_sets_url_and_sweeps_once():
-    from scripts.kalshi_service import wire_graph_publish
+    from services.kalshi_server import wire_graph_publish
     from services.kalshi_listener import KalshiListener
 
     service = Service(KalshiListener(None), FeedStore())
@@ -210,11 +210,22 @@ def test_wire_graph_publish_sets_url_and_sweeps_once():
 def test_cli_rejects_non_http_graph_url():
     from click.testing import CliRunner
 
-    from scripts.kalshi_service import main
+    from services.kalshi_server import main
 
     result = CliRunner().invoke(main, ["--graph-url", "ftp://nope"])
     assert result.exit_code == 2
     assert "http://" in result.output
+
+
+def test_module_entrypoint_exposes_cli():
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-m", "services.kalshi_server", "--help"],
+        capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0
+    assert "--port" in result.stdout
 
 
 def test_seed_load_roundtrip(tmp_path):

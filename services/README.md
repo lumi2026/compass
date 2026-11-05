@@ -20,7 +20,7 @@ which uses FastAPI + Pydantic.
 Reads Kalshi (live or frozen) and fans updates out to agents.
 
 ```sh
-uv run python scripts/kalshi_service.py --port 8080
+uv run python -m services.kalshi_server --port 8080
 ```
 
 Auth comes from the environment only — `KALSHI_KEY_ID` plus
