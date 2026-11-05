@@ -14,7 +14,7 @@ def news_tools(graph_url: str, kalshi_url: str,
                model: str | None = "auto") -> dict:
     """{tool_name: {description, func}} launching news_loop cycles."""
 
-    def _run_one(job: dict, cycle: int) -> dict:
+    def _run_one(job: dict, batch: int) -> dict:
         from scripts import news_loop as nl
 
         mode_pin = str(job.get("mode_pin", "") or "").strip() or None
@@ -31,7 +31,7 @@ def news_tools(graph_url: str, kalshi_url: str,
                 if t.strip())
         try:
             out = nl.run_cycle(
-                graph_url, kalshi_url, cycle=cycle,
+                graph_url, kalshi_url, cycle=batch,
                 event_slice=event_slice,
                 max_pairs=int(job.get("max_pairs", 10)),
                 mode_pin=mode_pin, model=model,
@@ -39,7 +39,8 @@ def news_tools(graph_url: str, kalshi_url: str,
                 history_snaps=int(job.get("history_snaps", 1)),
                 history_hours=float(job.get("history_hours", 48)),
                 history_stride_hours=float(
-                    job.get("history_stride_hours", 6)))
+                    job.get("history_stride_hours", 6)),
+                batch=batch)
         except Exception as e:
             return {"ok": False, "error": f"{type(e).__name__}: {e}"}
         _RECENT.append(out)
