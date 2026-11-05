@@ -43,7 +43,7 @@ revision}`.
 Live market feed + odds publishing into the graph.
 
 ```sh
-uv run python scripts/kalshi_service.py --port 8080 \
+uv run python -m services.kalshi_server --port 8080 \
   --graph-url http://127.0.0.1:8090
 ```
 
