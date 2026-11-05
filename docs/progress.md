@@ -1060,54 +1060,23 @@ widening, `KXTOPLLMGENERAL-30` gap, feedback loop).
 
 **Day 10 (cont.): pair quality, typed hypotheses, type-aware audit, view polish, submit (`26daa18` → `89b9d94`)**
 
-### Pair quality
-- Stratified discovery (`26daa18`): topic discovery spreads across
-  Kalshi categories and prefers cross-family pairs over same-cluster
-  ones (`scripts/news_loop.py` + tests).
-- Anchored evidence (`5dcf605`): pair terms enumerated as proper
-  nouns; a pair needs its terms actually present in the shared
-  article, cutting the Day-3 unigram-noise class at the source
-  (`news_loop.py`, `cross_link.py` + tests).
-
-### Multi-hypothesis + typed relations
-- `7449ec8`: the loop supports multiple hypotheses per pair
-  (loop + view sides, tested).
-- `9ebf4bd`: hypothesis relation labels unified and wired end to
-  end (investigator → pipeline → auditor → view) on the closed
-  taxonomy (`co_mention`, `co_location`, `shared_context`,
-  `co_outcome`); `derive.py` gains the typed entries.
-
-### Type-aware audit + retire
-- `066d300`: the auditor now judges the *claimed* hypothesis type
-  (`co_location` needs a shared place, `co_outcome` linked
-  outcomes, …; unknown modes get the generic test); a veto retires
-  the node (`POST /retire`), and `audit_loop.py` gains `--force`
-  to re-audit everything.
-- `fa6af3e`: derived links re-synced on retire and commit, pruning
-  the stale mesh.
-- `89b9d94`: rendered links mirrored into neighbours so counts
-  agree; new `scripts/backfill_hypothesis_type.py` assigns types
-  to already-committed hypotheses.
-- `9c1fd3e`: READMEs refreshed (typed hypotheses, audit
-  retire/force, per-type view colors).
-
-### View polish (events-first story)
-- `966109d`: event picker, larger fonts, all-labels toggle kept.
-- `ae9ea85`: label/link toggles dropped; view cap split so
-  evidence renders; reset fixed.
-- `3dfef5e`: globe reset with spin, bounded zoom, odds in percent.
-- `0588ede`: filtered subject mesh excluded from neighbours/degree.
-- `35cc80b`: selected event faces front-center; details counts
-  reconciled with the top bar.
-- `414dde5`: gem-ball event nodes, orange events, teal
-  `co_location`, clearer labels.
-
-### Docs
-- `1e84fb2`: `run_compass` loop documented as the standalone
-  main-agent (`brain`) launch.
-- `d670956`: each view builder command gets its own code box in
-  `view/README.md`.
-
-### Submit
-- Tag `final_submit` created at `89b9d94` and pushed to remote
-  (`origin`); working tree clean.
+- Pair quality: discovery stratifies across Kalshi categories and
+  prefers cross-family pairs; pair terms are enumerated as proper
+  nouns with evidence anchored in the shared article, cutting the
+  Day-3 unigram-noise class at the source.
+- Typed hypotheses: the loop supports multiple hypotheses per pair,
+  and relation labels are unified end to end (investigator →
+  auditor → view) on the closed taxonomy (`co_mention`,
+  `co_location`, `shared_context`, `co_outcome`); committed
+  hypotheses backfilled with types.
+- Type-aware audit: the auditor judges the *claimed* hypothesis
+  type, and vetoes now retire the node (`POST /retire`,
+  `--force` re-audits all); derived links re-sync on retire and
+  commit; READMEs updated.
+- View polish: event picker, globe reset with spin, bounded zoom,
+  odds in percent, selected event front-center with reconciled
+  counts, gem-ball events with per-type colors; docs refreshed
+  (`run_compass` as the main-agent launch, per-command code boxes
+  in `view/README.md`).
+- Submit: tag `final_submit` at `89b9d94`, pushed to remote; tree
+  clean.
