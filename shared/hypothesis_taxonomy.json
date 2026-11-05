@@ -1,0 +1,25 @@
+{
+  "types": [
+    "co_mention",
+    "co_location",
+    "shared_context",
+    "co_outcome"
+  ],
+  "detection_modes": [
+    "co-mention",
+    "shared-subject",
+    "burst",
+    "entity-overlap",
+    "co-location",
+    "odds-correlation"
+  ],
+  "mode_to_type": {
+    "co-mention": "co_mention",
+    "shared-subject": "shared_context",
+    "burst": "co_mention",
+    "entity-overlap": "co_mention",
+    "co-location": "co_location",
+    "transitive": "shared_context",
+    "odds-correlation": "co_outcome"
+  }
+}
