@@ -15,6 +15,10 @@ from typing import Any
 from .kalshi_listener import TickerState, Update
 
 HISTORY_LEN = 200
+# SSE consumers can be absent for hours (the normal agent-loop case).
+# Without a cap the bus is an unbounded memory leak: every tick and
+# orderbook delta would be retained forever. Drop the oldest frames.
+BUS_LEN = 2_000
 
 
 @dataclass
@@ -25,16 +29,46 @@ class FeedStore:
     history: dict[str, deque] = field(default_factory=dict)
     webhooks: set[str] = field(default_factory=set)
     _lock: threading.Lock = field(default_factory=threading.Lock)
-    _bus: queue.Queue = field(default_factory=queue.Queue)
+    _bus: queue.Queue = field(
+        default_factory=lambda: queue.Queue(maxsize=BUS_LEN))
+    dropped: int = 0
 
     def publish(self, update: Update) -> None:
         with self._lock:
             hist = self.history.setdefault(update.ticker, deque(maxlen=HISTORY_LEN))
             hist.append(update)
             targets = sorted(self.webhooks)
-        self._bus.put(update)
+        self._offer(update)
         for url in targets:
             self._post_webhook(url, update)
+
+    def _offer(self, update: Update) -> None:
+        """Enqueue for SSE, dropping the oldest frame when full."""
+        try:
+            self._bus.put_nowait(update)
+        except queue.Full:
+            try:
+                self._bus.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                self._bus.put_nowait(update)
+            except queue.Full:
+                return
+            with self._lock:
+                self.dropped += 1
+
+    def retain_tickers(self, tickers: list[str] | set[str]) -> None:
+        """Drop state/history for tickers no longer watched.
+
+        The news loop rotates the watchlist every cycle; without this
+        the per-ticker dicts grow for the lifetime of the service.
+        """
+        keep = set(tickers)
+        with self._lock:
+            self.state = {t: s for t, s in self.state.items() if t in keep}
+            self.history = {t: h for t, h in self.history.items()
+                            if t in keep}
 
     def ingest_state(self, state: dict[str, TickerState]) -> None:
         with self._lock:

@@ -127,6 +127,9 @@ class KalshiListener:
 
     def watch(self, tickers: list[str]) -> None:
         self.tickers = sorted(set(tickers))
+        # The loop rotates topics; keep only state we can still serve.
+        keep = set(self.tickers)
+        self.state = {t: s for t, s in self.state.items() if t in keep}
 
     async def run(self) -> None:
         """Contract: reconnect forever until stop(); REST fallback when keyless."""

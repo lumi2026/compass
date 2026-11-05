@@ -84,3 +84,33 @@ def test_custom_project_respected(monkeypatch, tmp_path):
                              dotenv_path=str(tmp_path / "missing.env"))
     assert out["project"] == "demo-1"
     assert os.environ["LANGSMITH_PROJECT"] == "demo-1"
+
+
+def test_span_reuses_client(monkeypatch, tmp_path):
+    _clean(monkeypatch)
+    monkeypatch.setenv("LANGSMITH_API_KEY", "k-test")
+    monkeypatch.setenv("LANGSMITH_TRACING", "true")
+    tr._reset_client_cache()
+    made = []
+
+    class FakeClient:
+        def __init__(self):
+            made.append(self)
+
+        def create_run(self, **kw):
+            pass
+
+        def update_run(self, **kw):
+            pass
+
+        def flush(self):
+            pass
+
+    monkeypatch.setattr("langsmith.Client", FakeClient)
+    from squad.tracing import squad_span
+    with squad_span("a") as run:
+        run.outputs = {"ok": True}
+    with squad_span("b") as run:
+        run.outputs = {"ok": True}
+    assert len(made) == 1
+    tr._reset_client_cache()

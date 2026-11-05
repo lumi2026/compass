@@ -69,6 +69,41 @@ STANDING_GOAL = """Run one full Compass upkeep pass:
    rescanning the same window."""
 
 
+# One goal's context must stay bounded even when max_iterations is 0
+# (the service default): tools like graph_listings return multi-MB JSON.
+# Trim oldest AI/tool exchanges, never the system+goal header.
+MAX_CONTEXT_CHARS = 160_000
+MAX_TOOL_CHARS = 40_000
+_KEEP_HEAD = 2
+
+
+def _message_chars(msg) -> int:
+    content = msg.content
+    return len(content) if isinstance(content, str) else len(str(content))
+
+
+def _trim_transcript(transcript: list, max_chars: int) -> None:
+    """Drop oldest exchanges in pairs so tool_call ids stay paired."""
+    total = sum(_message_chars(m) for m in transcript)
+    while total > max_chars and len(transcript) > _KEEP_HEAD + 2:
+        dropped = transcript[_KEEP_HEAD:_KEEP_HEAD + 2]
+        del transcript[_KEEP_HEAD:_KEEP_HEAD + 2]
+        total -= sum(_message_chars(m) for m in dropped)
+
+
+def _tool_text(result) -> str:
+    """Serialized tool result, capped so one reply cannot blow the window."""
+    text = json.dumps(result)
+    if len(text) <= MAX_TOOL_CHARS:
+        return text
+    return text[:MAX_TOOL_CHARS] + "...[truncated]"
+
+
+def _append(transcript: list, *messages, max_chars: int) -> None:
+    transcript.extend(messages)
+    _trim_transcript(transcript, max_chars)
+
+
 def build_registry(graph_url: str, kalshi_url: str,
                    model: str | None = "auto") -> dict:
     """Kalshi + graph + news_loop launch tools bound to live services."""
@@ -113,7 +148,8 @@ def _execute(registry: dict, name, args) -> tuple:
 
 
 def run_goal(goal: str, registry: dict, model_obj,
-             max_iterations: int = 10, first_step: dict | None = None) -> dict:
+             max_iterations: int = 10, first_step: dict | None = None,
+             max_context_chars: int = MAX_CONTEXT_CHARS) -> dict:
     """Drive one goal to an answer or the budget. Returns
     {ok, answer?, tool_calls, iterations, reason?}.
 
@@ -122,6 +158,10 @@ def run_goal(goal: str, registry: dict, model_obj,
     already-decided {"tool", "args"} (e.g. from news_propose_step):
     it executes before the model reasons, and the transcript shows it
     as the opening action, so the brain starts from there.
+
+    `max_context_chars` bounds one goal's prompt: oldest AI/tool
+    exchanges are dropped once the total exceeds it, so an unbounded
+    iteration budget cannot grow memory without limit.
     """
     transcript = [SystemMessage(BRAIN_PROMPT), HumanMessage(goal)]
     tool_calls = 0
@@ -133,11 +173,12 @@ def run_goal(goal: str, registry: dict, model_obj,
             tool_calls += 1
         call_id = "sup-first"
         raw_first = json.dumps({"tool": name, "args": args or {}})
-        transcript += [
-            AIMessage(content=raw_first,
-                      tool_calls=[{"name": name, "args": args or {},
-                                   "id": call_id, "type": "tool_call"}]),
-            ToolMessage(content=json.dumps(result), tool_call_id=call_id)]
+        _append(transcript,
+                AIMessage(content=raw_first,
+                          tool_calls=[{"name": name, "args": args or {},
+                                       "id": call_id, "type": "tool_call"}]),
+                ToolMessage(content=_tool_text(result), tool_call_id=call_id),
+                max_chars=max_context_chars)
     while True:
         if max_iterations > 0 and i >= max_iterations:
             break
@@ -151,9 +192,12 @@ def run_goal(goal: str, registry: dict, model_obj,
         try:
             act = _extract_json(raw)
         except ValueError as e:
-            transcript += [AIMessage(raw), HumanMessage(
-                f"Protocol error ({e}): reply with one JSON object, "
-                '{"tool": name, "args": {...}} or {"answer": ...}.')]
+            _append(transcript,
+                    AIMessage(raw),
+                    HumanMessage(
+                        f"Protocol error ({e}): reply with one JSON object, "
+                        '{"tool": name, "args": {...}} or {"answer": ...}.'),
+                    max_chars=max_context_chars)
             i += 1
             continue
         if "answer" in act:
@@ -164,11 +208,12 @@ def run_goal(goal: str, registry: dict, model_obj,
         if counted:
             tool_calls += 1
         call_id = f"sup{i}"
-        transcript += [
-            AIMessage(content=raw,
-                      tool_calls=[{"name": name, "args": args or {},
-                                   "id": call_id, "type": "tool_call"}]),
-            ToolMessage(content=json.dumps(result), tool_call_id=call_id)]
+        _append(transcript,
+                AIMessage(content=raw,
+                          tool_calls=[{"name": name, "args": args or {},
+                                       "id": call_id, "type": "tool_call"}]),
+                ToolMessage(content=_tool_text(result), tool_call_id=call_id),
+                max_chars=max_context_chars)
         i += 1
     return {"ok": False, "tool_calls": tool_calls,
             "iterations": i,

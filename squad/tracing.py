@@ -50,6 +50,32 @@ def is_enabled() -> bool:
 
 from contextlib import contextmanager  # noqa: E402
 
+_cached_client = None
+_cached_client_cls = None
+
+
+def _get_client():
+    """Reuse one LangSmith client per process.
+
+    A fresh Client per span leaks httpx sessions/background threads
+    over a weekly loop. The cache is keyed on the Client class so
+    tests that monkeypatch langsmith.Client still get a fresh fake.
+    """
+    global _cached_client, _cached_client_cls
+    from langsmith import Client
+
+    if _cached_client is None or _cached_client_cls is not Client:
+        _cached_client = Client()
+        _cached_client_cls = Client
+    return _cached_client
+
+
+def _reset_client_cache() -> None:
+    """Test hook: drop the cached client."""
+    global _cached_client, _cached_client_cls
+    _cached_client = None
+    _cached_client_cls = None
+
 
 @contextmanager
 def squad_span(name: str, inputs: dict | None = None):
@@ -67,9 +93,7 @@ def squad_span(name: str, inputs: dict | None = None):
         return
     import uuid
 
-    from langsmith import Client
-
-    client = Client()
+    client = _get_client()
     rid = uuid.uuid4()
     state = SimpleNamespace(outputs=None)
     try:

@@ -101,3 +101,42 @@ def test_unknown_first_step_fed_back_not_counted():
         first_step={"tool": "nope", "args": {}})
     assert out["ok"] is True and out["answer"] == "recovered"
     assert out["tool_calls"] == 0 and out["iterations"] == 1
+
+
+def test_transcript_stays_within_budget():
+    sizes = []
+
+    class M:
+        def invoke(self, transcript):
+            sizes.append(sum(len(m.content) for m in transcript))
+            return SimpleNamespace(content='{"tool": "big", "args": {}}')
+
+    reg = {"big": {"description": "d",
+                   "func": lambda: {"data": "x" * 5_000}}}
+    out = run_goal("go", reg, M(), max_iterations=100,
+                   max_context_chars=20_000)
+    assert out["reason"] == "iteration budget exhausted"
+    assert max(sizes) <= 20_000
+
+
+def test_large_tool_result_truncated():
+    seen = []
+
+    class M:
+        def __init__(self):
+            self.calls = 0
+
+        def invoke(self, transcript):
+            seen.append(transcript[-1].content)
+            self.calls += 1
+            if self.calls == 1:
+                return SimpleNamespace(content='{"tool": "big", "args": {}}')
+            return SimpleNamespace(content='{"answer": "ok"}')
+
+    reg = {"big": {"description": "d",
+                   "func": lambda: {"data": "x" * 100_000}}}
+    out = run_goal("go", reg, M(), max_iterations=5)
+    assert out == {"ok": True, "answer": "ok", "tool_calls": 1,
+                   "iterations": 2}
+    assert seen[1].endswith("...[truncated]")
+    assert len(seen[1]) < 100_000

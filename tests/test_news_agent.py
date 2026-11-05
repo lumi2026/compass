@@ -274,6 +274,21 @@ def test_factory_custom_needs_base_url(monkeypatch):
     assert m.openai_api_base == "https://my-host/v1"
 
 
+def test_factory_caches_per_config(monkeypatch):
+    from squad.models import _reset_model_cache, make_chat_model
+
+    _clear_model_env(monkeypatch)
+    _reset_model_cache()
+    monkeypatch.setenv("MODEL_API_KEY", "k-cache")
+    a = make_chat_model()
+    b = make_chat_model()
+    assert a is b
+    monkeypatch.setenv("COMPASS_MODEL", "other-model")
+    c = make_chat_model()
+    assert c is not a
+    _reset_model_cache()
+
+
 class _FakeMsg:
     def __init__(self, content):
         self.content = content
