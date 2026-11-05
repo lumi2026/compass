@@ -121,10 +121,46 @@ def test_handle_snapshot_and_delta():
         "market_ticker": "T1", "side": "yes",
         "price_dollars": "0.5600", "delta_fp": "3.00"}}, state)
     assert [lv.price_cents for lv in state["T1"].orderbook.yes_bids] == [56, 55]
+    # delta_fp is a signed change: -10 removes the 10 resting at 55.
     handle_message({"type": "orderbook_delta", "msg": {
         "market_ticker": "T1", "side": "yes",
-        "price_dollars": "0.5500", "delta_fp": "0.00"}}, state)
+        "price_dollars": "0.5500", "delta_fp": "-10.00"}}, state)
     assert [lv.price_cents for lv in state["T1"].orderbook.yes_bids] == [56]
+
+
+def test_delta_is_signed_change_not_absolute():
+    state: dict[str, TickerState] = {}
+    handle_message({"type": "orderbook_snapshot", "msg": {
+        "market_ticker": "T1",
+        "yes_dollars_fp": [["0.5500", "10.00"]]}}, state)
+    # Partial pull: 10 - 3 = 7 resting, level stays.
+    handle_message({"type": "orderbook_delta", "msg": {
+        "market_ticker": "T1", "side": "yes",
+        "price_dollars": "0.5500", "delta_fp": "-3.00"}}, state)
+    bids = state["T1"].orderbook.yes_bids
+    assert [(lv.price_cents, lv.contracts) for lv in bids] == [(55, 7)]
+    # A 54-contract pull must not become a 54-contract add (old abs bug).
+    handle_message({"type": "orderbook_delta", "msg": {
+        "market_ticker": "T1", "side": "yes",
+        "price_dollars": "0.5500", "delta_fp": "-54.00"}}, state)
+    assert state["T1"].orderbook.yes_bids == []
+    # Negative delta on an empty level creates nothing.
+    assert handle_message({"type": "orderbook_delta", "msg": {
+        "market_ticker": "T2", "side": "no",
+        "price_dollars": "0.4000", "delta_fp": "-5.00"}}, state) == []
+    assert state["T2"].orderbook.no_bids == []
+    # Zero delta is a no-op: no state change, no update emitted.
+    before = state["T1"].orderbook
+    assert handle_message({"type": "orderbook_delta", "msg": {
+        "market_ticker": "T1", "side": "yes",
+        "price_dollars": "0.5600", "delta_fp": "0.00"}}, state) == []
+    assert state["T1"].orderbook is before
+    # Unknown side is ignored, never misrouted to the other side.
+    assert handle_message({"type": "orderbook_delta", "msg": {
+        "market_ticker": "T1", "side": "maybe",
+        "price_dollars": "0.5600", "delta_fp": "5.00"}}, state) == []
+    assert state["T1"].orderbook.yes_bids == []
+    assert state["T1"].orderbook.no_bids == []
 
 
 def test_handle_ignores_junk():
