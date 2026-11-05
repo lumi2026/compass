@@ -80,16 +80,29 @@ def handle_message(msg: dict, state: dict[str, TickerState]) -> list[Update]:
             st.orderbook = OrderBookSnapshot(ticker=ticker, yes_bids=[], no_bids=[])
         from sources.kalshi import _to_cents, _to_contracts
 
+        # Kalshi sends a *signed change* in resting contracts at the
+        # price (docs example: "delta_fp": "-54.00"). It is not an
+        # absolute count: abs() would turn a 54-contract pull into a
+        # 54-contract add, and a 0 delta (no-op) would wipe the level.
+        side = str(body.get("side", ""))
+        if side not in ("yes", "no"):
+            return out
         try:
             price = _to_cents(body.get("price_dollars", body.get("price", 0)))
-            count = _to_contracts(body.get("delta_fp", body.get("count", 0)))
-            count = abs(count)
+            delta = _to_contracts(body.get("delta_fp", body.get("count", 0)))
         except (TypeError, ValueError):
             return out
-        side = str(body.get("side", "yes"))
-        if count == 0:
-            pass
-        st.orderbook = apply_delta(st.orderbook, side, price, count)
+        if delta == 0:
+            return out
+        levels = (st.orderbook.yes_bids if side == "yes"
+                  else st.orderbook.no_bids)
+        resting = next((lv.contracts for lv in levels
+                        if lv.price_cents == price), 0)
+        before = st.orderbook
+        st.orderbook = apply_delta(st.orderbook, side, price,
+                                   max(0, resting + delta))
+        if st.orderbook == before:
+            return out  # delta touched nothing resting: stay quiet
         st.updated_ms = _now_ms()
         out.append(Update(kind="orderbook", ticker=ticker, payload={"delta": body}, ts_ms=st.updated_ms))
     elif mtype == "trade":
