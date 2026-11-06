@@ -1097,14 +1097,14 @@ def stage_propose(ctx: dict) -> dict:
                 agent="investigator", action="add-edge",
                 entity_id=hid,
                 detail=json.dumps({"src": hid, "dst": f"kalshi:{end}",
-                                   "rel": "supports"}),
+                                   "rel": "asserts"}),
                 confidence=0.7))
         for u in p["urls"][:3]:
             all_props.append(Proposal(
                 agent="investigator", action="add-edge",
                 entity_id=hid,
                 detail=json.dumps({"src": hid, "dst": article_id(u),
-                                   "rel": "supports"}),
+                                   "rel": "cites"}),
                 confidence=0.6))
     # Layer-2 transitive hypotheses are no longer persisted: the view
     # already reconstructs shared-context structure from primitive links.
@@ -1265,7 +1265,7 @@ def _odds_cycle(graph_url: str, kalshi_url: str, topics: list[dict],
                 agent="investigator", action="add-edge",
                 entity_id=hid,
                 detail=json.dumps({"src": hid, "dst": f"kalshi:{end}",
-                                   "rel": "supports"}),
+                                   "rel": "asserts"}),
                 confidence=0.7))
     approved, _ = Skeptic().review(all_props)
     posted = _post_json(

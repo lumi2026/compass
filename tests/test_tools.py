@@ -79,9 +79,9 @@ def _graph_elements():
         {"data": {"id": "audit:a1", "kind": "Audit", "label": "f",
                   "props": {"target": "hypothesis:h1"}}},
         {"data": {"source": "hypothesis:h1", "target": "kalshi:A",
-                  "label": "supports"}},
+                  "label": "asserts"}},
         {"data": {"source": "hypothesis:h1", "target": "article:1",
-                  "label": "supports"}},
+                  "label": "cites"}},
         {"data": {"source": "audit:a1", "target": "hypothesis:h1",
                   "label": "challenges"}},
     ]

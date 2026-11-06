@@ -302,15 +302,15 @@ def main(events, lookback, seed, out, max_articles) -> None:
                 Proposal(
                     agent="investigator", action="add-edge", entity_id=hid,
                     detail=json.dumps({"src": hid, "dst": f"kalshi:{a}",
-                                       "rel": "supports"}), confidence=0.7),
+                                       "rel": "asserts"}), confidence=0.7),
                 Proposal(
                     agent="investigator", action="add-edge", entity_id=hid,
                     detail=json.dumps({"src": hid, "dst": f"kalshi:{b}",
-                                       "rel": "supports"}), confidence=0.7),
+                                       "rel": "asserts"}), confidence=0.7),
         ] + [Proposal(
                 agent="investigator", action="add-edge", entity_id=hid,
                 detail=json.dumps({"src": hid, "dst": article_id(u),
-                                   "rel": "supports"}), confidence=0.6)
+                                   "rel": "cites"}), confidence=0.6)
              for u in urls[:5]])[0]:
             print(proposals_to_commit(api, prop.agent, prop.action,
                                       prop.entity_id, prop.detail).reason)

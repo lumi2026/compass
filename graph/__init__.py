@@ -22,9 +22,14 @@ ID scheme (stable URIs, shared by every agent):
 
 Edge vocabulary (only primitive rels are persisted):
   about                Article -> Event             (LLM relevance passed)
-  supports             Hypothesis -> Market | Article
+  cites                Hypothesis -> Article        (evidence)
+  asserts              Hypothesis -> Event | Market (claim scope)
   challenges           Audit -> Hypothesis  (auditor flags a bad link)
   relates-to           fallback for anything unclassified
+
+`supports` (Hypothesis -> Market | Article) is the legacy single rel
+covering both cites and asserts: accepted on read/replay, refused for
+new writes.
 
 Folded/derived rels are reconstructed on read and never stored:
   mentions             Article -> Subject   (from Article.props.subjects)
@@ -56,6 +61,7 @@ from .store import (
     EDGE_RELS,
     FOLDED_NODE_KINDS,
     FOLDED_RELS,
+    LEGACY_RELS,
     MATERIALIZED_RELS,
     NODE_KINDS,
     PRIMITIVE_RELS,
@@ -72,6 +78,7 @@ __all__ = [
     "EDGE_RELS",
     "FOLDED_NODE_KINDS",
     "FOLDED_RELS",
+    "LEGACY_RELS",
     "MATERIALIZED_RELS",
     "MAX_VISIBLE_NODES",
     "NODE_KINDS",

@@ -103,7 +103,7 @@ def select_candidates(elements: list, state: dict,
     supports: dict[str, list[str]] = {}
     for el in elements:
         d = el.get("data", {})
-        if d.get("label") == "supports":
+        if d.get("label") in ("cites", "asserts", "supports"):
             supports.setdefault(d.get("source", ""), []).append(
                 d.get("target", ""))
     out = []

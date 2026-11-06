@@ -15,6 +15,8 @@ export const EDGE_COLORS = {
   about: '#ea580c',
   mentions: '#1f9d55',
   supports: '#7c3aed',
+  cites: '#7c3aed',
+  asserts: '#7c3aed',
   'has-market': '#94a3b8',
 }
 
@@ -88,17 +90,37 @@ export function transformElements(elements, cap = 200) {
     if (!('source' in d)) kindOf[d.id] = d.kind || 'Market'
   }
   const isHidden = (id) => HIDDEN_KINDS.includes(kindOf[id] ?? '')
-  // Per-node market rollup from the FULL edge set, so the sidebar can
-  // still say what a topic's markets are doing while they stay hidden.
+  // Per-node market rollup from Event props (the payload no longer
+  // ships hidden Market nodes by default) so the sidebar can still say
+  // what a topic's markets are doing. Legacy payloads with Market
+  // nodes/edges keep working via the fallback scan below.
   const rawById = {}
   for (const d of raw) {
     if (!('source' in d)) rawById[d.id] = d
   }
   const marketInfo = {}
   for (const d of raw) {
+    if ('source' in d) continue
+    if ((d.kind || '') !== 'Event') continue
+    const markets = d.props?.markets
+    if (!markets || typeof markets !== 'object') continue
+    const tickers = Object.keys(markets)
+    if (!tickers.length) continue
+    const info = (marketInfo[d.id] ??= { count: 0, lead: null })
+    info.count += tickers.length
+    for (const ticker of tickers) {
+      const m = markets[ticker] ?? {}
+      const price = m.price_cents ?? null
+      if (price != null && (info.lead == null || price > info.lead.price)) {
+        info.lead = { label: String(m.title || ticker), price }
+      }
+    }
+  }
+  for (const d of raw) {
     if (!('source' in d)) continue
     for (const [a, b] of [[d.source, d.target], [d.target, d.source]]) {
       if ((kindOf[b] ?? '') !== 'Market' || (kindOf[a] ?? '') === 'Market') continue
+      if (marketInfo[a]?.count) continue
       const m = rawById[b] ?? {}
       const info = (marketInfo[a] ??= { count: 0, lead: null })
       info.count += 1
@@ -129,22 +151,23 @@ export function transformElements(elements, cap = 200) {
       ((d.kind || 'Market') === 'Event' || (degree[d.id] ?? 0) > 0),
   )
   // Hypotheses render as edges, not nodes: a Hypothesis with exactly
-  // two Event endpoints (via supports) becomes one Event→Event link
+  // two Event endpoints (via asserts, or legacy supports) becomes one
+  // Event→Event link
   // carrying its title, evidence articles, and any audit challenge.
   // Anything else keeps its node so no data is ever dropped.
   const supportsFrom = {}
   const challengesTo = {}
   for (const d of raw) {
     if (!('source' in d)) continue
-    if (d.label === 'supports') (supportsFrom[d.source] ??= []).push(d.target)
+    if (d.label === 'cites' || d.label === 'asserts' || d.label === 'supports') (supportsFrom[d.source] ??= []).push(d.target)
     else if (d.label === 'challenges') (challengesTo[d.target] ??= []).push(d.source)
   }
   const collapsed = new Set()
-  // Layer-2 meta links (hypothesis supports hypothesis) pin both ends
+  // Layer-2 meta links (hypothesis cites/asserts another hypothesis) pin both ends
   // as nodes: collapsing either would orphan the meta edge.
   const hypLinked = new Set()
   for (const d of raw) {
-    if (!('source' in d) || d.label !== 'supports') continue
+    if (!('source' in d) || (d.label !== 'supports' && d.label !== 'cites' && d.label !== 'asserts')) continue
     if ((kindOf[d.source] ?? '') === 'Hypothesis' && (kindOf[d.target] ?? '') === 'Hypothesis') {
       hypLinked.add(d.source)
       hypLinked.add(d.target)
@@ -241,10 +264,10 @@ export function transformElements(elements, cap = 200) {
     .filter((d) => 'source' in d && kept.has(d.source) && kept.has(d.target))
     .filter((d) => (d.label ?? '') !== 'shares-subject-with')
     .map((d) => {
-      // Layer-2 meta links (hypothesis supports hypothesis) wear the
-      // citing hypothesis's relation color instead of generic purple.
+      // Hypothesis claim/evidence links wear the citing hypothesis's
+      // relation color instead of generic purple.
       let color = EDGE_COLORS[d.label] ?? '#999999'
-      if (d.label === 'supports' && (kindOf[d.source] ?? '') === 'Hypothesis') {
+      if ((d.label === 'supports' || d.label === 'cites' || d.label === 'asserts') && (kindOf[d.source] ?? '') === 'Hypothesis') {
         color = HYPOTHESIS_COLORS[hypothesisType(rawById[d.source]?.props ?? {})]
       }
       return {

@@ -1,7 +1,7 @@
 """Investigator: turn kept articles + market context into a Hypothesis.
 
 Lane: ROLE_ACTIONS["investigator"] == ("add-node", "add-edge").
-Offline-first: builds one Hypothesis node per event plus supports
+Offline-first: builds one Hypothesis node per event plus cites/asserts
 edges to each kept article (and to the lead market when known).
 LLM refinement stays optional — callers pass context["model"];
 without it the extractive title is used as-is.
@@ -65,7 +65,7 @@ def _market_ticker(m: Any) -> str:
 
 @dataclass
 class Investigator:
-    """Evidence agent: hypothesis + supports links for one event."""
+    """Evidence agent: hypothesis + cites/asserts links for one event."""
 
     name: str = "investigator"
 
@@ -104,7 +104,7 @@ class Investigator:
             props.append(Proposal(
                 agent=self.name, action="add-edge", entity_id=hid,
                 detail=json.dumps({"src": hid, "dst": aid,
-                                   "rel": "supports"}),
+                                   "rel": "cites"}),
                 confidence=0.65,
             ))
         markets = ctx.get("markets", []) or []
@@ -113,7 +113,7 @@ class Investigator:
             props.append(Proposal(
                 agent=self.name, action="add-edge", entity_id=hid,
                 detail=json.dumps({"src": hid, "dst": f"market:{lead_mt}",
-                                   "rel": "supports"}),
+                                   "rel": "asserts"}),
                 confidence=0.6,
             ))
         return props

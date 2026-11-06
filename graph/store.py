@@ -19,9 +19,15 @@ NODE_KINDS = ("Event", "Market", "Article", "Subject", "Hypothesis",
 # materializes them for display.
 FOLDED_NODE_KINDS = ("Subject", "Market")
 
-# Primitive edges are directly evidenced claims. They are the only rels
-# written to the store going forward.
-PRIMITIVE_RELS = ("about", "supports", "challenges", "relates-to")
+# Primitive edges are directly evidenced claims. `cites` is evidence
+# (Hypothesis -> Article), `asserts` is claim scope (Hypothesis ->
+# Event | Market). `supports` is the legacy single rel covering both;
+# still accepted on read/replay but refused for new writes.
+PRIMITIVE_RELS = ("about", "cites", "asserts", "challenges", "relates-to")
+
+# Legacy rels: accepted by the gate only with allow_folded_writes
+# (snapshot/log replay). New proposals must use cites/asserts.
+LEGACY_RELS = ("supports",)
 
 # Folded edges are implied by props (mentions -> Article.props.subjects).
 FOLDED_RELS = ("mentions",)
@@ -35,8 +41,8 @@ DERIVED_RELS = ("shares-subject-with", "has-market")
 MATERIALIZED_RELS = FOLDED_RELS + DERIVED_RELS
 
 # Full vocabulary: kept so legacy snapshots/logs still load and display.
-# New writes are limited to PRIMITIVE_RELS.
-EDGE_RELS = PRIMITIVE_RELS + MATERIALIZED_RELS
+# New writes are limited to PRIMITIVE_RELS (supports is replay-only).
+EDGE_RELS = PRIMITIVE_RELS + MATERIALIZED_RELS + LEGACY_RELS
 
 
 def article_id(url: str) -> str:

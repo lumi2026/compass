@@ -11,8 +11,8 @@ import json
 from dataclasses import dataclass, replace
 
 from .store import (
-    DERIVED_RELS, EDGE_RELS, FOLDED_NODE_KINDS, MATERIALIZED_RELS,
-    NODE_KINDS, Edge, GraphStore, Node, subject_id,
+    DERIVED_RELS, EDGE_RELS, FOLDED_NODE_KINDS, LEGACY_RELS,
+    MATERIALIZED_RELS, NODE_KINDS, Edge, GraphStore, Node, subject_id,
 )
 
 
@@ -155,6 +155,12 @@ class GraphUpdateAPI:
                 False,
                 f"folded rel {edge.rel!r} is reconstructed from props; "
                 "write the owning node's props instead")
+        if edge.rel in LEGACY_RELS and not self.allow_folded_writes:
+            return CommitResult(
+                False,
+                f"legacy rel {edge.rel!r} is replay-only; "
+                "use 'cites' (Hypothesis -> Article) or "
+                "'asserts' (Hypothesis -> Event | Market) instead")
         if not _has_node(self.store, edge.src):
             return CommitResult(False, f"unknown src: {edge.src!r}")
         if not _has_node(self.store, edge.dst):

@@ -95,7 +95,7 @@ def test_as_of_keeps_edges_to_folded_markets():
                     props={"markets": {"T": {}}}))
     api.commit(Node(id="hypothesis:h", kind="Hypothesis", title="H"))
     assert api.record(Edge(src="hypothesis:h", dst="market:T",
-                           rel="supports", at="t")).committed
+                           rel="asserts", at="t")).committed
     snap = subgraph_as_of(api.store, "21000101T000000Z")
     assert [(e.src, e.dst) for e in snap.edges] == [
         ("hypothesis:h", "market:T")]

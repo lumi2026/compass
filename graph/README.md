@@ -31,18 +31,21 @@ shared-context structure from primitive links instead.
 
 Only primitive, directly-evidenced edges are persisted:
 
-`about` (Article → Event), `supports` (Hypothesis → Market/Article),
+`about` (Article → Event), `cites` (Hypothesis → Article, evidence),
+`asserts` (Hypothesis → Event | Market, claim scope),
 `challenges` (Audit → Hypothesis), `relates-to` (fallback).
+`supports` is the legacy single rel covering both `cites` and
+`asserts`: accepted on read/replay, refused for new writes.
 
 Subject and Market nodes are folded into props: an Article carries its
 terms in `props.subjects`, and an Event carries its odds in
 `props.markets[ticker]`. `mentions` (Article → Subject),
 `shares-subject-with` (Event ↔ Event), and `has-market`
 (Event → Market) are therefore fully recoverable and are materialized
-at read time (`materialize_derived_nodes` / `materialize_derived_links`)
-for the API/view. Writing any folded/derived node or rel through the
-gate is refused; legacy snapshots keep theirs, and replay temporarily
-allows them to reconstruct old logs.
+at read time only on request (`GET /graph?expand=mentions,markets,mesh`;
+default payload is persisted nodes/edges). Writing any folded/derived
+node or rel through the gate is refused; legacy snapshots keep
+theirs, and replay temporarily allows them to reconstruct old logs.
 
 ## Write path: lanes, gate, commit
 

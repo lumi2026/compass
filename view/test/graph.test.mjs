@@ -201,9 +201,9 @@ describe('article node identity', () => {
 
 const NM = (id, kind, label = id, props = {}) => ({ data: { id, kind, label, props } })
 
-// Event with meta, two markets (one priced), one article, one hypothesis.
+// Event with meta, two folded markets (one priced), one article, one hypothesis.
 const rich = [
-  NM('kalshi:A', 'Event', 'A', { category: 'Elections', series_ticker: 'KXA', sub_title: 'Soon' }),
+  NM('kalshi:A', 'Event', 'A', { category: 'Elections', series_ticker: 'KXA', sub_title: 'Soon', markets: { 'A-1': { title: 'Yes wins [A-1]', price_cents: 63 }, 'A-2': { title: 'No wins [A-2]' } } }),
   NM('market:A-1', 'Market', 'Yes wins [A-1]', { price_cents: 63 }),
   NM('market:A-2', 'Market', 'No wins [A-2]', {}),
   NM('article:1', 'Article', 'story one'),
@@ -211,7 +211,7 @@ const rich = [
   E('market:A-1', 'kalshi:A', 'about'),
   E('market:A-2', 'kalshi:A', 'about'),
   E('article:1', 'kalshi:A', 'about'),
-  E('hypothesis:x', 'kalshi:A', 'supports'),
+  E('hypothesis:x', 'kalshi:A', 'asserts'),
 ]
 
 describe('event description', () => {
@@ -261,12 +261,12 @@ const hyp = [
   NM('article:2', 'Article', 'story two'),
   NM('audit:a1', 'Audit', 'flags h1: reason here'),
   NM('hypothesis:h2', 'Hypothesis', 'lonely'),
-  E('hypothesis:h1', 'kalshi:A', 'supports'),
-  E('hypothesis:h1', 'kalshi:B', 'supports'),
-  E('hypothesis:h1', 'article:1', 'supports'),
-  E('hypothesis:h1', 'article:2', 'supports'),
+  E('hypothesis:h1', 'kalshi:A', 'asserts'),
+  E('hypothesis:h1', 'kalshi:B', 'asserts'),
+  E('hypothesis:h1', 'article:1', 'cites'),
+  E('hypothesis:h1', 'article:2', 'cites'),
   E('audit:a1', 'hypothesis:h1', 'challenges'),
-  E('hypothesis:h2', 'kalshi:A', 'supports'),
+  E('hypothesis:h2', 'kalshi:A', 'asserts'),
   E('article:1', 'kalshi:A', 'about'),
   E('article:2', 'kalshi:B', 'about'),
 ]
@@ -324,13 +324,13 @@ describe('transitive meta omission', () => {
     NM('hypothesis:m', 'Hypothesis', 'transitive co_mention: A x C via B',
       { mode: 'transitive', type: 'co_mention', layer: 2 }),
     NM('article:9', 'Article', 'second-hand story'),
-    E('hypothesis:h1', 'kalshi:A', 'supports'),
-    E('hypothesis:h1', 'kalshi:B', 'supports'),
-    E('hypothesis:h2', 'kalshi:B', 'supports'),
-    E('hypothesis:h2', 'kalshi:C', 'supports'),
+    E('hypothesis:h1', 'kalshi:A', 'asserts'),
+    E('hypothesis:h1', 'kalshi:B', 'asserts'),
+    E('hypothesis:h2', 'kalshi:B', 'asserts'),
+    E('hypothesis:h2', 'kalshi:C', 'asserts'),
     E('hypothesis:m', 'hypothesis:h1', 'supports'),
     E('hypothesis:m', 'hypothesis:h2', 'supports'),
-    E('hypothesis:m', 'article:9', 'supports'),
+    E('hypothesis:m', 'article:9', 'cites'),
   ]
 
   it('omits the transitive meta node and its edges', () => {
@@ -384,9 +384,9 @@ describe('hypothesis types', () => {
     NM('hypothesis:h1', 'Hypothesis', 'A x B in Gaza',
       { type: 'co_location', mode: 'co-location', evidence: 1 }),
     NM('article:1', 'Article', 'Gaza summit'),
-    E('hypothesis:h1', 'kalshi:A', 'supports'),
-    E('hypothesis:h1', 'kalshi:B', 'supports'),
-    E('hypothesis:h1', 'article:1', 'supports'),
+    E('hypothesis:h1', 'kalshi:A', 'asserts'),
+    E('hypothesis:h1', 'kalshi:B', 'asserts'),
+    E('hypothesis:h1', 'article:1', 'cites'),
   ]
 
   it('maps explicit types, legacy modes, and unknown props', () => {
@@ -430,7 +430,7 @@ describe('hypothesis types', () => {
       NM('kalshi:A', 'Event', 'A'),
       NM('hypothesis:h2', 'Hypothesis', 'lonely odds',
         { type: 'co_outcome', mode: 'odds-correlation' }),
-      E('hypothesis:h2', 'kalshi:A', 'supports'),
+      E('hypothesis:h2', 'kalshi:A', 'asserts'),
     ]
     const v = transformElements(els, 200)
     const h2 = v.nodes.find((n) => n.id === 'hypothesis:h2')
