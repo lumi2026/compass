@@ -153,10 +153,9 @@ const elements = [
 ]
 
 describe('events-first transform', () => {
-  it('hides Market nodes by default and reports them', () => {
+  it('always hides Market nodes', () => {
     const v = transformElements(elements, 200)
     assert.ok(!v.nodes.some((n) => n.kind === 'Market'))
-    assert.equal(v.marketsHidden, 2)
   })
 
   it('sizes Events by visible edges only, not hidden markets', () => {
@@ -170,20 +169,14 @@ describe('events-first transform', () => {
     assert.ok(v.nodes.some((n) => n.id === 'kalshi:B'))
   })
 
-  it('restores markets with showMarkets', () => {
-    const v = transformElements(elements, 200, { showMarkets: true })
-    assert.equal(v.nodes.filter((n) => n.kind === 'Market').length, 2)
-    assert.equal(v.marketsHidden, 0)
-    assert.equal(v.nodes.find((n) => n.id === 'kalshi:A').deg, 3)
-  })
-
   it('pins Events first under the cap', () => {
     const v = transformElements(elements, 1)
     assert.deepEqual(v.nodes.map((n) => n.id), ['kalshi:A'])
     assert.ok(v.capped)
   })
 
-  it('hides Subject nodes by default and restores them on request', () => {    const els = [
+  it('always hides Subject nodes', () => {
+    const els = [
       NM('kalshi:A', 'Event', 'A'),
       NM('subject:growth', 'Subject', 'growth 2034'),
       NM('article:1', 'Article', 'story'),
@@ -192,12 +185,8 @@ describe('events-first transform', () => {
     ]
     const v = transformElements(els, 200)
     assert.ok(!v.nodes.some((n) => n.kind === 'Subject'))
-    assert.equal(v.subjectsHidden, 1)
     // article and event stay linked through the visible about edge
     assert.ok(v.nodes.some((n) => n.id === 'article:1'))
-    const open = transformElements(els, 200, { showSubjects: true })
-    assert.ok(open.nodes.some((n) => n.id === 'subject:growth'))
-    assert.equal(open.subjectsHidden, 0)
   })
 })
 
@@ -381,11 +370,10 @@ describe('evidence budget', () => {
     assert.ok(!v.nodes.some((n) => n.id === 'article:2'))
   })
 
-  it('shows opted-in markets past the evidence budget', () => {
-    const off = transformElements(els, 4)
-    assert.ok(!off.nodes.some((n) => n.kind === 'Market'))
-    const on = transformElements(els, 4, { showMarkets: true })
-    assert.ok(on.nodes.some((n) => n.id === 'market:A-1'))
+  it('keeps markets out of the evidence budget', () => {
+    const v = transformElements(els, 4)
+    assert.ok(!v.nodes.some((n) => n.kind === 'Market'))
+    assert.ok(v.nodes.some((n) => n.id === 'article:1'))
   })
 })
 

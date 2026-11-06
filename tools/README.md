@@ -39,7 +39,7 @@ Inspects the curated graph, writes only through the gate.
 | `graph_list_hypotheses` | Committed hypotheses with endpoint events, evidence counts, challenge flags |
 | `graph_post_proposals` | Commit a JSON list of proposals (Skeptic + role lanes apply) |
 | `graph_post_finding` | Append an ops note to the findings log |
-| `graph_trigger_derive` | Recompute Connector derivations (`shares-subject-with`, `has-market`) |
+| `graph_trigger_derive` | Report the read-time Connector derivations (`mentions`, `shares-subject-with`, `has-market`); nothing is persisted |
 
 ## News (`news.py`, 2 tools)
 

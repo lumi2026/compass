@@ -115,7 +115,11 @@ def graph_tools(base_url: str) -> dict:
         return {"ok": True, "posted": data.get("posted", True)}
 
     def trigger_derive() -> dict:
-        """Recompute Connector derivations (shared-subject, has-market)."""
+        """Report read-time derivations (shared-subject, has-market).
+
+        Derived edges are no longer persisted; this only refreshes the
+        connector's computed view.
+        """
         try:
             data = _post(base_url, "/proposals", {"proposals": [
                 {"agent": "connector", "action": "derive-links",

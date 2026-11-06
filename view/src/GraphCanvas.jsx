@@ -56,7 +56,7 @@ export default function GraphCanvas({ nodes, links, onSelect, controlsRef }) {
             new THREE.MeshLambertMaterial({ color: n.color }),
           )
         }
-        // Labels on skeleton kinds only (Events, Subjects, Hypotheses,
+        // Labels on skeleton kinds only (Events, Hypotheses,
         // Happenings); Article/Market dots stay unlabeled for readability.
         if (!SKELETON_KINDS.includes(n.kind)) return null
         const s = new SpriteText(n.short, 6, '#111111')

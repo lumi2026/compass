@@ -17,15 +17,19 @@ from graph import (
     Node,
     boot,
     commit_batch,
+    materialize_derived_links,
     replay_log,
 )
 from graph.persist import append_finding
 from services.graph_api import GraphService, create_app
 
 
-def _node_prop(agent, nid, kind="Event", title=None, conf=0.9):
+def _node_prop(agent, nid, kind="Event", title=None, conf=0.9, props=None):
+    detail = {"kind": kind, "title": title or nid}
+    if props is not None:
+        detail["props"] = props
     return {"agent": agent, "action": "add-node", "entity_id": nid,
-            "detail": json.dumps({"kind": kind, "title": title or nid}),
+            "detail": json.dumps(detail),
             "confidence": conf}
 
 
@@ -70,18 +74,22 @@ def test_odds_history_survives_in_log(tmp_path):
     api = GraphUpdateAPI(GraphStore())
     for price in (55, 63):
         out = commit_batch(api, [{
-            "agent": "scout", "action": "add-node", "entity_id": "market:T",
-            "detail": json.dumps({"kind": "Market", "title": "T",
-                                 "props": {"price_cents": price}}),
+            "agent": "scout", "action": "add-node", "entity_id": "kalshi:E",
+            "detail": json.dumps({
+                "kind": "Event", "title": "E",
+                "props": {"markets": {"T": {"price_cents": price}}}}),
             "confidence": 0.9}], log_path=log, snapshot_path=snap)
         assert out["revision"] in (1, 2)
-    assert api.store.nodes["market:T"].props["price_cents"] == 63  # live
+    live = api.store.nodes["kalshi:E"].props["markets"]["T"]
+    assert live["price_cents"] == 63  # live
     prices = [json.loads(line)["proposals"][0]["detail"]
               for line in open(log) if line.strip()]
-    assert [json.loads(d)["props"]["price_cents"] for d in prices] == [55, 63]
+    assert [json.loads(d)["props"]["markets"]["T"]["price_cents"]
+            for d in prices] == [55, 63]
     replayed = GraphUpdateAPI(GraphStore())
     replay_log(replayed, log, after_revision=0)
-    assert replayed.store.nodes["market:T"].props["price_cents"] == 63
+    assert replayed.store.nodes["kalshi:E"].props["markets"]["T"][
+        "price_cents"] == 63
 
 
 def test_commit_batch_runs_connector_derive_without_entity(tmp_path):
@@ -100,10 +108,39 @@ def test_commit_batch_runs_connector_derive_without_entity(tmp_path):
         log_path=str(tmp_path / "g.log"))
     verdict = out["verdicts"][0]
     assert verdict["committed"] and "derived" in verdict["reason"]
-    links = [e for e in api.store.edges
+    # Nothing derived is persisted; the read path still sees the mesh.
+    assert not any(e.rel == "shares-subject-with" for e in api.store.edges)
+    links = [e for e in materialize_derived_links(api.store)
              if e.rel == "shares-subject-with"]
-    assert {(e.src, e.dst) for e in links} == {
-        ("kalshi:A", "kalshi:B"), ("kalshi:B", "kalshi:A")}
+    assert {(e.src, e.dst) for e in links} == {("kalshi:A", "kalshi:B")}
+
+
+def test_graph_payload_derives_links_without_storing_them(tmp_path):
+    svc = GraphService(snapshot_path=str(tmp_path / "s.json"),
+                       log_path=str(tmp_path / "g.log"),
+                       findings_path=str(tmp_path / "f.jsonl"))
+    proposals = [
+        _node_prop("scout", "kalshi:A"), _node_prop("scout", "kalshi:B"),
+        _node_prop("scout", "article:x", kind="Article",
+                   props={"subjects": ["spacex"]}),
+        _edge_prop("news-agent", "article:x", "kalshi:A", rel="about"),
+        _edge_prop("news-agent", "article:x", "kalshi:B", rel="about"),
+    ]
+    svc.submit(proposals)
+    payload = svc.graph_payload()
+    assert payload["nodes_count"] == 3  # persisted only
+    assert payload["derived_nodes_count"] == 1  # folded Subject
+    assert payload["edges_count"] == 2  # primitive only
+    assert payload["derived_count"] == 2  # folded mention + one mesh
+    labels = [el["data"]["label"] for el in payload["elements"]
+              if "source" in el["data"]]
+    assert labels.count("shares-subject-with") == 1
+    assert labels.count("mentions") == 1
+    node_ids = [el["data"]["id"] for el in payload["elements"]
+                if "source" not in el["data"]]
+    assert "subject:spacex" in node_ids
+    assert not any(e.rel in ("shares-subject-with", "mentions")
+                   for e in svc.api.store.edges)
 
 
 def test_happening_kind_commits(tmp_path):

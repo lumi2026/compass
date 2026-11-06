@@ -3,8 +3,8 @@
 import json
 
 from graph import (
-    Edge, GraphStore, GraphUpdateAPI, Node, proposals_to_commit,
-    refresh_derived_links, subgraph_as_of,
+    Edge, GraphStore, GraphUpdateAPI, Node, materialize_derived_links,
+    proposals_to_commit, subgraph_as_of,
 )
 
 
@@ -38,23 +38,26 @@ def test_relay_bumps_seen_count_keeps_first_at():
     api = _api()
     for nid in ("a:1", "a:2"):
         api.commit(Node(id=nid, kind="Article", title=nid))
-    r1 = api.record(Edge(src="a:1", dst="a:2", rel="mentions", at="T1"))
-    r2 = api.record(Edge(src="a:1", dst="a:2", rel="mentions", at="T2"))
+    r1 = api.record(Edge(src="a:1", dst="a:2", rel="relates-to", at="T1"))
+    r2 = api.record(Edge(src="a:1", dst="a:2", rel="relates-to", at="T2"))
     assert r1.reason == "recorded" and r2.reason == "reinforced x2"
     (e,) = api.store.edges
     assert (e.at, e.seen_count) == ("T1", 2) and e.last_seen_at
 
 
-def test_derive_rerun_stays_zero_fresh():
+def test_derived_links_are_computed_not_stored():
     api = _api()
     for nid, kind in (("kalshi:A", "Event"), ("kalshi:B", "Event"),
-                      ("subject:s", "Subject"), ("a:1", "Article")):
-        api.commit(Node(id=nid, kind=kind, title=nid))
-    api.record(Edge(src="a:1", dst="subject:s", rel="mentions", at="t"))
+                      ("a:1", "Article")):
+        api.commit(Node(id=nid, kind=kind, title=nid,
+                        props={"subjects": ["s"]}
+                        if kind == "Article" else {}))
     api.record(Edge(src="a:1", dst="kalshi:A", rel="about", at="t"))
     api.record(Edge(src="a:1", dst="kalshi:B", rel="about", at="t"))
-    assert refresh_derived_links(api) == 2
-    assert refresh_derived_links(api) == 0  # reinforcements aren't fresh
+    assert len(api.store.edges) == 2  # primitive only
+    links = [e for e in materialize_derived_links(api.store, "t")
+             if e.rel == "shares-subject-with"]
+    assert [(e.src, e.dst) for e in links] == [("kalshi:A", "kalshi:B")]
 
 
 def test_proposals_carry_valid_at():
@@ -84,6 +87,18 @@ def test_as_of_filters_by_valid_time():
     assert len(snap.edges) == 1 and snap.edges[0].src == "article:old"
     full = subgraph_as_of(api.store, "20261030T000000Z")
     assert len(full.nodes) == 3 and len(full.edges) == 2
+
+
+def test_as_of_keeps_edges_to_folded_markets():
+    api = _api()
+    api.commit(Node(id="kalshi:E", kind="Event", title="E",
+                    props={"markets": {"T": {}}}))
+    api.commit(Node(id="hypothesis:h", kind="Hypothesis", title="H"))
+    assert api.record(Edge(src="hypothesis:h", dst="market:T",
+                           rel="supports", at="t")).committed
+    snap = subgraph_as_of(api.store, "21000101T000000Z")
+    assert [(e.src, e.dst) for e in snap.edges] == [
+        ("hypothesis:h", "market:T")]
 
 
 def test_save_load_roundtrips_new_fields(tmp_path):

@@ -13,11 +13,30 @@ from datetime import datetime, timezone
 NODE_KINDS = ("Event", "Market", "Article", "Subject", "Hypothesis",
               "Happening", "Audit")
 
-EDGE_RELS = ("mentions", "about", "shares-subject-with", "supports",
-             "challenges", "relates-to", "has-market")
+# Folded node kinds are represented as props instead of first-class nodes
+# going forward: Subject -> Article.props.subjects and Market ->
+# Event.props.markets. Legacy snapshots keep theirs, and the read path
+# materializes them for display.
+FOLDED_NODE_KINDS = ("Subject", "Market")
 
-# Edges only the Connector role may write (derived, recomputed on demand).
+# Primitive edges are directly evidenced claims. They are the only rels
+# written to the store going forward.
+PRIMITIVE_RELS = ("about", "supports", "challenges", "relates-to")
+
+# Folded edges are implied by props (mentions -> Article.props.subjects).
+FOLDED_RELS = ("mentions",)
+
+# Derived edges are fully recoverable from evidence or props. They are
+# materialized on read (graph.derive.materialize_derived_links), never
+# persisted.
 DERIVED_RELS = ("shares-subject-with", "has-market")
+
+# Everything the read path can synthesize from props/evidence.
+MATERIALIZED_RELS = FOLDED_RELS + DERIVED_RELS
+
+# Full vocabulary: kept so legacy snapshots/logs still load and display.
+# New writes are limited to PRIMITIVE_RELS.
+EDGE_RELS = PRIMITIVE_RELS + MATERIALIZED_RELS
 
 
 def article_id(url: str) -> str:

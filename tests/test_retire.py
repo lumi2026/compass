@@ -7,9 +7,12 @@ from graph.persist import boot, commit_batch, commit_retire
 from graph.store import Edge, Node
 
 
-def _node(entity_id, kind="Market"):
+def _node(entity_id, kind="Event", props=None):
+    detail = {"kind": kind, "title": entity_id}
+    if props is not None:
+        detail["props"] = props
     return {"agent": "scout", "action": "add-node", "entity_id": entity_id,
-            "detail": json.dumps({"kind": kind, "title": entity_id}),
+            "detail": json.dumps(detail),
             "confidence": 0.9}
 
 
@@ -30,7 +33,8 @@ def test_commit_retire_logs_and_replays(tmp_path):
     log = str(tmp_path / "g.log")
     snap = str(tmp_path / "g.json")
     api = GraphUpdateAPI(GraphStore())
-    commit_batch(api, [_node("kalshi:A", "Event"), _node("market:T")],
+    commit_batch(api, [_node("kalshi:A", "Event",
+                             {"markets": {"T": {"title": "T"}}})],
                  log_path=log, snapshot_path=snap)
     out = commit_retire(api, ["market:T", "market:NOPE"],
                         log_path=log, snapshot_path=snap)
@@ -38,9 +42,9 @@ def test_commit_retire_logs_and_replays(tmp_path):
     assert out["retired"][0] == {"entity_id": "market:T", "removed": True,
                                  "dropped_edges": 0}
     assert out["retired"][1]["removed"] is False
-    assert "market:T" not in api.store.nodes
+    assert "markets" not in api.store.nodes["kalshi:A"].props
     fresh = boot(snap, log)
-    assert "market:T" not in fresh.store.nodes
+    assert "markets" not in fresh.store.nodes["kalshi:A"].props
     assert "kalshi:A" in fresh.store.nodes
     assert fresh.revision == 2
 
@@ -51,21 +55,22 @@ def _mesh_fixture(api):
     from graph.persist import commit_batch
     nodes = [
         _node("kalshi:EA", "Event"), _node("kalshi:EB", "Event"),
-        _node("article:X", "Article"), _node("subject:s", "Subject")]
+        _node("article:X", "Article", {"subjects": ["s"]})]
     commit_batch(api, nodes, log_path=None, snapshot_path=None)
     for src, dst, rel in [
-            ("article:X", "subject:s", "mentions"),
             ("article:X", "kalshi:EA", "about"),
             ("article:X", "kalshi:EB", "about")]:
         proposals_to_commit(
             api, "news-agent", "add-edge", f"{src}{dst}",
             json.dumps({"src": src, "dst": dst, "rel": rel}))
-    from graph import refresh_derived_links
-    assert refresh_derived_links(api) == 2  # both mesh directions
+    # Simulate a legacy snapshot: old writers persisted the mesh both ways.
+    api.store.add_edge(Edge(src="kalshi:EA", dst="kalshi:EB",
+                            rel="shares-subject-with", at="t"))
+    api.store.add_edge(Edge(src="kalshi:EB", dst="kalshi:EA",
+                            rel="shares-subject-with", at="t"))
 
 
 def test_retire_prunes_orphaned_subject_mesh():
-    from graph import refresh_derived_links
     api = GraphUpdateAPI(GraphStore())
     _mesh_fixture(api)
     out = commit_retire(api, ["article:X"], log_path=None,
@@ -75,7 +80,6 @@ def test_retire_prunes_orphaned_subject_mesh():
     mesh = [e for e in api.store.edges
             if e.rel == "shares-subject-with"]
     assert mesh == []
-    assert refresh_derived_links(api) == 0  # stays clean
 
 
 def test_prune_only_touches_derived_rels():
@@ -95,9 +99,13 @@ def test_retire_survives_full_replay_from_scratch(tmp_path):
     log = str(tmp_path / "g.log")
     snap = str(tmp_path / "g.json")
     api = GraphUpdateAPI(GraphStore())
-    commit_batch(api, [_node("market:T")], log_path=log, snapshot_path=snap)
+    commit_batch(api, [_node("kalshi:A", "Event",
+                             {"markets": {"T": {"title": "T"}}})],
+                 log_path=log, snapshot_path=snap)
     commit_retire(api, ["market:T"], log_path=log, snapshot_path=snap)
-    # boot with no snapshot replays everything: re-created, then re-retired
+    # boot with no snapshot replays everything: markets re-created,
+    # then retired again.
     fresh = boot(str(tmp_path / "nosnap.json"), log)
-    assert "market:T" not in fresh.store.nodes
+    assert "kalshi:A" in fresh.store.nodes
+    assert "markets" not in fresh.store.nodes["kalshi:A"].props
     assert fresh.revision == 2

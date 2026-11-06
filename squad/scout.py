@@ -1,10 +1,11 @@
-"""Scout: discover Event + Market nodes for one Kalshi event.
+"""Scout: discover one Event node with folded Market props.
 
 Pure discovery lane (ROLE_ACTIONS["scout"] == ("add-node",) only).
 Live markets come from Kalshi unless the caller injects them via
-context["markets"] or markets_fn (tests / seeded offline runs).
-Market nodes carry live odds in props; each refresh is a logged
-batch, so the commit log holds the odds history for time travel.
+context["markets"] or markets_fn (tests / seeded offline runs). Market
+odds live in Event.props.markets; each refresh is a logged batch, so
+the commit log holds the odds history for time travel. Markets are
+materialized as read-time nodes.
 """
 
 from dataclasses import dataclass
@@ -66,7 +67,7 @@ def _default_markets(event_ticker: str) -> list:
 
 @dataclass
 class Scout:
-    """Discovery agent: one Event node + one Market node per contract.
+    """Discovery agent: one Event node with folded Market props.
 
     Alias ScoutAgent exists for the plan naming.
     """
@@ -89,26 +90,25 @@ class Scout:
         task_title = task.get("event_title", "") if isinstance(task, dict) else ""
         lead_title = _market_title(markets[0]) if markets else ""
         event_title = task_title or lead_title or ticker
-        props = [Proposal(
-            agent=self.name, action="add-node",
-            entity_id=f"kalshi:{ticker}",
-            detail=json.dumps({"kind": "Event", "title": event_title}),
-            confidence=0.85,
-        )]
+        folded: dict[str, dict] = {}
         for m in markets or []:
             mt = _market_ticker(m)
             if not mt:
                 continue
-            props.append(Proposal(
-                agent=self.name, action="add-node",
-                entity_id=f"market:{mt}",
-                detail=json.dumps(
-                    {"kind": "Market",
-                     "title": f"{_market_title(m) or mt} [{mt}]",
-                     "props": market_odds(m)}),
-                confidence=0.8,
-            ))
-        return props
+            folded[mt] = {
+                "title": f"{_market_title(m) or mt} [{mt}]",
+                "event_ticker": ticker,
+                **market_odds(m),
+            }
+        detail: dict = {"kind": "Event", "title": event_title}
+        if folded:
+            detail["props"] = {"markets": folded}
+        return [Proposal(
+            agent=self.name, action="add-node",
+            entity_id=f"kalshi:{ticker}",
+            detail=json.dumps(detail),
+            confidence=0.85,
+        )]
 
 
 ScoutAgent = Scout

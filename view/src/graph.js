@@ -48,7 +48,7 @@ export function hypothesisType(props = {}) {
   return 'co_mention'
 }
 
-export const SKELETON_KINDS = ['Event', 'Subject', 'Hypothesis', 'Happening']
+export const SKELETON_KINDS = ['Event', 'Hypothesis', 'Happening']
 
 const SHORT_LEN = 28
 
@@ -57,15 +57,15 @@ export function short(label) {
   return s.length <= SHORT_LEN ? s : s.slice(0, SHORT_LEN - 1) + '…'
 }
 
-// Events-first: Market nodes (odds bookkeeping) are hidden by default so
-// the news story — Events linked through Articles/Subjects/Hypotheses —
-// dominates. Events always stay, even unlinked ones (the isolated control
-// is data too). Degree, size and cap are computed on the visible subgraph
-// only, so hidden markets cannot inflate Events or eat the cap.
-export const HIDDEN_BY_DEFAULT = ['Market', 'Subject']
+// Events-first: Market nodes (odds bookkeeping) and Subject nodes
+// (matching terms) are internal and never render, so the news story —
+// Events linked through Articles and Hypotheses — dominates. Events
+// always stay, even unlinked ones (the isolated control is data too).
+// Degree, size and cap are computed on the visible subgraph only, so
+// hidden markets cannot inflate Events or eat the cap.
+export const HIDDEN_KINDS = ['Market', 'Subject']
 
-export function transformElements(elements, cap = 200, opts = {}) {
-  const { showMarkets = false, showSubjects = false } = opts
+export function transformElements(elements, cap = 200) {
   const all = (elements ?? []).map((el) => el.data ?? {})
   // Layer-2 transitive metas (secondary hypotheses with no direct
   // article evidence) are omitted from the render: as nodes they
@@ -87,14 +87,7 @@ export function transformElements(elements, cap = 200, opts = {}) {
   for (const d of raw) {
     if (!('source' in d)) kindOf[d.id] = d.kind || 'Market'
   }
-  const isHidden = (id) => {
-    const k = kindOf[id] ?? ''
-    return (!showMarkets && k === 'Market') || (!showSubjects && k === 'Subject')
-  }
-  const hiddenCount = (kind, shown) =>
-    !shown ? Object.values(kindOf).filter((k) => k === kind).length : 0
-  const marketsHidden = hiddenCount('Market', showMarkets)
-  const subjectsHidden = hiddenCount('Subject', showSubjects)
+  const isHidden = (id) => HIDDEN_KINDS.includes(kindOf[id] ?? '')
   // Per-node market rollup from the FULL edge set, so the sidebar can
   // still say what a topic's markets are doing while they stay hidden.
   const rawById = {}
@@ -188,9 +181,7 @@ export function transformElements(elements, cap = 200, opts = {}) {
   const totalNodes = nodeRows.length
   // Split budget: Events pin first up to the cap, but evidence gets its
   // own share so it is never starved out once Events fill the cap (with
-  // 200 Events a single shared budget rendered toggles dead). Opted-in
-  // markets bypass the evidence budget: the toggle is an explicit
-  // request for all of them.
+  // 200 Events a single shared budget renders the toggles dead).
   const isEvent = (d) => (d.kind || 'Market') === 'Event'
   nodeRows.sort((a, b) => {
     const ae = isEvent(a) ? 1 : 0
@@ -199,14 +190,8 @@ export function transformElements(elements, cap = 200, opts = {}) {
   })
   if (cap != null) {
     const evts = nodeRows.filter(isEvent).slice(0, cap)
-    let rest = nodeRows.filter((d) => !isEvent(d))
-    let extra = []
-    if (showMarkets) {
-      extra = rest.filter((d) => (d.kind || 'Market') === 'Market')
-      rest = rest.filter((d) => (d.kind || 'Market') !== 'Market')
-    }
-    rest = rest.slice(0, Math.floor(cap / 2))
-    nodeRows = evts.concat(rest, extra)
+    const rest = nodeRows.filter((d) => !isEvent(d))
+    nodeRows = evts.concat(rest.slice(0, Math.floor(cap / 2)))
   }
   const kept = new Set(nodeRows.map((d) => d.id))
   // Drop non-Events left neighbourless by hiding/collapse (a spent
@@ -282,7 +267,7 @@ export function transformElements(elements, cap = 200, opts = {}) {
     ;(renderedNbrs[l.target] ??= []).push(l.source)
   }
   for (const n of nodes) n.neighbors = [...new Set(renderedNbrs[n.id] ?? [])]
-  return { nodes, links, totalNodes, totalLinks, capped: totalNodes > nodes.length, marketsHidden, subjectsHidden, subjectLinksHidden, transitiveHidden }
+  return { nodes, links, totalNodes, totalLinks, capped: totalNodes > nodes.length, subjectLinksHidden, transitiveHidden }
 }
 
 // Fibonacci-lattice point on a sphere: even, deterministic globe slots

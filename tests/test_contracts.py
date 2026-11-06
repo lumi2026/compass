@@ -76,25 +76,56 @@ def test_graph_update_api_idempotent_and_validating():
 
 def test_graph_commit_refreshes_props_keeps_history_key():
     api = GraphUpdateAPI(GraphStore())
-    assert api.commit(Node(id="market:T", kind="Market", title="T")).reason == "created"
-    created_at = api.store.nodes["market:T"].created_at
-    assert api.commit(Node(id="market:T", kind="Market", title="T")).reason == \
+    assert api.commit(Node(id="kalshi:E", kind="Event", title="E")).reason == "created"
+    created_at = api.store.nodes["kalshi:E"].created_at
+    assert api.commit(Node(id="kalshi:E", kind="Event", title="E")).reason == \
         "duplicate: kept existing"
-    r = api.commit(Node(id="market:T", kind="Market", title="T",
-                        props={"price_cents": 55, "odds_at": "t1"}))
+    r = api.commit(Node(id="kalshi:E", kind="Event", title="E",
+                        props={"markets": {"T": {"price_cents": 55,
+                                                 "odds_at": "t1"}}}))
     assert r.reason == "refreshed"
-    n = api.store.nodes["market:T"]
-    assert n.props == {"price_cents": 55, "odds_at": "t1"}
+    n = api.store.nodes["kalshi:E"]
+    assert n.props == {"markets": {"T": {"price_cents": 55, "odds_at": "t1"}}}
     assert n.created_at == created_at and n.recorded_at
-    r2 = api.commit(Node(id="market:T", kind="Market", title="T",
-                         props={"volume_24h": 9}))
+    r2 = api.commit(Node(id="kalshi:E", kind="Event", title="E",
+                         props={"markets": {"T": {"volume_24h": 9}}}))
     assert r2.reason == "refreshed"
-    assert api.store.nodes["market:T"].props == {
-        "price_cents": 55, "odds_at": "t1", "volume_24h": 9}  # merged
-    assert api.commit(Node(id="market:T", kind="Market", title="T",
+    assert api.store.nodes["kalshi:E"].props == {
+        "markets": {"T": {"price_cents": 55, "odds_at": "t1",
+                          "volume_24h": 9}}}  # nested merge
+    assert api.commit(Node(id="kalshi:E", kind="Event", title="E",
                            props="nope")).committed is False
     back = GraphStore.from_json(api.store.to_json())
-    assert back.nodes["market:T"].props["price_cents"] == 55  # roundtrips
+    assert back.nodes["kalshi:E"].props["markets"]["T"]["price_cents"] == 55
+
+
+def test_folded_props_merge_subjects_and_markets():
+    api = GraphUpdateAPI(GraphStore())
+    api.commit(Node(id="article:a", kind="Article", title="A",
+                    props={"subjects": ["spacex", "mars"]}))
+    api.commit(Node(id="article:a", kind="Article", title="A",
+                    props={"subjects": ["mars", "nato"]}))
+    assert api.store.nodes["article:a"].props["subjects"] == [
+        "spacex", "mars", "nato"]
+    api.commit(Node(id="kalshi:E", kind="Event", title="E",
+                    props={"markets": {"A": {"price_cents": 1}}}))
+    api.commit(Node(id="kalshi:E", kind="Event", title="E",
+                    props={"markets": {"B": {"price_cents": 2}}}))
+    assert api.store.nodes["kalshi:E"].props["markets"] == {
+        "A": {"price_cents": 1}, "B": {"price_cents": 2}}
+
+
+def test_gate_refuses_folded_nodes_and_mentions():
+    api = GraphUpdateAPI(GraphStore())
+    r = api.commit(Node(id="subject:spacex", kind="Subject", title="spacex"))
+    assert r.committed is False and "folded kind" in r.reason
+    r = api.commit(Node(id="market:T", kind="Market", title="T"))
+    assert r.committed is False and "folded kind" in r.reason
+    api.commit(Node(id="article:a", kind="Article", title="A",
+                    props={"subjects": ["spacex"]}))
+    r = api.record(Edge(src="article:a", dst="subject:spacex",
+                        rel="mentions", at="t"))
+    assert r.committed is False and "folded rel" in r.reason
 
 
 def test_graph_record_reinforces_reruns():
@@ -138,13 +169,14 @@ def test_graph_translator_carries_props():
     from graph import proposals_to_commit as _commit
 
     api = GraphUpdateAPI(GraphStore())
-    good = _commit(api, "scout", "add-node", "market:T",
-                   _json.dumps({"kind": "Market", "title": "T",
-                                "props": {"price_cents": 55}}))
+    good = _commit(api, "scout", "add-node", "kalshi:E1",
+                   _json.dumps({"kind": "Event", "title": "E1",
+                                "props": {"markets": {"T": {"price_cents": 55}}}}))
     assert good.committed
-    assert api.store.nodes["market:T"].props == {"price_cents": 55}
-    bad = _commit(api, "scout", "add-node", "market:U",
-                  _json.dumps({"kind": "Market", "title": "U",
+    assert api.store.nodes["kalshi:E1"].props == {
+        "markets": {"T": {"price_cents": 55}}}
+    bad = _commit(api, "scout", "add-node", "kalshi:E2",
+                  _json.dumps({"kind": "Event", "title": "E2",
                                "props": [1]}))
     assert bad.committed is False
 
@@ -162,11 +194,10 @@ def test_connector_derives_shared_subject_links():
     api = GraphUpdateAPI(GraphStore())
     for n in [Node(id="kalshi:E1", kind="Event", title="E1"),
               Node(id="kalshi:E2", kind="Event", title="E2"),
-              Node(id="article:abc", kind="Article", title="A"),
-              Node(id="subject:spacex", kind="Subject", title="spacex")]:
+              Node(id="article:abc", kind="Article", title="A",
+                   props={"subjects": ["spacex"]})]:
         api.commit(n)
-    for e in [Edge(src="article:abc", dst="subject:spacex", rel="mentions", at="t"),
-              Edge(src="article:abc", dst="kalshi:E1", rel="about", at="t"),
+    for e in [Edge(src="article:abc", dst="kalshi:E1", rel="about", at="t"),
               Edge(src="article:abc", dst="kalshi:E2", rel="about", at="t")]:
         assert api.record(e).committed
     links = derive_shared_subject_links(api.store, "t")
@@ -186,11 +217,10 @@ def _linked_pair():
     api = GraphUpdateAPI(GraphStore())
     for n in [Node(id="kalshi:E1", kind="Event", title="E1"),
               Node(id="kalshi:E2", kind="Event", title="E2"),
-              Node(id="article:a", kind="Article", title="A"),
-              Node(id="subject:s", kind="Subject", title="spacex")]:
+              Node(id="article:a", kind="Article", title="A",
+                   props={"subjects": ["spacex"]})]:
         api.commit(n)
-    for e in [Edge(src="article:a", dst="subject:s", rel="mentions", at="t"),
-              Edge(src="article:a", dst="kalshi:E1", rel="about", at="t"),
+    for e in [Edge(src="article:a", dst="kalshi:E1", rel="about", at="t"),
               Edge(src="article:a", dst="kalshi:E2", rel="about", at="t")]:
         api.record(e)
     return api
@@ -203,19 +233,32 @@ def test_followup_tasks_dispatch():
     assert tasks == [{"event_ticker": "E1", "terms": ["spacex"]}]
 
 
-def test_refresh_derived_links_idempotent():
-    from graph import refresh_derived_links
+def test_derived_mesh_materializes_without_persisting():
+    from graph import materialize_derived_links
 
     api = _linked_pair()
-    assert refresh_derived_links(api) == 2
-    assert refresh_derived_links(api) == 0
-    assert len(api.store.edges) == 3 + 2
+    derived = materialize_derived_links(api.store, "t")
+    mesh = [e for e in derived if e.rel == "shares-subject-with"]
+    # Undirected mesh: one canonical direction, never stored.
+    assert {(e.src, e.dst) for e in mesh} == {
+        ("kalshi:E1", "kalshi:E2")}
+    assert len(api.store.edges) == 2
+    assert all(e.rel != "shares-subject-with" for e in api.store.edges)
+
+
+def test_gate_refuses_derived_edge_writes():
+    api = _linked_pair()
+    r = api.record(Edge(src="kalshi:E1", dst="kalshi:E2",
+                        rel="shares-subject-with", at="t"))
+    assert r.committed is False
+    assert "read-time only" in r.reason
+    assert all(e.rel != "shares-subject-with" for e in api.store.edges)
 
 
 def test_derive_market_links_props_prefix_orphan():
     from graph import derive_market_links
 
-    api = GraphUpdateAPI(GraphStore())
+    api = GraphUpdateAPI(GraphStore(), allow_folded_writes=True)
     for n in [Node(id="kalshi:E1", kind="Event", title="E1"),
               Node(id="market:E1-A", kind="Market", title="A",
                    props={"event_ticker": "E1"}),
@@ -231,7 +274,7 @@ def test_derive_market_links_props_prefix_orphan():
 def test_derive_market_links_exact_ticker_match():
     from graph import derive_market_links
 
-    api = GraphUpdateAPI(GraphStore())
+    api = GraphUpdateAPI(GraphStore(), allow_folded_writes=True)
     for n in [Node(id="kalshi:E1", kind="Event", title="E1"),
               Node(id="market:E1", kind="Market", title="E1")]:
         api.commit(n)
@@ -239,17 +282,18 @@ def test_derive_market_links_exact_ticker_match():
     assert [(e.src, e.dst) for e in links] == [("kalshi:E1", "market:E1")]
 
 
-def test_refresh_records_market_links_once():
-    from graph import refresh_derived_links
+def test_market_links_materialize_without_persisting():
+    from graph import materialize_derived_links, materialize_derived_nodes
 
     api = GraphUpdateAPI(GraphStore())
-    for n in [Node(id="kalshi:E1", kind="Event", title="E1"),
-              Node(id="market:E1-A", kind="Market", title="A")]:
-        api.commit(n)
-    assert refresh_derived_links(api) == 1
-    assert refresh_derived_links(api) == 0
-    [e] = [e for e in api.store.edges if e.rel == "has-market"]
+    api.commit(Node(id="kalshi:E1", kind="Event", title="E1",
+                    props={"markets": {"E1-A": {"title": "A"}}}))
+    derived = materialize_derived_links(api.store, "t")
+    [e] = [e for e in derived if e.rel == "has-market"]
     assert (e.src, e.dst) == ("kalshi:E1", "market:E1-A")
+    assert all(e.rel != "has-market" for e in api.store.edges)
+    [node] = materialize_derived_nodes(api.store)
+    assert (node.id, node.kind, node.title) == ("market:E1-A", "Market", "A")
 
 
 def test_api_save_load_roundtrip(tmp_path):

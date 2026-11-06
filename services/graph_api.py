@@ -5,7 +5,9 @@ through a lock, persisted atomically (temp + rename) plus an
 append-only commit log after each batch.
 
   GET  /health              {ok, nodes, edges, revision}
-  GET  /graph               elements + revision (+counts)
+  GET  /graph               elements + revision (+counts); folded
+                            Subject/Market nodes and folded/derived
+                            edges are materialized on read, not stored
   GET  /graph?at=<ts>       time travel (valid_at <= ts, "" always kept)
   POST /proposals           {proposals: [{agent, action, entity_id,
                              detail, confidence?}]} -> per-proposal verdicts
@@ -23,9 +25,11 @@ import click
 from fastapi import FastAPI, Request, Response
 from pydantic import BaseModel, Field
 
-from graph import GraphUpdateAPI, boot, commit_batch, subgraph_as_of
+from graph import (
+    GraphUpdateAPI, boot, commit_batch, materialize_derived_links,
+    materialize_derived_nodes, subgraph_as_of, to_cytoscape,
+)
 from graph.persist import append_finding, commit_retire
-from graph import to_cytoscape
 
 
 class ProposalIn(BaseModel):
@@ -87,8 +91,15 @@ class HealthOut(BaseModel):
 class GraphOut(BaseModel):
     elements: list[dict[str, Any]] = Field(default_factory=list)
     revision: int = 0
+    # Persisted first-class nodes only; folded Subject/Market nodes are
+    # synthesized into `elements` on read and counted separately.
     nodes_count: int = 0
+    # Persisted primitive edges only; folded/derived links are added to
+    # `elements` on read and counted separately.
     edges_count: int = 0
+    derived_count: int = 0
+    # Subject/Market nodes synthesized from props on read.
+    derived_nodes_count: int = 0
 
 
 class GraphService:
@@ -114,13 +125,24 @@ class GraphService:
             store = self.api.store
             if at:
                 store = subgraph_as_of(store, at)
-            nodes = list(store.nodes.values())
+            stored_nodes = list(store.nodes.values())
             edges = list(store.edges)
+            made_nodes = [n for n in materialize_derived_nodes(store)
+                          if n.id not in store.nodes]
+            nodes = stored_nodes + made_nodes
+            derived = materialize_derived_links(store)
             rev = self.api.revision
-        payload = to_cytoscape(nodes, edges, limit=None)
+        # Legacy snapshots may still hold derived edges. Merge the
+        # read-time set without duplicating keys already persisted.
+        seen = {(e.src, e.dst, e.rel) for e in edges}
+        materialized = [e for e in derived
+                        if (e.src, e.dst, e.rel) not in seen]
+        payload = to_cytoscape(nodes, edges + materialized, limit=None)
         payload["revision"] = rev
-        payload["nodes_count"] = len(nodes)
+        payload["nodes_count"] = len(stored_nodes)
         payload["edges_count"] = len(edges)
+        payload["derived_count"] = len(materialized)
+        payload["derived_nodes_count"] = len(made_nodes)
         return payload
 
     def submit(self, proposals: list[dict]) -> dict:

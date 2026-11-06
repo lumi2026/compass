@@ -8,7 +8,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 
 import scripts.news_loop as nl
-from graph import GraphStore, GraphUpdateAPI, Node, commit_batch
+from graph import (
+    GraphStore, GraphUpdateAPI, Node, commit_batch,
+    materialize_derived_links,
+)
 
 
 def _rows():
@@ -741,9 +744,11 @@ def test_followups_fan_out_on_new_links(tmp_path, monkeypatch):
     assert summary["ok"] and summary["followups"] == 2
     followup_posts = [f for f in holder.findings if f.get("followups")]
     assert followup_posts and len(followup_posts[0]["followups"]) == 2
-    links = [e for e in api.store.edges if e.rel == "shares-subject-with"]
-    assert {(e.src, e.dst) for e in links} == {
-        ("kalshi:EA", "kalshi:EB"), ("kalshi:EB", "kalshi:EA")}
+    assert not any(e.rel == "shares-subject-with"
+                   for e in api.store.edges)
+    links = [e for e in materialize_derived_links(api.store)
+             if e.rel == "shares-subject-with"]
+    assert {(e.src, e.dst) for e in links} == {("kalshi:EA", "kalshi:EB")}
 
 
 def test_scan_history_merges_stride_snapshots(tmp_path, monkeypatch):

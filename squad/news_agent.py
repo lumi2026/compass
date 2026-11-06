@@ -4,8 +4,8 @@ Pipeline: Kalshi event markets -> n-gram term search over a webngrams
 snapshot -> fetch original articles -> LLM relevance filter + summary
 -> Proposals. NewsAgent chains the squad toolbox per the Agent
 protocol; run() emits a log-only news_summary digest, dig() strides
-history, graph_proposals() emits lane-ready Article/Subject/edge
-proposals.
+history, graph_proposals() emits lane-ready Article props + about
+proposals (subjects are folded into Article.props.subjects).
 """
 
 from dataclasses import dataclass
@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from typing import Any
 import re
 
-from graph import article_id, subject_id
+from graph import article_id
 from sources.kalshi import KalshiSource
 from sources.ngrams import (
     articles_from_mentions, backfill_snapshots, ngram_mentions,
@@ -161,10 +161,12 @@ class NewsAgent:
         """Lane-ready graph proposals for relevance-kept articles.
 
         `kept`: [{url, title?, subjects?}]; subjects default to the task
-        terms (LLM entity extraction replaces this later). Pure offline:
-        the Orchestrator gates these through the Skeptic and commits them
-        with `graph.proposals_to_commit`, so a news summary flows straight
-        into shared graph structure.
+        terms (LLM entity extraction replaces this later). Subjects fold
+        into Article.props.subjects, so `mentions` and Subject nodes are
+        materialized on read instead of persisted. Pure offline: the
+        Orchestrator gates these through the Skeptic and commits them
+        with `graph.proposals_to_commit`, so a news summary flows
+        straight into shared graph structure.
         """
         import json
 
@@ -174,23 +176,14 @@ class NewsAgent:
         props: list[Proposal] = []
         for a in kept:
             aid = article_id(a["url"])
+            subjects = list(dict.fromkeys(a.get("subjects") or terms))
             props.append(Proposal(
                 agent=self.name, action="add-node", entity_id=aid,
                 detail=json.dumps({"kind": "Article",
                                    "title": a.get("title", a["url"]),
-                                   "valid_at": a.get("seendate", "")}),
+                                   "valid_at": a.get("seendate", ""),
+                                   "props": {"subjects": subjects}}),
                 confidence=0.8))
-            for term in a.get("subjects") or terms:
-                sid = subject_id(term)
-                props.append(Proposal(
-                    agent=self.name, action="add-node", entity_id=sid,
-                    detail=json.dumps({"kind": "Subject", "title": term}),
-                    confidence=0.7))
-                props.append(Proposal(
-                    agent=self.name, action="add-edge", entity_id=aid,
-                    detail=json.dumps({"src": aid, "dst": sid,
-                                       "rel": "mentions"}),
-                    confidence=0.75))
             props.append(Proposal(
                 agent=self.name, action="add-edge", entity_id=aid,
                 detail=json.dumps({"src": aid, "dst": eid, "rel": "about"}),

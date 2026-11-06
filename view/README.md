@@ -114,8 +114,7 @@ only).
   (correlated odds). The Details panel legends each node color and
   each link type. Event nodes render as faceted gem balls, articles
   as diamonds, everything else stays dots. Markets (grey) and
-  Subjects are hidden by default — the bar reports the hidden counts;
-  tick `markets` / `subjects` to reveal each layer. Events always
+  Subjects are internal bookkeeping and never render. Events always
   stay, even unlinked controls.
 - The Event picker centers the graph on one event; Reset returns the
   slowly auto-rotating globe of all events (drag rotates, scroll

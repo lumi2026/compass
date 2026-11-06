@@ -124,9 +124,10 @@ def test_set_topics_records_event_title_and_meta():
     detail = json.loads(svc._proposals_for(
         "E2-A", {"title": "Title E2-A", "last_price": 50}, 0)[0]["detail"])
     assert detail["title"] == "Event E2"
-    assert detail["props"] == {"category": "Sports",
-                               "series_ticker": "KXE2",
-                               "sub_title": "After 2030"}
+    assert detail["props"]["category"] == "Sports"
+    assert detail["props"]["series_ticker"] == "KXE2"
+    assert detail["props"]["sub_title"] == "After 2030"
+    assert detail["props"]["markets"]["E2-A"]["event_ticker"] == "E2"
 
 
 def test_set_topics_survives_event_lookup_failure():
@@ -151,9 +152,10 @@ def test_proposals_for_event_carries_meta_props():
     props = svc._proposals_for(
         "E1-A", {"title": "Title E1-A", "last_price": 55}, 0)
     assert props[0]["entity_id"] == "kalshi:E1"
-    assert json.loads(props[0]["detail"]) == {
-        "kind": "Event", "title": "Event E1",
-        "props": {"category": "Elections"}}
+    detail = json.loads(props[0]["detail"])
+    assert detail["kind"] == "Event" and detail["title"] == "Event E1"
+    assert detail["props"]["category"] == "Elections"
+    assert detail["props"]["markets"]["E1-A"]["price_cents"] == 55
 
 
 def test_proposals_for_market_carries_event_ticker():
@@ -161,18 +163,24 @@ def test_proposals_for_market_carries_event_ticker():
     svc.ticker_event["E1-A"] = "E1"
     props = svc._proposals_for(
         "E1-A", {"title": "Title E1-A", "last_price": 55}, 0)
-    market = json.loads(props[1]["detail"])
-    assert market["props"]["event_ticker"] == "E1"
-    assert market["props"]["price_cents"] == 55
+    assert len(props) == 1  # markets fold into the Event
+    market = json.loads(props[0]["detail"])["props"]["markets"]["E1-A"]
+    assert market["event_ticker"] == "E1"
+    assert market["price_cents"] == 55
 
 
-def test_proposals_for_event_without_meta_has_no_props():
+def test_proposals_for_event_without_meta_still_folds_market():
     svc, _ = _service()
     svc.ticker_event["E1-A"] = "E1"
     props = svc._proposals_for(
         "E1-A", {"title": "Title E1-A", "last_price": 55}, 0)
-    assert json.loads(props[0]["detail"]) == {
-        "kind": "Event", "title": "E1"}
+    detail = json.loads(props[0]["detail"])
+    assert detail == {
+        "kind": "Event", "title": "E1",
+        "props": {"markets": {"E1-A": {
+            "title": "Title E1-A [E1-A]", "event_ticker": "E1",
+            "odds_at": detail["props"]["markets"]["E1-A"]["odds_at"],
+            "price_cents": 55}}}}
 
 
 def test_set_topics_records_mapping():
@@ -225,33 +233,35 @@ def test_publish_baseline_then_move_then_small():
                              last={"title": "Seed?", "last_price": 55},
                              updated_ms=1))
         r1 = svc.maybe_publish(_upd("T1", 1793394000000))
-        assert r1["published"] and r1["proposals"] == 2  # baseline, no move
+        assert r1["published"] and r1["proposals"] == 1  # baseline, no move
         kinds = [p["action"] for p in srv.seen[-1]["proposals"]]
-        assert kinds == ["add-node", "add-node"]
-        market_detail = json.loads(srv.seen[-1]["proposals"][1]["detail"])
-        assert market_detail["props"]["price_cents"] == 55
-        assert market_detail["props"]["odds_at"]
+        assert kinds == ["add-node"]
+        event_detail = json.loads(srv.seen[-1]["proposals"][0]["detail"])
+        market_detail = event_detail["props"]["markets"]["T1"]
+        assert market_detail["price_cents"] == 55
+        assert market_detail["odds_at"]
 
         svc.store.ingest_single(
             "T1", TickerState(ticker="T1",
                              last={"title": "Seed?", "last_price": 63},
                              updated_ms=2))
         r2 = svc.maybe_publish(_upd("T1", 1793394060000))
-        assert r2["published"] and r2["proposals"] == 4
+        assert r2["published"] and r2["proposals"] == 3
         last_two = srv.seen[-1]["proposals"][-2:]
         assert last_two[0]["entity_id"].startswith("happening:market-move-T1-")
         assert "moved 55c -> 63c" in last_two[0]["detail"]
         assert json.loads(last_two[0]["detail"])["props"] == {
             "market": "T1", "old_cents": 55, "new_cents": 63,
             "move_cents": 8}
-        assert last_two[1]["detail"] and "relates-to" in last_two[1]["detail"]
+        edge = json.loads(last_two[1]["detail"])
+        assert edge["src"] == "kalshi:E1" and edge["rel"] == "relates-to"
 
         svc.store.ingest_single(
             "T1", TickerState(ticker="T1",
                              last={"title": "Seed?", "last_price": 64},
                              updated_ms=3))
         r3 = svc.maybe_publish(_upd("T1", 1793394120000))
-        assert r3["published"] and r3["proposals"] == 2  # +1c < threshold
+        assert r3["published"] and r3["proposals"] == 1  # +1c < threshold
     finally:
         srv.shutdown()
         t.join(timeout=10)
@@ -265,14 +275,18 @@ def test_sweep_pushes_live_odds_without_socket():
         svc.set_graph_publish(
             f"http://127.0.0.1:{srv.server_address[1]}", 5)
         r = svc.sweep()
-        assert r["published"] and r["tickers"] == 2 and r["proposals"] == 4
-        markets = [p for p in srv.seen[-1]["proposals"]
-                   if p["entity_id"].startswith("market:")]
-        assert len(markets) == 2
-        assert json.loads(markets[0]["detail"])["props"]["price_cents"] == 50
+        assert r["published"] and r["tickers"] == 2 and r["proposals"] == 2
+        events = [p for p in srv.seen[-1]["proposals"]
+                  if p["entity_id"] == "kalshi:E1"]
+        assert len(events) == 2
+        folded = [json.loads(p["detail"])["props"]["markets"]
+                  for p in events]
+        assert {next(iter(m)) for m in folded} == {"E1-A", "E1-B"}
+        assert all(next(iter(m.values()))["price_cents"] == 50
+                   for m in folded)
         # second sweep: same prices -> idempotent duplicates, no happenings
         r2 = svc.sweep()
-        assert r2["published"] and r2["proposals"] == 4
+        assert r2["published"] and r2["proposals"] == 2
         kinds = {p["action"] for p in srv.seen[-1]["proposals"]}
         assert kinds == {"add-node"}
     finally:
