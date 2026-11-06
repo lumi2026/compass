@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import taxonomy from '../../shared/hypothesis_taxonomy.json' with { type: 'json' }
-import { HYPOTHESIS_COLORS, HYPOTHESIS_DESCRIPTIONS, HYPOTHESIS_TYPES, LEGACY_MODE_TYPE, centerOnNode, eventSummary, faceNode, hypothesisType, spherePoint, transformElements, zoomCamera } from '../src/graph.js'
+import { EDGE_COLORS, HYPOTHESIS_COLORS, HYPOTHESIS_DESCRIPTIONS, HYPOTHESIS_TYPES, KIND_COLORS, LEGACY_MODE_TYPE, centerOnNode, eventSummary, faceNode, hypothesisType, spherePoint, transformElements, zoomCamera } from '../src/graph.js'
 
 class V {
   constructor(x = 0, y = 0, z = 0) {
@@ -183,8 +183,7 @@ describe('events-first transform', () => {
     assert.ok(v.capped)
   })
 
-  it('hides Subject nodes by default and restores them on request', () => {
-    const els = [
+  it('hides Subject nodes by default and restores them on request', () => {    const els = [
       NM('kalshi:A', 'Event', 'A'),
       NM('subject:growth', 'Subject', 'growth 2034'),
       NM('article:1', 'Article', 'story'),
@@ -199,6 +198,15 @@ describe('events-first transform', () => {
     const open = transformElements(els, 200, { showSubjects: true })
     assert.ok(open.nodes.some((n) => n.id === 'subject:growth'))
     assert.equal(open.subjectsHidden, 0)
+  })
+})
+
+describe('article node identity', () => {
+  it('wears the bright article color, distinct from edge greens', () => {
+    const v = transformElements(elements, 200)
+    const art = v.nodes.find((n) => n.id === 'article:1')
+    assert.equal(art.color, KIND_COLORS.Article)
+    assert.notEqual(KIND_COLORS.Article, EDGE_COLORS.mentions)
   })
 })
 

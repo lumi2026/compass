@@ -45,6 +45,17 @@ export default function GraphCanvas({ nodes, links, onSelect, controlsRef }) {
         return html
       })
       .nodeThreeObject((n) => {
+        // Articles render as diamonds (octahedra), not dots: they are
+        // the multi-event hubs, so they get their own silhouette in
+        // the bright article color. Events stay gem balls, everything
+        // else stays dots with skeleton labels.
+        if (n.kind === 'Article') {
+          const r = Math.cbrt(n.val || 1) * 4
+          return new THREE.Mesh(
+            new THREE.OctahedronGeometry(r, 0),
+            new THREE.MeshLambertMaterial({ color: n.color }),
+          )
+        }
         // Labels on skeleton kinds only (Events, Subjects, Hypotheses,
         // Happenings); Article/Market dots stay unlabeled for readability.
         if (!SKELETON_KINDS.includes(n.kind)) return null
@@ -67,7 +78,7 @@ export default function GraphCanvas({ nodes, links, onSelect, controlsRef }) {
         group.add(s)
         return group
       })
-      .nodeThreeObjectExtend((n) => n.kind !== 'Event')
+      .nodeThreeObjectExtend((n) => n.kind !== 'Event' && n.kind !== 'Article')
       .linkSource('source')
       .linkTarget('target')
       .linkColor((l) => l.color)

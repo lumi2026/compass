@@ -3,7 +3,7 @@ import taxonomy from '../../shared/hypothesis_taxonomy.json' with { type: 'json'
 export const KIND_COLORS = {
   Event: '#ea580c',
   Market: '#6b7fa3',
-  Article: '#1f9d55',
+  Article: '#22d3ee',
   Subject: '#d97706',
   Hypothesis: '#7c3aed',
   Happening: '#0e7490',
