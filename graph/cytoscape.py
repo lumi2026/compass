@@ -17,7 +17,8 @@ def to_cytoscape(nodes: list, edges: list,
     if limit is not None:
         node_els = node_els[:limit]
     kept = {e["data"]["id"] for e in node_els}
-    edge_els = [{"data": {"source": e.src, "target": e.dst, "label": e.rel}}
+    edge_els = [{"data": {"source": e.src, "target": e.dst, "label": e.rel,
+                           "props": dict(getattr(e, "props", {}) or {})}}
                 for e in edges
                 if e.src in kept and e.dst in kept]
     if limit is not None:

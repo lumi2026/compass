@@ -38,49 +38,13 @@ low top no not vs via per day week month year time times will be des les der
 die und""".split())
 
 
-GENERIC_TOKENS = frozenset("""election elections elected electoral electorate
-reelection vote votes voter voters voting poll polls polling polled
-race races runoff runoffs referendum referendums plebiscite plebiscites
-primary primaries caucus caucuses ballot ballots
-president presidents presidential presidency elect
-minister ministers ministry prime mayor mayors mayoral
-governor governors gubernatorial senator senators senate senatorial
-representative representatives house congress congressional
-parliament parliamentary party parties nominee nominees nomination nominations
-candidate candidates candidacy campaign campaigns
-seat seats office offices term terms ticket tickets
-coalition coalitions cabinet cabinets
-chairman chairwoman chair chairs chancellor chancellors premier premiers
-secretary secretaries general government governments
-state states united federal national
-successor succession replacement appointee appointees appointed appointment
-appointments confirmation confirmations incumbent incumbents outgoing
-approval approvals rating ratings
-winner winners wins winning won lose loses losing lost
-victory victories defeat defeats lead leads leading trail trails trailing
-ahead behind favorite favorites frontrunner frontrunners upset upsets
-control retain retains retained gain gains flip flips sweep sweeps
-landslide landslides
-which whose whom whether either neither both each every other another same such
-some any several various former latter current upcoming potential possible
-likely expected eventual future past recent latest early main major key
-big small large old young white black
-make makes making become becomes becoming remain remains stay stays
-hold holds holding keep keeps keeping face faces facing
-call calls called announce announces announced hit hits hitting
-reach reaches reached set name names named pick picks picked
-choose chooses chose beat beats beating meet meets meeting""".split())
-
-
-def is_generic_term(term: str) -> bool:
-    """True when a search term carries no discriminating token."""
-    toks = term.lower().split()
-    return bool(toks) and all(t in GENERIC_TOKENS for t in toks)
-
-
-def anchored_terms(terms: list[str]) -> list[str]:
-    """The discriminating subset of a topic's terms, order preserved."""
-    return [t for t in terms if not is_generic_term(t)]
+# Generic-token language lives in graph.store (next to subject_id) so
+# the squad can fold subjects without importing scripts/.
+from graph import (  # noqa: E402
+    GENERIC_TOKENS as GENERIC_TOKENS,
+    anchored_terms as anchored_terms,
+    is_generic_term as is_generic_term,
+)
 
 
 def extract_terms(title: str, max_terms: int = 5,
@@ -302,15 +266,24 @@ def main(events, lookback, seed, out, max_articles) -> None:
                 Proposal(
                     agent="investigator", action="add-edge", entity_id=hid,
                     detail=json.dumps({"src": hid, "dst": f"kalshi:{a}",
-                                       "rel": "asserts"}), confidence=0.7),
+                                       "rel": "asserts",
+                                       "props": {"weight": len(urls),
+                                                 "confidence": 0.7}}),
+                    confidence=0.7),
                 Proposal(
                     agent="investigator", action="add-edge", entity_id=hid,
                     detail=json.dumps({"src": hid, "dst": f"kalshi:{b}",
-                                       "rel": "asserts"}), confidence=0.7),
+                                       "rel": "asserts",
+                                       "props": {"weight": len(urls),
+                                                 "confidence": 0.7}}),
+                    confidence=0.7),
         ] + [Proposal(
                 agent="investigator", action="add-edge", entity_id=hid,
                 detail=json.dumps({"src": hid, "dst": article_id(u),
-                                   "rel": "cites"}), confidence=0.6)
+                                   "rel": "cites",
+                                   "props": {"weight": 1,
+                                             "confidence": 0.6}}),
+                confidence=0.6)
              for u in urls[:5]])[0]:
             print(proposals_to_commit(api, prop.agent, prop.action,
                                       prop.entity_id, prop.detail).reason)

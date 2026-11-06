@@ -60,6 +60,69 @@ def subject_id(term: str) -> str:
     return "subject:" + slug
 
 
+# Genre vocabulary: search terms made only of these tokens cannot
+# discriminate topics ("presidential election" matches every presidential
+# market), so they never become folded subjects. Shared with the news
+# loop via this module to avoid a squad/scripts import cycle.
+GENERIC_TOKENS = frozenset("""election elections elected electoral electorate
+reelection vote votes voter voters voting poll polls polling polled
+race races runoff runoffs referendum referendums plebiscite plebiscites
+primary primaries caucus caucuses ballot ballots
+president presidents presidential presidency elect
+minister ministers ministry prime mayor mayors mayoral
+governor governors gubernatorial senator senators senate senatorial
+representative representatives house congress congressional
+parliament parliamentary party parties nominee nominees nomination nominations
+candidate candidates candidacy campaign campaigns
+seat seats office offices term terms ticket tickets
+coalition coalitions cabinet cabinets
+chairman chairwoman chair chairs chancellor chancellors premier premiers
+secretary secretaries general government governments
+state states united federal national
+successor succession replacement appointee appointees appointed appointment
+appointments confirmation confirmations incumbent incumbents outgoing
+approval approvals rating ratings
+winner winners wins winning won lose loses losing lost
+victory victories defeat defeats lead leads leading trail trails trailing
+ahead behind favorite favorites frontrunner frontrunners upset upsets
+control retain retains retained gain gains flip flips sweep sweeps
+landslide landslides
+which whose whom whether either neither both each every other another same such
+some any several various former latter current upcoming potential possible
+likely expected eventual future past recent latest early main major key
+big small large old young white black
+make makes making become becomes becoming remain remains stay stays
+hold holds holding keep keeps keeping face faces facing
+call calls called announce announces announced hit hits hitting
+reach reaches reached set name names named pick picks picked
+choose chooses chose beat beats beating meet meets meeting""".split())
+
+
+def is_generic_term(term: str) -> bool:
+    """True when a search term carries no discriminating token."""
+    toks = term.lower().split()
+    return bool(toks) and all(t in GENERIC_TOKENS for t in toks)
+
+
+def anchored_terms(terms: list[str]) -> list[str]:
+    """The discriminating subset of terms, order preserved."""
+    return [t for t in terms if not is_generic_term(t)]
+
+
+def fold_subjects(terms: list[str]) -> list[str]:
+    """Terms worth folding into Article.props.subjects, deduped.
+
+    Anchored (discriminating) terms only; topics whose every term is
+    generic keep all of them rather than going subject-less.
+    """
+    seen: list[str] = []
+    for term in terms:
+        if isinstance(term, str) and term and term not in seen:
+            seen.append(term)
+    anchored = [t for t in seen if not is_generic_term(t)]
+    return anchored or seen
+
+
 def happening_id(slug: str) -> str:
     """Canonical Happening node id for a dated key event."""
     import re
@@ -97,6 +160,9 @@ class Edge:
     # of duplicating, so repeatedly confirmed links grow heavier.
     seen_count: int = 1
     last_seen_at: str = ""
+    # Link strength: {"weight": <evidence URLs, default 1>,
+    # "confidence": <0-1>}. Missing weight reads as 1 everywhere.
+    props: dict = field(default_factory=dict)
 
 
 @dataclass

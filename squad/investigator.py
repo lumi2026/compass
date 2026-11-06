@@ -104,7 +104,9 @@ class Investigator:
             props.append(Proposal(
                 agent=self.name, action="add-edge", entity_id=hid,
                 detail=json.dumps({"src": hid, "dst": aid,
-                                   "rel": "cites"}),
+                                   "rel": "cites",
+                                   "props": {"weight": 1,
+                                             "confidence": 0.65}}),
                 confidence=0.65,
             ))
         markets = ctx.get("markets", []) or []
@@ -113,7 +115,9 @@ class Investigator:
             props.append(Proposal(
                 agent=self.name, action="add-edge", entity_id=hid,
                 detail=json.dumps({"src": hid, "dst": f"market:{lead_mt}",
-                                   "rel": "asserts"}),
+                                   "rel": "asserts",
+                                   "props": {"weight": 1,
+                                             "confidence": 0.6}}),
                 confidence=0.6,
             ))
         return props

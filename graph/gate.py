@@ -63,6 +63,24 @@ def _merge_props(existing: dict, incoming: dict) -> dict:
     return merged
 
 
+def _merge_edge_props(existing: dict, incoming: dict) -> dict:
+    """Merge relayed edge props: strength only ratchets up.
+
+    `weight`/`confidence` take the max when numeric (more evidence or
+    a surer claim never weakens the trail); any other key prefers the
+    incoming value when present.
+    """
+    merged = dict(existing or {})
+    for k, v in (incoming or {}).items():
+        if k in ("weight", "confidence") and isinstance(v, (int, float)):
+            cur = merged.get(k)
+            if isinstance(cur, (int, float)):
+                merged[k] = max(cur, v)
+                continue
+        merged[k] = v
+    return merged
+
+
 def _has_node(store: GraphStore, node_id: str) -> bool:
     """Endpoint exists, either persisted or reconstructable from props.
 
@@ -161,6 +179,8 @@ class GraphUpdateAPI:
                 f"legacy rel {edge.rel!r} is replay-only; "
                 "use 'cites' (Hypothesis -> Article) or "
                 "'asserts' (Hypothesis -> Event | Market) instead")
+        if not isinstance(edge.props, dict):
+            return CommitResult(False, "invalid edge: props must be an object")
         if not _has_node(self.store, edge.src):
             return CommitResult(False, f"unknown src: {edge.src!r}")
         if not _has_node(self.store, edge.dst):
@@ -170,8 +190,9 @@ class GraphUpdateAPI:
     def record(self, edge: Edge) -> CommitResult:
         """Persist a primitive edge, idempotent on (src, dst, rel).
 
-        Re-laying a trail keeps first-seen `at` and bumps `seen_count`
-        (trail reinforcement). Derived rels are refused: they are
+        Re-laying a trail keeps first-seen `at`, bumps `seen_count`
+        (trail reinforcement), and ratchets `props` strength up via
+        _merge_edge_props. Derived rels are refused: they are
         materialized on read instead.
         """
         verdict = self.validate_edge(edge)
@@ -182,7 +203,8 @@ class GraphUpdateAPI:
                 n = e.seen_count + 1
                 self.store.edges[i] = replace(
                     e, seen_count=n,
-                    last_seen_at=edge.last_seen_at or self.store.now())
+                    last_seen_at=edge.last_seen_at or self.store.now(),
+                    props=_merge_edge_props(e.props, edge.props))
                 return CommitResult(True, f"reinforced x{n}")
         if not edge.last_seen_at:
             edge = replace(edge, last_seen_at=edge.at)
@@ -258,7 +280,8 @@ def proposals_to_commit(api: GraphUpdateAPI, agent: str, action: str,
     """Translate one gated Proposal into a graph write.
 
     `add-node`: entity_id is the node id, detail is JSON {kind, title}.
-    `add-edge`: detail is JSON {src, dst, rel}; primitive rels only.
+    `add-edge`: detail is JSON {src, dst, rel, props?}; primitive rels
+    only (`cites`/`asserts` carry {weight, confidence} in props).
     `derive-links`: connector-only no-op; derived links are created by
     the read path, so there is nothing to write.
     Anything outside the role lane (or malformed JSON) is refused.
@@ -288,7 +311,11 @@ def proposals_to_commit(api: GraphUpdateAPI, agent: str, action: str,
     if action == "add-edge":
         if not isinstance(payload, dict) or not {"src", "dst", "rel"} <= set(payload):
             return CommitResult(False, "add-edge needs {src, dst, rel}")
+        props = payload.get("props", {})
+        if not isinstance(props, dict):
+            return CommitResult(False, "add-edge props must be an object")
         return api.record(Edge(src=payload["src"], dst=payload["dst"],
                                rel=payload["rel"], at=api.store.now(),
-                               valid_at=str(payload.get("valid_at", ""))))
+                               valid_at=str(payload.get("valid_at", "")),
+                               props=props))
     return CommitResult(False, f"unsupported action: {action!r}")

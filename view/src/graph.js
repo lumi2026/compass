@@ -130,6 +130,10 @@ export function transformElements(elements, cap = 200) {
       }
     }
   }
+  const edgeWeight = (d) => {
+    const w = d.props?.weight
+    return typeof w === 'number' && w > 0 ? Math.min(w, 9) : 1
+  }
   const degree = {}
   const neighbours = {}
   for (const d of raw) {
@@ -138,8 +142,11 @@ export function transformElements(elements, cap = 200) {
     // mesh neighbours with no visible link to explain them.
     if (d.label === 'shares-subject-with') continue
     if ('source' in d && !isHidden(d.source) && !isHidden(d.target)) {
-      degree[d.source] = (degree[d.source] ?? 0) + 1
-      degree[d.target] = (degree[d.target] ?? 0) + 1
+      // Strength-weighted: a 9-URL hypothesis link counts more than a
+      // 1-URL one, so confirmed trails size and rank above thin ones.
+      const w = edgeWeight(d)
+      degree[d.source] = (degree[d.source] ?? 0) + w
+      degree[d.target] = (degree[d.target] ?? 0) + w
       ;(neighbours[d.source] ??= []).push(d.target)
       ;(neighbours[d.target] ??= []).push(d.source)
     }
@@ -189,7 +196,7 @@ export function transformElements(elements, cap = 200) {
       target: b,
       rel: 'hypothesizes',
       color: HYPOTHESIS_COLORS[htype],
-      w: 2,
+      w: 1 + Math.min(evidence.length, 6) / 3,
       hypothesis: {
         title: String(d.label ?? d.id),
         type: htype,
@@ -270,12 +277,15 @@ export function transformElements(elements, cap = 200) {
       if ((d.label === 'supports' || d.label === 'cites' || d.label === 'asserts') && (kindOf[d.source] ?? '') === 'Hypothesis') {
         color = HYPOTHESIS_COLORS[hypothesisType(rawById[d.source]?.props ?? {})]
       }
+      const w = d.label === 'shares-subject-with'
+        ? 3
+        : Math.min(3, Math.max(1, d.props?.weight ?? 1))
       return {
         source: d.source,
         target: d.target,
         rel: d.label ?? '',
         color,
-        w: d.label === 'shares-subject-with' ? 3 : 1,
+        w,
       }
     })
     .concat(hypothesisLinks.filter((l) => kept.has(l.source) && kept.has(l.target)))

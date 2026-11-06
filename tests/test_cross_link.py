@@ -4,6 +4,7 @@ import sys
 
 sys.path.insert(0, ".")
 
+from graph import fold_subjects  # noqa: E402
 from scripts.cross_link import (  # noqa: E402
     anchored_terms,
     extract_terms,
@@ -55,3 +56,14 @@ def test_shared_pairs_finds_cross_topic_urls():
         "C": ["u9"],
     })
     assert got == {("A", "B"): ["u2"]}
+
+
+def test_fold_subjects_keeps_only_anchored_terms():
+    assert fold_subjects(
+        ["presidential election", "brazilian", "senate"]) == ["brazilian"]
+    assert fold_subjects(["a", "b", "a"]) == ["a", "b"]
+
+
+def test_fold_subjects_falls_back_when_all_generic():
+    assert fold_subjects(["presidential election", "senate"]) == [
+        "presidential election", "senate"]

@@ -62,9 +62,16 @@ Each commit validates kind/rel/endpoints, applies the Skeptic
 confidence gate (min 0.3), then merges: same id plus identical
 title/props returns `duplicate: kept existing`; same id with new
 content returns `refreshed` in place. Edges are idempotent on
-`(src, dst, rel)`: re-laying keeps first-seen `at` and bumps
-`seen_count` (`reinforced xN`), so confirmed trails grow heavier
-instead of multiplying.
+`(src, dst, rel)`: re-laying keeps first-seen `at`, bumps
+`seen_count` (`reinforced xN`), and ratchets `props` strength up
+(`weight`/`confidence` take the max), so confirmed trails grow
+heavier instead of multiplying. `cites`/`asserts` carry
+`{weight, confidence}` in `props` (missing weight reads as 1); the
+view weights degree and link width by it.
+
+Folded subjects stay discriminating: only anchored (non-genre) terms
+land in `Article.props.subjects` (`fold_subjects`, falling back to all
+terms when a topic has no anchored term at all).
 
 Follow-up digs fan out only on verdict `created`; re-created
 duplicates fan out nothing. Vetoed pairs whose hypothesis already

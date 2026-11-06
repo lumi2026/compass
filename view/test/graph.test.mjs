@@ -451,6 +451,49 @@ describe('hypothesis types', () => {
   })
 })
 
+describe('edge strength', () => {
+  const E2 = (source, target, label, props) => ({ data: { source, target, label, props } })
+
+  it('weights degree by persisted edge strength', () => {
+    const els = [
+      NM('kalshi:A', 'Event', 'A'),
+      NM('kalshi:B', 'Event', 'B'),
+      NM('article:1', 'Article', 'one'),
+      NM('article:2', 'Article', 'two'),
+      E2('article:1', 'kalshi:A', 'about', { weight: 4, confidence: 0.8 }),
+      E2('article:2', 'kalshi:B', 'about'),
+    ]
+    const v = transformElements(els, 200)
+    assert.equal(v.nodes.find((n) => n.id === 'kalshi:A').deg, 4)
+    assert.equal(v.nodes.find((n) => n.id === 'kalshi:B').deg, 1)
+  })
+
+  it('scales collapsed hypothesis links with evidence', () => {
+    const thin = [
+      NM('kalshi:A', 'Event', 'A'),
+      NM('kalshi:B', 'Event', 'B'),
+      NM('hypothesis:h', 'Hypothesis', 'thin', { type: 'co_mention' }),
+      NM('article:1', 'Article', 'one'),
+      E('hypothesis:h', 'kalshi:A', 'asserts'),
+      E('hypothesis:h', 'kalshi:B', 'asserts'),
+      E('hypothesis:h', 'article:1', 'cites'),
+    ]
+    const thick = thin.concat([
+      NM('article:2', 'Article', 'two'),
+      NM('article:3', 'Article', 'three'),
+      NM('article:4', 'Article', 'four'),
+      NM('article:5', 'Article', 'five'),
+      E('hypothesis:h', 'article:2', 'cites'),
+      E('hypothesis:h', 'article:3', 'cites'),
+      E('hypothesis:h', 'article:4', 'cites'),
+      E('hypothesis:h', 'article:5', 'cites'),
+    ])
+    const wThin = transformElements(thin, 200).links.find((l) => l.rel === 'hypothesizes').w
+    const wThick = transformElements(thick, 200).links.find((l) => l.rel === 'hypothesizes').w
+    assert.ok(wThick > wThin)
+  })
+})
+
 describe('subject link filter', () => {
   // derive emits the mesh in both directions, like the live graph
   const mesh = [
