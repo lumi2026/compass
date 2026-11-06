@@ -325,7 +325,8 @@ describe('hypothesis as edge', () => {
   })
 })
 
-describe('transitive meta omission', () => {  const els = [
+describe('transitive meta omission', () => {
+  const els = [
     NM('kalshi:A', 'Event', 'A'),
     NM('kalshi:B', 'Event', 'B'),
     NM('kalshi:C', 'Event', 'C'),
