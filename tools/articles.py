@@ -10,7 +10,7 @@ import html.parser
 import re
 import urllib.request
 
-UA = {"User-Agent": "compass-hackathon/0.1"}
+UA = {"User-Agent": "compass/0.1"}
 
 
 class _TextExtract(html.parser.HTMLParser):
