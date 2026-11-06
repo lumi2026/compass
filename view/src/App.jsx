@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import GraphCanvas from './GraphCanvas'
-import { HYPOTHESIS_COLORS, HYPOTHESIS_DESCRIPTIONS, eventSummary, transformElements } from './graph'
+import { HYPOTHESIS_COLORS, HYPOTHESIS_DESCRIPTIONS, KIND_COLORS, eventSummary, transformElements } from './graph'
 import { useGraph } from './useGraph'
 
 function EventAbout({ node, byId, links }) {
@@ -216,6 +216,17 @@ export default function App() {
               <li key={t}>
                 <span className="swatch" style={{ background: HYPOTHESIS_COLORS[t] }} />
                 {HYPOTHESIS_DESCRIPTIONS[t]}
+              </li>
+            ))}
+          </ul>
+          <div className="meta">Nodes</div>
+          <ul className="legend">
+            {Object.keys(KIND_COLORS).map((k) => (
+              <li key={k}>
+                <span className="swatch" style={{ background: KIND_COLORS[k] }} />
+                {k}
+                {k === 'Event' ? ' (gem)' : ''}
+                {k === 'Article' ? ' (diamond)' : ''}
               </li>
             ))}
           </ul>

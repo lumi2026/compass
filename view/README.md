@@ -107,12 +107,13 @@ only).
 
 ## What you will see
 
-- Events-first: orange Event gems linked through articles and
-  hypothesis edges colored by relation type — purple `co_mention`
-  (mentioned together), teal `co_location` (shared place), amber
-  `shared_context` (shared theme), magenta `co_outcome` (correlated
-  odds). The Details panel legends each type. Event nodes render as
-  faceted gem balls; everything else stays dots. Markets (grey) and
+- Events-first: orange Event gems linked through bright-cyan Article
+  diamonds and hypothesis edges colored by relation type — purple
+  `co_mention` (mentioned together), teal `co_location` (shared
+  place), amber `shared_context` (shared theme), magenta `co_outcome`
+  (correlated odds). The Details panel legends each node color and
+  each link type. Event nodes render as faceted gem balls, articles
+  as diamonds, everything else stays dots. Markets (grey) and
   Subjects are hidden by default — the bar reports the hidden counts;
   tick `markets` / `subjects` to reveal each layer. Events always
   stay, even unlinked controls.
