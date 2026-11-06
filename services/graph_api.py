@@ -5,9 +5,10 @@ through a lock, persisted atomically (temp + rename) plus an
 append-only commit log after each batch.
 
   GET  /health              {ok, nodes, edges, revision}
-  GET  /graph               elements + revision (+counts); folded
-                            Subject/Market nodes and folded/derived
-                            edges are materialized on read, not stored
+  GET  /graph               elements + revision (+counts);
+                             persisted nodes/edges only by default
+  GET  /graph?expand=...   opt into read-time materialization:
+                           mentions, markets, mesh, all (comma-separated)
   GET  /graph?at=<ts>       time travel (valid_at <= ts, "" always kept)
   POST /proposals           {proposals: [{agent, action, entity_id,
                              detail, confidence?}]} -> per-proposal verdicts
@@ -27,7 +28,7 @@ from pydantic import BaseModel, Field
 
 from graph import (
     GraphUpdateAPI, boot, commit_batch, materialize_derived_links,
-    materialize_derived_nodes, subgraph_as_of, to_cytoscape,
+    materialize_derived_nodes, subgraph_as_of, to_elements,
 )
 from graph.persist import append_finding, commit_retire
 
@@ -120,24 +121,53 @@ class GraphService:
                     "edges": len(self.api.store.edges),
                     "revision": self.api.revision}
 
-    def graph_payload(self, at: str | None = None) -> dict:
+    @staticmethod
+    def _expand_sets(expand: str | set[str] | None) -> tuple[set[str], set[str]]:
+        """(node kinds, edge rels) implied by an expand param."""
+        if isinstance(expand, str):
+            parts = {p.strip().lower() for p in expand.split(",") if p.strip()}
+        else:
+            parts = {str(p).lower() for p in (expand or set())}
+        if "all" in parts:
+            return ({"Subject", "Market"},
+                    {"mentions", "shares-subject-with", "has-market"})
+        kinds: set[str] = set()
+        rels: set[str] = set()
+        if "mentions" in parts:
+            kinds.add("Subject")
+            rels.add("mentions")
+        if "markets" in parts or "has-market" in parts:
+            kinds.add("Market")
+            rels.add("has-market")
+        if "mesh" in parts or "shares-subject-with" in parts:
+            rels.add("shares-subject-with")
+        return (kinds, rels)
+
+    def graph_payload(self, at: str | None = None,
+                      expand: str | set[str] | None = None) -> dict:
+        kinds, rels = self._expand_sets(expand)
         with self.lock:
             store = self.api.store
             if at:
                 store = subgraph_as_of(store, at)
             stored_nodes = list(store.nodes.values())
             edges = list(store.edges)
-            made_nodes = [n for n in materialize_derived_nodes(store)
-                          if n.id not in store.nodes]
-            nodes = stored_nodes + made_nodes
-            derived = materialize_derived_links(store)
+            if kinds or rels:
+                made_nodes = [n for n in materialize_derived_nodes(
+                    store, kinds=kinds or set()) if n.id not in store.nodes]
+                nodes = stored_nodes + made_nodes
+                derived = materialize_derived_links(store, rels=rels)
+            else:
+                made_nodes = []
+                nodes = stored_nodes
+                derived = []
             rev = self.api.revision
         # Legacy snapshots may still hold derived edges. Merge the
         # read-time set without duplicating keys already persisted.
         seen = {(e.src, e.dst, e.rel) for e in edges}
         materialized = [e for e in derived
                         if (e.src, e.dst, e.rel) not in seen]
-        payload = to_cytoscape(nodes, edges + materialized, limit=None)
+        payload = to_elements(nodes, edges + materialized, limit=None)
         payload["revision"] = rev
         payload["nodes_count"] = len(stored_nodes)
         payload["edges_count"] = len(edges)
@@ -195,8 +225,8 @@ def create_app(service: GraphService | None = None,
 
     @app.get("/graph", response_model=GraphOut)
     def read_graph(request: Request, response: Response,
-                   at: str | None = None):
-        payload = svc.graph_payload(at=at)
+                   at: str | None = None, expand: str | None = None):
+        payload = svc.graph_payload(at=at, expand=expand)
         response.headers["ETag"] = str(payload["revision"])
         if (request.headers.get("if-none-match") or "").strip() == str(
                 payload["revision"]):

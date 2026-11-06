@@ -22,9 +22,14 @@ ID scheme (stable URIs, shared by every agent):
 
 Edge vocabulary (only primitive rels are persisted):
   about                Article -> Event             (LLM relevance passed)
-  supports             Hypothesis -> Market | Article
+  cites                Hypothesis -> Article        (evidence)
+  asserts              Hypothesis -> Event | Market (claim scope)
   challenges           Audit -> Hypothesis  (auditor flags a bad link)
   relates-to           fallback for anything unclassified
+
+`supports` (Hypothesis -> Market | Article) is the legacy single rel
+covering both cites and asserts: accepted on read/replay, refused for
+new writes.
 
 Folded/derived rels are reconstructed on read and never stored:
   mentions             Article -> Subject   (from Article.props.subjects)
@@ -32,7 +37,7 @@ Folded/derived rels are reconstructed on read and never stored:
   has-market           Event -> Market      (from Event.props.markets)
 """
 
-from .cytoscape import MAX_VISIBLE_NODES, to_cytoscape
+from .elements import MAX_VISIBLE_NODES, to_elements
 from .derive import (
     derive_market_links,
     derive_shared_subject_links,
@@ -56,9 +61,14 @@ from .store import (
     EDGE_RELS,
     FOLDED_NODE_KINDS,
     FOLDED_RELS,
+    GENERIC_TOKENS,
+    LEGACY_RELS,
     MATERIALIZED_RELS,
     NODE_KINDS,
     PRIMITIVE_RELS,
+    anchored_terms,
+    fold_subjects,
+    is_generic_term,
     Edge,
     GraphStore,
     Node,
@@ -72,12 +82,17 @@ __all__ = [
     "EDGE_RELS",
     "FOLDED_NODE_KINDS",
     "FOLDED_RELS",
+    "GENERIC_TOKENS",
+    "LEGACY_RELS",
     "MATERIALIZED_RELS",
     "MAX_VISIBLE_NODES",
     "NODE_KINDS",
     "PRIMITIVE_RELS",
     "CommitResult",
     "Edge",
+    "anchored_terms",
+    "fold_subjects",
+    "is_generic_term",
     "GraphStore",
     "GraphUpdateAPI",
     "Node",
@@ -99,5 +114,5 @@ __all__ = [
     "subgraph_as_of",
     "sync_derived_links",
     "subject_id",
-    "to_cytoscape",
+    "to_elements",
 ]

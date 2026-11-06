@@ -29,11 +29,11 @@ def _els():
         N("hypothesis:h3", "Hypothesis", "A x C"),
         N("audit:old", "Audit", "flags h3",
           {"target": "hypothesis:h3"}),
-        E("hypothesis:h1", "kalshi:A", "supports"),
-        E("hypothesis:h1", "kalshi:B", "supports"),
-        E("hypothesis:h1", "article:1", "supports"),
-        E("hypothesis:h2", "kalshi:B", "supports"),
-        E("hypothesis:h2", "kalshi:C", "supports"),
+        E("hypothesis:h1", "kalshi:A", "asserts"),
+        E("hypothesis:h1", "kalshi:B", "asserts"),
+        E("hypothesis:h1", "article:1", "cites"),
+        E("hypothesis:h2", "kalshi:B", "asserts"),
+        E("hypothesis:h2", "kalshi:C", "asserts"),
         E("hypothesis:h3", "kalshi:A", "supports"),
         E("hypothesis:h3", "kalshi:C", "supports"),
         E("audit:old", "hypothesis:h3", "challenges"),
@@ -101,7 +101,7 @@ def test_audit_pass_dry_run_posts_nothing():
 def test_select_skips_hypotheses_without_two_events():
     els = _els() + [
         N("hypothesis:h4", "Hypothesis", "A alone"),
-        E("hypothesis:h4", "kalshi:A", "supports"),
+        E("hypothesis:h4", "kalshi:A", "asserts"),
     ]
     cands = select_candidates(els, {}, 0)
     assert [c["hid"] for c in cands] == ["hypothesis:h1", "hypothesis:h2"]
@@ -390,8 +390,8 @@ def test_select_candidates_carries_hypothesis_type():
         N("hypothesis:legacy", "Hypothesis", "A x B",
           {"mode": "shared-subject"}),
         N("hypothesis:bare", "Hypothesis", "A x B"),
-        E("hypothesis:typed", "kalshi:A", "supports"),
-        E("hypothesis:typed", "kalshi:B", "supports"),
+        E("hypothesis:typed", "kalshi:A", "asserts"),
+        E("hypothesis:typed", "kalshi:B", "asserts"),
         E("hypothesis:legacy", "kalshi:A", "supports"),
         E("hypothesis:legacy", "kalshi:B", "supports"),
         E("hypothesis:bare", "kalshi:A", "supports"),

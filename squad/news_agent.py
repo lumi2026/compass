@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from typing import Any
 import re
 
-from graph import article_id
+from graph import article_id, fold_subjects
 from sources.kalshi import KalshiSource
 from sources.ngrams import (
     articles_from_mentions, backfill_snapshots, ngram_mentions,
@@ -150,7 +150,8 @@ class NewsAgent:
                     continue
                 seen.add(a.url)
                 kept.append({"url": a.url, "title": a.title,
-                             "subjects": list(terms), "snapshot": ts,
+                             "subjects": fold_subjects(list(terms)),
+                             "snapshot": ts,
                              "seendate": a.published_at})
                 if len(kept) >= max_urls:
                     return kept
@@ -176,7 +177,8 @@ class NewsAgent:
         props: list[Proposal] = []
         for a in kept:
             aid = article_id(a["url"])
-            subjects = list(dict.fromkeys(a.get("subjects") or terms))
+            subjects = list(dict.fromkeys(
+                a.get("subjects") or fold_subjects(list(terms))))
             props.append(Proposal(
                 agent=self.name, action="add-node", entity_id=aid,
                 detail=json.dumps({"kind": "Article",

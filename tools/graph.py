@@ -51,7 +51,7 @@ def graph_tools(base_url: str) -> dict:
         challenged: set[str] = set()
         for el in elements:
             d = el.get("data", {})
-            if d.get("label") == "supports":
+            if d.get("label") in ("cites", "asserts", "supports"):
                 supports.setdefault(d.get("source", ""), []).append(
                     d.get("target", ""))
             elif d.get("label") == "challenges":

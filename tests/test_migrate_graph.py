@@ -57,11 +57,11 @@ def test_migrate_folds_props_and_drops_legacy():
     assert migrated.nodes["article:a"].props["subjects"] == ["SpaceX"]
     assert migrated.nodes["article:b"].props["subjects"] == ["Mars", "SpaceX"]
     assert {e.rel for e in migrated.edges} <= {
-        "about", "supports", "challenges", "relates-to"}
+        "about", "cites", "asserts", "challenges", "relates-to"}
     assert [e for e in migrated.edges if e.rel == "relates-to"][0].src == \
         "kalshi:E1"
-    # Primitive claims may still target a folded market.
-    assert ("hypothesis:h1", "market:E1-A", "supports") in {
+    # Primitive claims may still target a folded market (claim scope).
+    assert ("hypothesis:h1", "market:E1-A", "asserts") in {
         (e.src, e.dst, e.rel) for e in migrated.edges}
     assert report["folded"]["markets"] == 2
     assert report["folded"]["subjects"] == 2

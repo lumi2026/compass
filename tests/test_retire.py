@@ -87,11 +87,11 @@ def test_prune_only_touches_derived_rels():
     api = GraphUpdateAPI(GraphStore())
     _mesh_fixture(api)
     api.store.add_edge(Edge(src="article:X", dst="kalshi:EA",
-                            rel="supports", at="t"))
+                            rel="about", at="t"))
     api.store.add_edge(Edge(src="kalshi:EA", dst="kalshi:NOPE",
                             rel="has-market", at="t"))
     assert prune_derived_links(api.store) == 1  # the dangling derived edge
-    assert any(e.rel == "supports" for e in api.store.edges)
+    assert any(e.rel == "about" for e in api.store.edges)
     assert any(e.rel == "shares-subject-with" for e in api.store.edges)
 
 

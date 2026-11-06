@@ -31,18 +31,21 @@ shared-context structure from primitive links instead.
 
 Only primitive, directly-evidenced edges are persisted:
 
-`about` (Article → Event), `supports` (Hypothesis → Market/Article),
+`about` (Article → Event), `cites` (Hypothesis → Article, evidence),
+`asserts` (Hypothesis → Event | Market, claim scope),
 `challenges` (Audit → Hypothesis), `relates-to` (fallback).
+`supports` is the legacy single rel covering both `cites` and
+`asserts`: accepted on read/replay, refused for new writes.
 
 Subject and Market nodes are folded into props: an Article carries its
 terms in `props.subjects`, and an Event carries its odds in
 `props.markets[ticker]`. `mentions` (Article → Subject),
 `shares-subject-with` (Event ↔ Event), and `has-market`
 (Event → Market) are therefore fully recoverable and are materialized
-at read time (`materialize_derived_nodes` / `materialize_derived_links`)
-for the API/view. Writing any folded/derived node or rel through the
-gate is refused; legacy snapshots keep theirs, and replay temporarily
-allows them to reconstruct old logs.
+at read time only on request (`GET /graph?expand=mentions,markets,mesh`;
+default payload is persisted nodes/edges). Writing any folded/derived
+node or rel through the gate is refused; legacy snapshots keep
+theirs, and replay temporarily allows them to reconstruct old logs.
 
 ## Write path: lanes, gate, commit
 
@@ -59,9 +62,16 @@ Each commit validates kind/rel/endpoints, applies the Skeptic
 confidence gate (min 0.3), then merges: same id plus identical
 title/props returns `duplicate: kept existing`; same id with new
 content returns `refreshed` in place. Edges are idempotent on
-`(src, dst, rel)`: re-laying keeps first-seen `at` and bumps
-`seen_count` (`reinforced xN`), so confirmed trails grow heavier
-instead of multiplying.
+`(src, dst, rel)`: re-laying keeps first-seen `at`, bumps
+`seen_count` (`reinforced xN`), and ratchets `props` strength up
+(`weight`/`confidence` take the max), so confirmed trails grow
+heavier instead of multiplying. `cites`/`asserts` carry
+`{weight, confidence}` in `props` (missing weight reads as 1); the
+view weights degree and link width by it.
+
+Folded subjects stay discriminating: only anchored (non-genre) terms
+land in `Article.props.subjects` (`fold_subjects`, falling back to all
+terms when a topic has no anchored term at all).
 
 Follow-up digs fan out only on verdict `created`; re-created
 duplicates fan out nothing. Vetoed pairs whose hypothesis already

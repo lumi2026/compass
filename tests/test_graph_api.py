@@ -129,14 +129,18 @@ def test_graph_payload_derives_links_without_storing_them(tmp_path):
     svc.submit(proposals)
     payload = svc.graph_payload()
     assert payload["nodes_count"] == 3  # persisted only
-    assert payload["derived_nodes_count"] == 1  # folded Subject
+    assert payload["derived_nodes_count"] == 0  # opt-in via expand
     assert payload["edges_count"] == 2  # primitive only
-    assert payload["derived_count"] == 2  # folded mention + one mesh
-    labels = [el["data"]["label"] for el in payload["elements"]
+    assert payload["derived_count"] == 0
+    # Opt-in restores the read-time set without persisting it.
+    full = svc.graph_payload(expand="all")
+    assert full["derived_nodes_count"] == 1  # folded Subject
+    assert full["derived_count"] == 2  # folded mention + one mesh
+    labels = [el["data"]["label"] for el in full["elements"]
               if "source" in el["data"]]
     assert labels.count("shares-subject-with") == 1
     assert labels.count("mentions") == 1
-    node_ids = [el["data"]["id"] for el in payload["elements"]
+    node_ids = [el["data"]["id"] for el in full["elements"]
                 if "source" not in el["data"]]
     assert "subject:spacex" in node_ids
     assert not any(e.rel in ("shares-subject-with", "mentions")
@@ -311,7 +315,7 @@ def test_retire_endpoint_removes_node_and_edges(tmp_path):
             _node_prop("news-agent", "hypothesis:h1",
                        kind="Hypothesis"),
             _edge_prop("news-agent", "hypothesis:h1", "kalshi:A",
-                       rel="supports"),
+                       rel="asserts"),
         ]})
     r = client.post("/retire", json={"node_ids": ["hypothesis:h1"]})
     assert r.status_code == 200

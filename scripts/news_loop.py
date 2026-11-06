@@ -31,12 +31,12 @@ import click
 
 sys.path.insert(0, ".")
 
-from graph import article_id  # noqa: E402
-from scripts.cross_link import anchored_terms, extract_terms  # noqa: E402
+from graph import anchored_terms, article_id, fold_subjects  # noqa: E402
 from squad.auditor import audit_pair  # noqa: E402
 from sources.kalshi import EVENTS_LIMIT_MAX  # noqa: E402
 from sources.ngrams import (  # noqa: E402
     articles_from_mentions,
+    extract_terms,
     ngram_mentions,
     resolve_snapshot,
     snapshot_candidates,
@@ -1061,9 +1061,11 @@ def stage_propose(ctx: dict) -> dict:
     inv_llm = resolve_model(model, role="investigator") if model else None
     live = [p for p, _, _ in live_pairs]
     for p, dtitle, dconf in live_pairs:
-        pair_terms = sorted(
-            {term for t in topics if t["event_ticker"] in (p["a"], p["b"])
-             for term in t["terms"]})
+        # Folded subjects stay discriminating: generic genre terms
+        # ("presidential election") never become mentions/mesh keys.
+        pair_terms = fold_subjects(
+            [term for t in topics if t["event_ticker"] in (p["a"], p["b"])
+             for term in t["terms"]])
         for t in topics:
             if t["event_ticker"] in (p["a"], p["b"]):
                 mine = [dict(url_kept[u], subjects=pair_terms)
@@ -1097,14 +1099,18 @@ def stage_propose(ctx: dict) -> dict:
                 agent="investigator", action="add-edge",
                 entity_id=hid,
                 detail=json.dumps({"src": hid, "dst": f"kalshi:{end}",
-                                   "rel": "supports"}),
+                                   "rel": "asserts",
+                                   "props": {"weight": len(p["urls"]),
+                                             "confidence": 0.7}}),
                 confidence=0.7))
         for u in p["urls"][:3]:
             all_props.append(Proposal(
                 agent="investigator", action="add-edge",
                 entity_id=hid,
                 detail=json.dumps({"src": hid, "dst": article_id(u),
-                                   "rel": "supports"}),
+                                   "rel": "cites",
+                                   "props": {"weight": 1,
+                                             "confidence": 0.6}}),
                 confidence=0.6))
     # Layer-2 transitive hypotheses are no longer persisted: the view
     # already reconstructs shared-context structure from primitive links.
@@ -1265,7 +1271,9 @@ def _odds_cycle(graph_url: str, kalshi_url: str, topics: list[dict],
                 agent="investigator", action="add-edge",
                 entity_id=hid,
                 detail=json.dumps({"src": hid, "dst": f"kalshi:{end}",
-                                   "rel": "supports"}),
+                                   "rel": "asserts",
+                                   "props": {"weight": 1,
+                                             "confidence": 0.7}}),
                 confidence=0.7))
     approved, _ = Skeptic().review(all_props)
     posted = _post_json(

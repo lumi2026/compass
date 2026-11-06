@@ -12,8 +12,8 @@ lanes take injected data or call `sources/` + `tools/articles.py`.
 - `Agent`: protocol every lane satisfies (`run(task, context)`).
 - `Skeptic`: vetoes weak proposals (confidence < 0.3, empty action/entity). Only approved ones commit.
 - `Orchestrator`: protocol fan-out to lanes, gate through Skeptic.
-  Used by `scripts/cross_link.py` and tests; the live loop instead runs
-  cheaper deterministic STAGES in `scripts/news_loop.py`.
+  Used by tests; the live loop instead runs cheaper deterministic
+  STAGES in `scripts/news_loop.py`.
 - `WorkspaceTask` / `feedback_to_task`: human feedback (`explore | ask
   | challenge`) mapped to a typed task for the queue. Accepted by the
   gate, not yet wired to a live UI loop.
@@ -31,8 +31,8 @@ lanes take injected data or call `sources/` + `tools/articles.py`.
   `run()` itself stays a log-only digest — only `graph_proposals()`
   output commits.
 - `investigator.py`: turns kept articles + market context into one
-  Hypothesis node with `supports` edges to its evidence (and the lead
-  market). Every node carries `props.type` in the closed taxonomy
+  Hypothesis node with `cites` edges to its evidence articles and
+  `asserts` edges to its claim scope (events, lead market). Every node carries `props.type` in the closed taxonomy
   (`co_mention`, `co_location`, `shared_context`, `co_outcome`).
   Layer-2 transitive metas are no longer written. Offline-first;
   optional LLM refinement via `context["model"]`, extractive title

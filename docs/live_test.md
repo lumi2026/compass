@@ -39,7 +39,7 @@ Known gaps: `KXTOPLLMGENERAL-30` has zero markets (expect conf floor, no crash).
   is API-only since the as-of slider was removed: compare
   `curl '127.0.0.1:8090/graph?at=<start_ts>'` against `GET /graph`
   (nodes rewind, odds stay live until replay lands).
-- Offline check: `uv run python scripts/graph_poc.py --out /tmp/graph_poc.json` (17 nodes / 17 edges, spacex link, control isolated).
+- Offline check: `uv run pytest tests/test_contracts.py -q` (fixture graph: spacex link, control isolated).
 
 ## View (React 3D over live graph API)
 - Terminal 1: `uv run python -m services.graph_api --port 8090`

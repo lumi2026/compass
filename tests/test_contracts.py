@@ -1,7 +1,7 @@
 """Deterministic contract tests. No network: fixtures only."""
 
 from graph import (CommitResult, GraphStore, GraphUpdateAPI, Node, Edge,
-                   MAX_VISIBLE_NODES, to_cytoscape)
+                   MAX_VISIBLE_NODES, to_elements)
 from squad.pipeline import ChangeEvent, detect_new_items, investigation_triggers
 from sources.base import MarketEvent
 from sources.kalshi import (
@@ -115,6 +115,32 @@ def test_folded_props_merge_subjects_and_markets():
         "A": {"price_cents": 1}, "B": {"price_cents": 2}}
 
 
+def test_edge_props_persist_and_ratchet_on_relay():
+    api = GraphUpdateAPI(GraphStore())
+    api.commit(Node(id="kalshi:A", kind="Event", title="A"))
+    api.commit(Node(id="kalshi:B", kind="Event", title="B"))
+    api.commit(Node(id="hypothesis:h", kind="Hypothesis", title="H"))
+    r = api.record(Edge(src="hypothesis:h", dst="kalshi:A", rel="asserts",
+                        at="t", props={"weight": 2, "confidence": 0.6}))
+    assert r.committed
+    r = api.record(Edge(src="hypothesis:h", dst="kalshi:A", rel="asserts",
+                        at="t2", props={"weight": 5, "confidence": 0.5}))
+    assert r.committed and "reinforced x2" in r.reason
+    [e] = api.store.edges
+    assert e.at == "t"  # first-seen timestamp kept
+    assert e.props == {"weight": 5, "confidence": 0.6}  # strength ratchets
+    assert e.seen_count == 2
+
+
+def test_edge_props_must_be_an_object():
+    api = GraphUpdateAPI(GraphStore())
+    api.commit(Node(id="kalshi:A", kind="Event", title="A"))
+    api.commit(Node(id="hypothesis:h", kind="Hypothesis", title="H"))
+    r = api.record(Edge(src="hypothesis:h", dst="kalshi:A", rel="asserts",
+                        at="t", props=["weight"]))
+    assert r.committed is False and "props must be an object" in r.reason
+
+
 def test_gate_refuses_folded_nodes_and_mentions():
     api = GraphUpdateAPI(GraphStore())
     r = api.commit(Node(id="subject:spacex", kind="Subject", title="spacex"))
@@ -126,6 +152,24 @@ def test_gate_refuses_folded_nodes_and_mentions():
     r = api.record(Edge(src="article:a", dst="subject:spacex",
                         rel="mentions", at="t"))
     assert r.committed is False and "folded rel" in r.reason
+
+
+def test_proposals_to_commit_passes_edge_props():
+    import json
+
+    from graph import proposals_to_commit
+
+    api = GraphUpdateAPI(GraphStore())
+    api.commit(Node(id="kalshi:A", kind="Event", title="A"))
+    api.commit(Node(id="article:1", kind="Article", title="one"))
+    api.commit(Node(id="hypothesis:h", kind="Hypothesis", title="H"))
+    r = proposals_to_commit(
+        api, "investigator", "add-edge", "hypothesis:h", json.dumps(
+            {"src": "hypothesis:h", "dst": "article:1", "rel": "cites",
+             "props": {"weight": 1, "confidence": 0.6}}))
+    assert r.committed
+    [e] = api.store.edges
+    assert e.rel == "cites" and e.props == {"weight": 1, "confidence": 0.6}
 
 
 def test_graph_record_reinforces_reruns():
@@ -181,10 +225,10 @@ def test_graph_translator_carries_props():
     assert bad.committed is False
 
 
-def test_cytoscape_carries_props():
+def test_elements_carry_props():
     nodes = [Node(id="market:T", kind="Market", title="T",
                   props={"price_cents": 55})]
-    payload = to_cytoscape(nodes, [])
+    payload = to_elements(nodes, [])
     assert payload["elements"][0]["data"]["props"] == {"price_cents": 55}
 
 
@@ -349,7 +393,7 @@ def test_kalshi_candle_normalize():
 
 def test_display_contracts():
     nodes = [Node(id=f"n{i}", kind="Event", title=f"t{i}") for i in range(3)]
-    payload = to_cytoscape(nodes, [])
+    payload = to_elements(nodes, [])
     assert len(payload["elements"]) == 3
     assert MAX_VISIBLE_NODES == 200
     task = feedback_to_task("challenge", "kalshi:E1", "why?")

@@ -1,15 +1,15 @@
-"""Cross-link helpers: term extraction + shared-URL pairing (offline)."""
+"""Search-term helpers: extraction + shared-URL pairing (offline)."""
 
 import sys
 
 sys.path.insert(0, ".")
 
-from scripts.cross_link import (  # noqa: E402
+from graph import (  # noqa: E402
     anchored_terms,
-    extract_terms,
+    fold_subjects,
     is_generic_term,
-    shared_pairs,
 )
+from sources.ngrams import extract_terms, shared_pairs  # noqa: E402
 
 
 def test_extract_terms_prefers_bigrams():
@@ -55,3 +55,14 @@ def test_shared_pairs_finds_cross_topic_urls():
         "C": ["u9"],
     })
     assert got == {("A", "B"): ["u2"]}
+
+
+def test_fold_subjects_keeps_only_anchored_terms():
+    assert fold_subjects(
+        ["presidential election", "brazilian", "senate"]) == ["brazilian"]
+    assert fold_subjects(["a", "b", "a"]) == ["a", "b"]
+
+
+def test_fold_subjects_falls_back_when_all_generic():
+    assert fold_subjects(["presidential election", "senate"]) == [
+        "presidential election", "senate"]

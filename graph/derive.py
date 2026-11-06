@@ -157,18 +157,26 @@ def derive_market_links(store: GraphStore, at: str) -> list[Edge]:
     return out
 
 
-def materialize_derived_nodes(store: GraphStore) -> list[Node]:
+def materialize_derived_nodes(store: GraphStore,
+                                kinds: set[str] | None = None) -> list[Node]:
     """Read-time Subject and Market nodes implied by folded props.
 
     Persisted nodes always win (legacy snapshots keep their own
     Subject/Market nodes). Returned nodes are never written to the
-    store; callers merge them into display payloads.
+    store; callers merge them into display payloads. Pass kinds={...}
+    to include only a subset (e.g. {"Market"}); None means all.
     """
     out: dict[str, Node] = {}
+    want_subject = kinds is None or "Subject" in kinds
+    want_market = kinds is None or "Market" in kinds
     for sid, title in _subject_terms(store).items():
+        if not want_subject:
+            break
         if sid not in store.nodes:
             out[sid] = Node(id=sid, kind="Subject", title=title)
     for eid, markets in _event_markets(store).items():
+        if not want_market:
+            break
         if eid not in store.nodes:
             continue
         for ticker, props in sorted(markets.items()):
@@ -205,41 +213,47 @@ def followup_tasks(store: GraphStore, event_id: str) -> list[dict]:
 
 
 def materialize_derived_links(store: GraphStore,
-                              at: str | None = None) -> list[Edge]:
+                              at: str | None = None,
+                              rels: set[str] | None = None) -> list[Edge]:
     """Read-time folded/derived links; never persisted.
 
     Synthesizes `mentions` from Article.props.subjects, then the
     Event-to-Event subject mesh (one canonical direction, sorted
     endpoints) and Event-to-Market links. Callers merge these with
     persisted primitive edges, deduping by ``(src, dst, rel)`` so
-    legacy edges are not duplicated.
+    legacy edges are not duplicated. Pass rels={...} to include only
+    a subset; None means all.
     """
     at = store.now() if at is None else at
+    want = rels
     out: list[Edge] = []
     seen: set[tuple[str, str, str]] = set()
     persisted = {(e.src, e.dst, e.rel) for e in store.edges}
-    for aid, subjects in sorted(_article_subjects(store).items()):
-        art = store.nodes.get(aid)
-        for sid in sorted(subjects):
-            key = (aid, sid, "mentions")
-            if key in seen or key in persisted:
+    if want is None or "mentions" in want:
+        for aid, subjects in sorted(_article_subjects(store).items()):
+            art = store.nodes.get(aid)
+            for sid in sorted(subjects):
+                key = (aid, sid, "mentions")
+                if key in seen or key in persisted:
+                    continue
+                seen.add(key)
+                out.append(Edge(src=aid, dst=sid, rel="mentions", at=at,
+                                valid_at=art.valid_at if art is not None else ""))
+    if want is None or "shares-subject-with" in want:
+        for e in derive_shared_subject_links(store, at):
+            src, dst = (e.src, e.dst) if e.src <= e.dst else (e.dst, e.src)
+            key = (src, dst, e.rel)
+            if key in seen:
                 continue
             seen.add(key)
-            out.append(Edge(src=aid, dst=sid, rel="mentions", at=at,
-                            valid_at=art.valid_at if art is not None else ""))
-    for e in derive_shared_subject_links(store, at):
-        src, dst = (e.src, e.dst) if e.src <= e.dst else (e.dst, e.src)
-        key = (src, dst, e.rel)
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(Edge(src=src, dst=dst, rel=e.rel, at=e.at))
-    for e in derive_market_links(store, at):
-        key = (e.src, e.dst, e.rel)
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(e)
+            out.append(Edge(src=src, dst=dst, rel=e.rel, at=e.at))
+    if want is None or "has-market" in want:
+        for e in derive_market_links(store, at):
+            key = (e.src, e.dst, e.rel)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(e)
     return out
 
 
@@ -252,7 +266,7 @@ def prune_derived_links(store: GraphStore,
     recomputed from current article props/about/market attribution, so
     a DERIVED_RELS edge outside it is stale — e.g. mesh laid while a
     since-retired article bridged two events. Persisted primitive
-    claims (about, supports, ...) and folded `mentions` edges are never
+    claims (about, cites, asserts, ...) and folded `mentions` edges are never
     touched. Pass a precomputed key set to skip recomputation.
     """
     if keep is None:

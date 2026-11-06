@@ -63,7 +63,7 @@ the API.
 | Endpoint | Use |
 |---|---|
 | `GET /health` | `{ok, nodes, edges, revision}` |
-| `GET /graph`, `GET /graph?at=<ts>` | Full payload, or time travel (`valid_at` filter; odds stay live until replay lands) |
+| `GET /graph`, `GET /graph?at=<ts>` | Persisted payload by default, or time travel (`valid_at` filter; odds stay live until replay lands). `?expand=mentions,markets,mesh,all` opts into read-time materialization |
 | `POST /proposals` | Gated writes: per-proposal verdicts, role-lane + confidence checks |
 | `POST /retire`, `POST /findings` | Remove nodes (+ prune stale derived mesh, reported as `pruned_derived`) / append raw ungated findings |
 

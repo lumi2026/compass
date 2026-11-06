@@ -201,11 +201,13 @@ def migrate_store(store: GraphStore) -> tuple[GraphStore, dict]:
         nodes[nid] = (replace(node, props=props)
                       if props != (node.props or {}) else node)
 
+    kinds = {nid: n.kind for nid, n in store.nodes.items()}
     edges = []
     seen: set[tuple[str, str, str]] = set()
     dropped_edges = Counter()
     meta_edges: set[tuple[str, str, str]] = set()
     rewritten = 0
+    rel_rewritten = 0
     for edge in store.edges:
         if edge.rel in MATERIALIZED_RELS:
             dropped_edges[edge.rel] += 1
@@ -214,7 +216,7 @@ def migrate_store(store: GraphStore) -> tuple[GraphStore, dict]:
             meta_edges.add((edge.src, edge.dst, edge.rel))
             dropped_edges[f"{edge.rel} (layer2)"] += 1
             continue
-        src, dst = edge.src, edge.dst
+        src, dst, rel = edge.src, edge.dst, edge.rel
         if edge.rel == "relates-to":
             if src in owners:
                 src = owners[src]
@@ -222,13 +224,25 @@ def migrate_store(store: GraphStore) -> tuple[GraphStore, dict]:
             if dst in owners:
                 dst = owners[dst]
                 rewritten += 1
-        key = (src, dst, edge.rel)
+        if rel == "supports":
+            # Legacy single rel splits: evidence (Article) -> cites,
+            # claim scope (Event | Market | Hypothesis) -> asserts.
+            dst_kind = kinds.get(dst, "")
+            if not dst_kind:
+                if dst.startswith("article:"):
+                    dst_kind = "Article"
+                elif dst.startswith(("kalshi:", "market:", "hypothesis:")):
+                    dst_kind = "Event"
+            rel = "cites" if dst_kind == "Article" else "asserts"
+            rel_rewritten += 1
+        key = (src, dst, rel)
         if key in seen:
             dropped_edges["duplicate"] += 1
             continue
         seen.add(key)
-        edges.append(replace(edge, src=src, dst=dst)
-                     if (src, dst) != (edge.src, edge.dst) else edge)
+        edges.append(replace(edge, src=src, dst=dst, rel=rel)
+                     if (src, dst, rel) != (edge.src, edge.dst, edge.rel)
+                     else edge)
 
     orphan_subjects = sorted(i for i in subjects if i not in mentioned)
     migrated = GraphStore(nodes=nodes, edges=edges)
@@ -243,6 +257,7 @@ def migrate_store(store: GraphStore) -> tuple[GraphStore, dict]:
         },
         "dropped": dict(dropped_nodes), "dropped_edges": dict(dropped_edges),
         "rewritten_relates_to": rewritten,
+        "rewritten_supports": rel_rewritten,
         "orphan_subjects": orphan_subjects,
         "meta_ids": sorted(metas),
         "meta_edges": sorted(meta_edges),
@@ -272,7 +287,10 @@ def _sig(nodes, edges, owners: dict[str, str]):
             src, dst = sorted((src, dst))
         if edge.rel == "relates-to":
             src, dst = owners.get(src, src), owners.get(dst, dst)
-        edge_sig.add((src, dst, edge.rel))
+        # cites/asserts both collapse to the legacy supports label for
+        # view-parity: the split renames, not the rendered structure.
+        rel = "supports" if edge.rel in ("cites", "asserts", "supports") else edge.rel
+        edge_sig.add((src, dst, rel))
     return node_sig, edge_sig
 
 
