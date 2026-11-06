@@ -72,6 +72,7 @@ export default function App() {
   const hiddenBits = []
   if (!showMarkets && view.marketsHidden > 0) hiddenBits.push(`${view.marketsHidden} markets`)
   if (!showSubjects && view.subjectsHidden > 0) hiddenBits.push(`${view.subjectsHidden} subjects`)
+  if (view.transitiveHidden > 0) hiddenBits.push(`${view.transitiveHidden} transitive ${view.transitiveHidden === 1 ? 'hypothesis' : 'hypotheses'}`)
   const hiddenText = hiddenBits.length ? ` — ${hiddenBits.join(', ')} hidden` : ''
   const byId = useMemo(() => new Map(view.nodes.map((n) => [n.id, n])), [view.nodes])
   const events = useMemo(
