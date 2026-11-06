@@ -2,7 +2,7 @@
 name = "compass"
 version = "0.1.0"
 description = "Compass: situation-aware AI consultant (Meta hackathon)"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = [
     "websockets>=15",
     "cryptography>=44",
