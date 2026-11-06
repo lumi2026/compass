@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 from .base import NewsArticle
 
 SNAP_BASE = "https://data.gdeltproject.org/gdeltv3/webngrams"
-UA = {"User-Agent": "compass-hackathon/0.1"}
+UA = {"User-Agent": "compass/0.1"}
 STRIP = str.maketrans("", "", string.punctuation)
 
 

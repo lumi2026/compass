@@ -55,7 +55,7 @@ def _stamp() -> str:
 
 def _get_json(url: str, timeout: int = 5) -> dict:
     req = urllib.request.Request(
-        url, headers={"User-Agent": "compass-migrate/0.1"})
+        url, headers={"User-Agent": "compass/0.1"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read() or b"{}")
 

@@ -35,7 +35,7 @@ def _get_json(url: str, timeout: int = 30, retries: int = 4) -> dict:
     for attempt in range(retries):
         try:
             req = urllib.request.Request(
-                url, headers={"User-Agent": "compass-hackathon/0.1"})
+                url, headers={"User-Agent": "compass/0.1"})
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return json.loads(resp.read() or b"{}")
         except urllib.error.HTTPError as e:
