@@ -28,7 +28,7 @@ from squad.investigator import Investigator  # noqa: E402
 from squad.news_agent import NewsAgent  # noqa: E402
 from squad.pipeline import build_investigator_context  # noqa: E402
 from squad.scout import Scout  # noqa: E402
-from graph import to_cytoscape  # noqa: E402
+from graph import to_elements  # noqa: E402
 
 STOP = set("""will the a an of to in on for who what when where be is are was
 were by before after than more less most its it this that with from and or as
@@ -292,7 +292,7 @@ def main(events, lookback, seed, out, max_articles) -> None:
     print(proposals_to_commit(api, intent.agent, intent.action,
                               intent.entity_id, intent.detail).reason)
 
-    payload = to_cytoscape(list(api.store.nodes.values()), api.store.edges,
+    payload = to_elements(list(api.store.nodes.values()), api.store.edges,
                             limit=None)  # full graph: links are the point
     api.save(out)
     print(f"[xlink] topics={len(tasks)} snapshots={scanned} "

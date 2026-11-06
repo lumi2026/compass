@@ -19,7 +19,7 @@ sys.path.insert(0, ".")
 from graph import (  # noqa: E402
     GraphStore, GraphUpdateAPI, article_id, followup_tasks,
     materialize_derived_links, materialize_derived_nodes,
-    proposals_to_commit, to_cytoscape,
+    proposals_to_commit, to_elements,
 )
 
 # Fixture articles: A1 ties Elon/Mars to SpaceX; A2 ties the same subject
@@ -102,7 +102,7 @@ def main(out) -> None:
     nodes = list(api.store.nodes.values())
     nodes += [n for n in materialize_derived_nodes(api.store)
               if n.id not in api.store.nodes]
-    payload = to_cytoscape(nodes, merged)
+    payload = to_elements(nodes, merged)
     print(f"workspace elements={len(payload['elements'])}")
     api.save(out)
     print(f"[poc] wrote {out}")

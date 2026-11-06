@@ -1,16 +1,17 @@
 """Graph-to-display serialization (absorbed from the old `workspace` layer).
 
-Cytoscape.js elements dict: nodes first, then the edges whose endpoints
-are shown — so a capped payload is always a coherent subgraph, never
-nodes without their links. limit=None returns everything.
+Elements dict: nodes first, then the edges whose endpoints are shown —
+so a capped payload is always a coherent subgraph, never nodes without
+their links. limit=None returns everything. The ``{elements: [{data}]}``
+shape predates the current force-graph view, which consumes ``el.data``.
 """
 
 MAX_VISIBLE_NODES = 200
 
 
-def to_cytoscape(nodes: list, edges: list,
-                 limit: int | None = MAX_VISIBLE_NODES) -> dict:
-    """Serialize graph nodes/edges to a Cytoscape.js elements dict."""
+def to_elements(nodes: list, edges: list,
+                limit: int | None = MAX_VISIBLE_NODES) -> dict:
+    """Serialize graph nodes/edges to a view elements dict."""
     node_els = [{"data": {"id": n.id, "label": n.title, "kind": n.kind,
                             "props": dict(getattr(n, "props", {}) or {})}}
                 for n in nodes]

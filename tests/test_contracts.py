@@ -1,7 +1,7 @@
 """Deterministic contract tests. No network: fixtures only."""
 
 from graph import (CommitResult, GraphStore, GraphUpdateAPI, Node, Edge,
-                   MAX_VISIBLE_NODES, to_cytoscape)
+                   MAX_VISIBLE_NODES, to_elements)
 from squad.pipeline import ChangeEvent, detect_new_items, investigation_triggers
 from sources.base import MarketEvent
 from sources.kalshi import (
@@ -225,10 +225,10 @@ def test_graph_translator_carries_props():
     assert bad.committed is False
 
 
-def test_cytoscape_carries_props():
+def test_elements_carry_props():
     nodes = [Node(id="market:T", kind="Market", title="T",
                   props={"price_cents": 55})]
-    payload = to_cytoscape(nodes, [])
+    payload = to_elements(nodes, [])
     assert payload["elements"][0]["data"]["props"] == {"price_cents": 55}
 
 
@@ -393,7 +393,7 @@ def test_kalshi_candle_normalize():
 
 def test_display_contracts():
     nodes = [Node(id=f"n{i}", kind="Event", title=f"t{i}") for i in range(3)]
-    payload = to_cytoscape(nodes, [])
+    payload = to_elements(nodes, [])
     assert len(payload["elements"]) == 3
     assert MAX_VISIBLE_NODES == 200
     task = feedback_to_task("challenge", "kalshi:E1", "why?")

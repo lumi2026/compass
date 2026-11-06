@@ -37,7 +37,7 @@ Folded/derived rels are reconstructed on read and never stored:
   has-market           Event -> Market      (from Event.props.markets)
 """
 
-from .cytoscape import MAX_VISIBLE_NODES, to_cytoscape
+from .elements import MAX_VISIBLE_NODES, to_elements
 from .derive import (
     derive_market_links,
     derive_shared_subject_links,
@@ -114,5 +114,5 @@ __all__ = [
     "subgraph_as_of",
     "sync_derived_links",
     "subject_id",
-    "to_cytoscape",
+    "to_elements",
 ]

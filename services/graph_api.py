@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field
 
 from graph import (
     GraphUpdateAPI, boot, commit_batch, materialize_derived_links,
-    materialize_derived_nodes, subgraph_as_of, to_cytoscape,
+    materialize_derived_nodes, subgraph_as_of, to_elements,
 )
 from graph.persist import append_finding, commit_retire
 
@@ -167,7 +167,7 @@ class GraphService:
         seen = {(e.src, e.dst, e.rel) for e in edges}
         materialized = [e for e in derived
                         if (e.src, e.dst, e.rel) not in seen]
-        payload = to_cytoscape(nodes, edges + materialized, limit=None)
+        payload = to_elements(nodes, edges + materialized, limit=None)
         payload["revision"] = rev
         payload["nodes_count"] = len(stored_nodes)
         payload["edges_count"] = len(edges)
