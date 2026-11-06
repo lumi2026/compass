@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import GraphCanvas from './GraphCanvas'
-import { HYPOTHESIS_COLORS, HYPOTHESIS_DESCRIPTIONS, KIND_COLORS, eventSummary, transformElements } from './graph'
+import { HIDDEN_KINDS, HYPOTHESIS_COLORS, HYPOTHESIS_DESCRIPTIONS, KIND_COLORS, eventSummary, transformElements } from './graph'
 import { useGraph } from './useGraph'
 
 function EventAbout({ node, byId, links }) {
@@ -58,20 +58,13 @@ function PropsTable({ props }) {
 }
 
 export default function App() {
-  const [showMarkets, setShowMarkets] = useState(false)
-  const [showSubjects, setShowSubjects] = useState(false)
   const [sel, setSel] = useState(null)
   const controlsRef = useRef(null)
   const { elements, revision, counts, loading, error, stale } = useGraph()
 
-  const view = useMemo(
-    () => transformElements(elements, 200, { showMarkets, showSubjects }),
-    [elements, showMarkets, showSubjects],
-  )
+  const view = useMemo(() => transformElements(elements, 200), [elements])
 
   const hiddenBits = []
-  if (!showMarkets && view.marketsHidden > 0) hiddenBits.push(`${view.marketsHidden} markets`)
-  if (!showSubjects && view.subjectsHidden > 0) hiddenBits.push(`${view.subjectsHidden} subjects`)
   if (view.transitiveHidden > 0) hiddenBits.push(`${view.transitiveHidden} transitive ${view.transitiveHidden === 1 ? 'hypothesis' : 'hypotheses'}`)
   const hiddenText = hiddenBits.length ? ` — ${hiddenBits.join(', ')} hidden` : ''
   const byId = useMemo(() => new Map(view.nodes.map((n) => [n.id, n])), [view.nodes])
@@ -158,14 +151,6 @@ export default function App() {
               ))}
             </select>
           </label>
-          <label title="Show the grey Market odds nodes (hidden by default so the news links dominate).">
-            <input type="checkbox" checked={showMarkets} onChange={(e) => setShowMarkets(e.target.checked)} />{' '}
-            markets
-          </label>
-          <label title="Show the amber Subject nodes (internal matching logic, hidden by default).">
-            <input type="checkbox" checked={showSubjects} onChange={(e) => setShowSubjects(e.target.checked)} />{' '}
-            subjects
-          </label>
         </div>
       </div>
       <div id="wrap">
@@ -221,7 +206,7 @@ export default function App() {
           </ul>
           <div className="meta">Nodes</div>
           <ul className="legend">
-            {Object.keys(KIND_COLORS).map((k) => (
+            {Object.keys(KIND_COLORS).filter((k) => !HIDDEN_KINDS.includes(k)).map((k) => (
               <li key={k}>
                 <span className="swatch" style={{ background: KIND_COLORS[k] }} />
                 {k}
