@@ -317,6 +317,40 @@ describe('hypothesis as edge', () => {
   })
 })
 
+describe('transitive meta omission', () => {
+  const els = [
+    NM('kalshi:A', 'Event', 'A'),
+    NM('kalshi:B', 'Event', 'B'),
+    NM('kalshi:C', 'Event', 'C'),
+    NM('hypothesis:h1', 'Hypothesis', 'A x B'),
+    NM('hypothesis:h2', 'Hypothesis', 'B x C'),
+    NM('hypothesis:m', 'Hypothesis', 'transitive co_mention: A x C via B',
+      { mode: 'transitive', type: 'co_mention', layer: 2 }),
+    NM('article:9', 'Article', 'second-hand story'),
+    E('hypothesis:h1', 'kalshi:A', 'supports'),
+    E('hypothesis:h1', 'kalshi:B', 'supports'),
+    E('hypothesis:h2', 'kalshi:B', 'supports'),
+    E('hypothesis:h2', 'kalshi:C', 'supports'),
+    E('hypothesis:m', 'hypothesis:h1', 'supports'),
+    E('hypothesis:m', 'hypothesis:h2', 'supports'),
+    E('hypothesis:m', 'article:9', 'supports'),
+  ]
+
+  it('omits the transitive meta node and its edges', () => {
+    const v = transformElements(els, 200)
+    assert.ok(!v.nodes.some((n) => n.id === 'hypothesis:m'))
+    assert.ok(!v.links.some((l) => l.source === 'hypothesis:m' || l.target === 'hypothesis:m'))
+    assert.equal(v.transitiveHidden, 1)
+  })
+
+  it('lets the cited parents collapse into plain event links', () => {
+    const v = transformElements(els, 200)
+    const rels = v.links.filter((l) => l.rel === 'hypothesizes')
+      .map((l) => [l.source, l.target].sort().join('x')).sort()
+    assert.deepEqual(rels, ['kalshi:Axkalshi:B', 'kalshi:Bxkalshi:C'])
+  })
+})
+
 describe('evidence budget', () => {
   const els = [
     NM('kalshi:A', 'Event', 'A'),

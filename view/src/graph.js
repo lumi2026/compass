@@ -66,7 +66,23 @@ export const HIDDEN_BY_DEFAULT = ['Market', 'Subject']
 
 export function transformElements(elements, cap = 200, opts = {}) {
   const { showMarkets = false, showSubjects = false } = opts
-  const raw = (elements ?? []).map((el) => el.data ?? {})
+  const all = (elements ?? []).map((el) => el.data ?? {})
+  // Layer-2 transitive metas (secondary hypotheses with no direct
+  // article evidence) are omitted from the render: as nodes they
+  // read as purple-on-purple hops far from the cited events. The
+  // data stays in the graph store; the view just skips those nodes
+  // and their edges, letting the cited parents collapse into plain
+  // Event→Event links.
+  const transitiveMeta = new Set(
+    all
+      .filter((d) => !('source' in d) && (d.kind || '') === 'Hypothesis' &&
+        (d.props?.mode === 'transitive' || d.props?.layer === 2))
+      .map((d) => d.id),
+  )
+  const raw = all.filter((d) => ('source' in d
+    ? !transitiveMeta.has(d.source) && !transitiveMeta.has(d.target)
+    : !transitiveMeta.has(d.id)))
+  const transitiveHidden = transitiveMeta.size
   const kindOf = {}
   for (const d of raw) {
     if (!('source' in d)) kindOf[d.id] = d.kind || 'Market'
@@ -266,7 +282,7 @@ export function transformElements(elements, cap = 200, opts = {}) {
     ;(renderedNbrs[l.target] ??= []).push(l.source)
   }
   for (const n of nodes) n.neighbors = [...new Set(renderedNbrs[n.id] ?? [])]
-  return { nodes, links, totalNodes, totalLinks, capped: totalNodes > nodes.length, marketsHidden, subjectsHidden, subjectLinksHidden }
+  return { nodes, links, totalNodes, totalLinks, capped: totalNodes > nodes.length, marketsHidden, subjectsHidden, subjectLinksHidden, transitiveHidden }
 }
 
 // Fibonacci-lattice point on a sphere: even, deterministic globe slots
