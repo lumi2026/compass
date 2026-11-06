@@ -12,8 +12,8 @@ lanes take injected data or call `sources/` + `tools/articles.py`.
 - `Agent`: protocol every lane satisfies (`run(task, context)`).
 - `Skeptic`: vetoes weak proposals (confidence < 0.3, empty action/entity). Only approved ones commit.
 - `Orchestrator`: protocol fan-out to lanes, gate through Skeptic.
-  Used by `scripts/cross_link.py` and tests; the live loop instead runs
-  cheaper deterministic STAGES in `scripts/news_loop.py`.
+  Used by tests; the live loop instead runs cheaper deterministic
+  STAGES in `scripts/news_loop.py`.
 - `WorkspaceTask` / `feedback_to_task`: human feedback (`explore | ask
   | challenge`) mapped to a typed task for the queue. Accepted by the
   gate, not yet wired to a live UI loop.

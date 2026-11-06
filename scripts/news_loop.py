@@ -31,12 +31,12 @@ import click
 
 sys.path.insert(0, ".")
 
-from graph import article_id, fold_subjects  # noqa: E402
-from scripts.cross_link import anchored_terms, extract_terms  # noqa: E402
+from graph import anchored_terms, article_id, fold_subjects  # noqa: E402
 from squad.auditor import audit_pair  # noqa: E402
 from sources.kalshi import EVENTS_LIMIT_MAX  # noqa: E402
 from sources.ngrams import (  # noqa: E402
     articles_from_mentions,
+    extract_terms,
     ngram_mentions,
     resolve_snapshot,
     snapshot_candidates,

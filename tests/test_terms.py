@@ -1,16 +1,15 @@
-"""Cross-link helpers: term extraction + shared-URL pairing (offline)."""
+"""Search-term helpers: extraction + shared-URL pairing (offline)."""
 
 import sys
 
 sys.path.insert(0, ".")
 
-from graph import fold_subjects  # noqa: E402
-from scripts.cross_link import (  # noqa: E402
+from graph import (  # noqa: E402
     anchored_terms,
-    extract_terms,
+    fold_subjects,
     is_generic_term,
-    shared_pairs,
 )
+from sources.ngrams import extract_terms, shared_pairs  # noqa: E402
 
 
 def test_extract_terms_prefers_bigrams():

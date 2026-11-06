@@ -10,6 +10,7 @@ import datetime
 import gzip
 import json
 import os
+import re
 import string
 import time
 import urllib.request
@@ -264,3 +265,69 @@ def mentions_with_lookback(terms: list[str], dest_dir: str = "/tmp",
         raise RuntimeError("no readable webngrams snapshot")
     return ({t: {"count": counts.get(t, 0), "urls": sorted(urls.get(t, set())),
                  "samples": samples.get(t, [])} for t in counts}, used)
+
+
+STOP = set("""will the a an of to in on for who what when where be is are was
+were by before after than more less most its it this that with from and or as
+at end over under out up how many much his her their he she they we you have
+has had do does did going get win take say says said new next first last high
+low top no not vs via per day week month year time times will be des les der
+die und""".split())
+
+
+def extract_terms(title: str, max_terms: int = 5,
+                  max_unigrams: int = 4) -> list[str]:
+    """Title -> search terms: ordered bigrams, then proper-noun unigrams.
+
+    Bigrams lead (the old first-N contract, widened): multi-word phrases
+    are what the NGrams 3.0 pre/post rules match best. Proper-noun
+    unigrams follow so the country/office-holder token survives long
+    titles whose tail used to be cut ("2030 Brazilian presidential
+    election" lost "brazilian" past the old cap): a token qualifies when
+    capitalized in the title (short ALLCAPS acronyms like GDP count),
+    significant, non-numeric, and non-generic. Single-token titles keep
+    the old longest-token fallback.
+    """
+    from graph import GENERIC_TOKENS
+
+    toks = [w for w in re.sub(r"[^a-z0-9 ]", " ", title.lower()).split()
+            if w not in STOP and len(w) > 2]
+    bigrams = [f"{a} {b}" for a, b in zip(toks, toks[1:])][:max_terms]
+    if not bigrams and toks:
+        longest = max(toks, key=len)
+        if len(longest) >= 4:
+            return [longest]
+        return []
+    proper = set()
+    for w in re.findall(r"[A-Za-z0-9]+", title):
+        low = w.lower()
+        if not w[0].isupper() or low in STOP or len(low) <= 2:
+            continue
+        if low.isdigit() or low in GENERIC_TOKENS:
+            continue
+        if w.isupper() and len(w) > 5:
+            continue  # long ALLCAPS is emphasis, not an acronym
+        proper.add(low)
+    uni, seen = [], set()
+    for tok in toks:
+        if tok in proper and tok not in seen:
+            seen.add(tok)
+            uni.append(tok)
+            if len(uni) >= max_unigrams:
+                break
+    return bigrams + uni
+
+
+def shared_pairs(topic_urls: dict[str, list[str]]) -> dict[tuple, list[str]]:
+    """URL sets per topic -> {(topic_a, topic_b): [shared urls]}."""
+    by_url: dict[str, set[str]] = {}
+    for topic, urls in topic_urls.items():
+        for u in urls:
+            by_url.setdefault(u, set()).add(topic)
+    pairs: dict[tuple, list[str]] = {}
+    for url, topics in by_url.items():
+        ts = sorted(topics)
+        for i, a in enumerate(ts):
+            for b in ts[i + 1:]:
+                pairs.setdefault((a, b), []).append(url)
+    return pairs
