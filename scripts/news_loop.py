@@ -606,7 +606,13 @@ def _slug(s: str) -> str:
 
 def meta_hypotheses(live: list[dict], url_kept: dict,
                     max_metas: int = 3) -> list[dict]:
-    """Transitive layer-2 proposals: two layer-1 links sharing exactly
+    """Deprecated: transitive layer-2 proposals are no longer persisted.
+
+    Retained as a pure helper for callers/tests that still want to
+    inspect the old chaining logic. The news loop no longer calls this;
+    shared-context structure is materialized from primitive links.
+
+    Transitive layer-2 proposals: two layer-1 links sharing exactly
     one event (A x B, B x C) nominate A x C, citing BOTH links as
     evidence via hyp -> hyp supports edges. Skips outer pairs already
     directly linked. Deterministic and extractive (no LLM spend):
@@ -1100,18 +1106,18 @@ def stage_propose(ctx: dict) -> dict:
                 detail=json.dumps({"src": hid, "dst": article_id(u),
                                    "rel": "supports"}),
                 confidence=0.6))
-    meta_props = meta_hypotheses(live, url_kept)
-    all_props.extend(meta_props)
+    # Layer-2 transitive hypotheses are no longer persisted: the view
+    # already reconstructs shared-context structure from primitive links.
     return {"all_props": all_props, "pairs": live,
             "vetoed": vetoed, "llm_calls": llm_calls,
-            "metas": sum(1 for pr in meta_props
-                         if pr.action == "add-node")}
+            "metas": 0}
 
 
 def stage_commit(ctx: dict) -> dict:
     """ctx: all_props, pairs, topics, graph_url, mode, cycle,
-    batch, llm_calls, vetoed. Posts, derives, fans out followups, and
-    returns the cycle summary."""
+    batch, llm_calls, vetoed. Posts, fans out followups, and returns
+    the cycle summary. Derived links are read-time, so nothing extra
+    is posted for them."""
     all_props, pairs = ctx["all_props"], ctx["pairs"]
     topics, mode = ctx["topics"], ctx["mode"]
     cycle = ctx.get("cycle", 0)
@@ -1122,12 +1128,7 @@ def stage_commit(ctx: dict) -> dict:
         {"proposals": [{"agent": p.agent, "action": p.action,
                         "entity_id": p.entity_id, "detail": p.detail,
                         "confidence": p.confidence} for p in approved]})
-    posted_derive = _post_json(
-        graph_url.rstrip("/") + "/proposals",
-        {"proposals": [{"agent": "connector", "action": "derive-links",
-                        "entity_id": "", "detail": "",
-                        "confidence": 0.9}]})
-    fresh = posted_derive.get("derived_fresh", 0)
+    fresh = 0  # derived edges are materialized on read, never written
     hid_to_pair = {
         f"hypothesis:loop-{_slug(p['a'])}-{_slug(p['b'])}": p for p in pairs}
     followups: list[dict] = []

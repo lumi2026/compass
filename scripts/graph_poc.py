@@ -18,9 +18,9 @@ sys.path.insert(0, ".")
 
 from graph import (  # noqa: E402
     GraphStore, GraphUpdateAPI, article_id, followup_tasks,
-    refresh_derived_links, proposals_to_commit,
+    materialize_derived_links, materialize_derived_nodes,
+    proposals_to_commit, to_cytoscape,
 )
-from graph import to_cytoscape  # noqa: E402
 
 # Fixture articles: A1 ties Elon/Mars to SpaceX; A2 ties the same subject
 # to the NATO race; A3 is pope-only (control: must stay unlinked).
@@ -55,54 +55,54 @@ def main(out) -> None:
     seed = json.load(open("data_local/seed.json"))["tickers"]
     api = GraphUpdateAPI(GraphStore())
 
-    # Scout lane: events + markets.
+    # Scout lane: events with folded markets in props.
     events: dict[str, str] = {}
     for mt, m in seed.items():
         ev = event_of(mt)
         events.setdefault(ev, m["last"]["title"])
-    for ev, title in events.items():
-        print(proposals_to_commit(api, "scout", "add-node", f"kalshi:{ev}",
-                                  json.dumps({"kind": "Event", "title": title})).reason)
+    markets: dict[str, dict] = {}
     for mt, m in seed.items():
+        markets.setdefault(event_of(mt), {})[mt] = {
+            "title": f"{m['last']['title']} [{mt}]",
+            "event_ticker": event_of(mt),
+        }
+    for ev, title in events.items():
         print(proposals_to_commit(
-            api, "scout", "add-node", f"market:{mt}",
-            json.dumps({"kind": "Market",
-                        "title": f"{m['last']['title']} [{mt}]"})).reason)
-        print(proposals_to_commit(
-            api, "investigator", "add-edge", "",
-            json.dumps({"src": f"market:{mt}", "dst": f"kalshi:{event_of(mt)}",
-                        "rel": "relates-to"})).reason)
+            api, "scout", "add-node", f"kalshi:{ev}",
+            json.dumps({"kind": "Event", "title": title,
+                        "props": {"markets": markets.get(ev, {})}})).reason)
 
-    # News-agent lane: articles, subjects, mentions + about edges.
+    # News-agent lane: articles carry folded subjects + about edges.
     for a in ARTICLES:
         aid = article_id(a["url"])
         proposals_to_commit(api, "news-agent", "add-node", aid,
-                            json.dumps({"kind": "Article", "title": a["title"]}))
-        for s in a["subjects"]:
-            proposals_to_commit(api, "news-agent", "add-node", f"subject:{s}",
-                                json.dumps({"kind": "Subject", "title": s}))
-            proposals_to_commit(api, "news-agent", "add-edge", "",
-                                json.dumps({"src": aid, "dst": f"subject:{s}",
-                                            "rel": "mentions"}))
+                            json.dumps({"kind": "Article", "title": a["title"],
+                                        "props": {"subjects": a["subjects"]}}))
         for ev in a["about"]:
             proposals_to_commit(api, "news-agent", "add-edge", "",
                                 json.dumps({"src": aid, "dst": f"kalshi:{ev}",
                                             "rel": "about"}))
 
-    # Connector lane: refresh derived links (idempotent re-runs OK).
-    fresh = refresh_derived_links(api)
-    print(f"[connector] fresh links: {fresh}")
-    assert refresh_derived_links(api) == 0, "recompute must be idempotent"
+    # Connector lane: derived links are materialized on read only.
+    derived = materialize_derived_links(api.store)
+    print(f"[connector] read-time derived links: {len(derived)}")
 
     # Connector dispatch: the NATO race is "new" — who else should we dig?
     followups = followup_tasks(api.store, "kalshi:KXNEXTNATOSECGEN-99")
     print("followups:", followups)
 
-    pairs = sorted({(e.src, e.dst) for e in api.store.edges
+    pairs = sorted({(e.src, e.dst) for e in derived
                     if e.rel == "shares-subject-with"})
-    print(f"nodes={len(api.store.nodes)} edges={len(api.store.edges)}")
+    print(f"nodes={len(api.store.nodes)} "
+          f"persisted edges={len(api.store.edges)}")
     print("event links:", pairs)
-    payload = to_cytoscape(list(api.store.nodes.values()), api.store.edges)
+    seen = {(e.src, e.dst, e.rel) for e in api.store.edges}
+    merged = list(api.store.edges) + [
+        e for e in derived if (e.src, e.dst, e.rel) not in seen]
+    nodes = list(api.store.nodes.values())
+    nodes += [n for n in materialize_derived_nodes(api.store)
+              if n.id not in api.store.nodes]
+    payload = to_cytoscape(nodes, merged)
     print(f"workspace elements={len(payload['elements'])}")
     api.save(out)
     print(f"[poc] wrote {out}")

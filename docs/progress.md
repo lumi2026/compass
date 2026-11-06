@@ -10,8 +10,10 @@
   (`react-force-graph-3d`, events-first, hypothesis edges, markets/subjects
   hidden by default) polling `GET /graph`.
 - Graph: last live cycle cited rev 144 → 148 (GDP pair kept, 3 cycles
-  empty); earlier wide-loop base rev 110–115, 500+ nodes. Odds live on
-  Market nodes; history via `graph_log.jsonl` replay.
+  empty); earlier wide-loop base rev 110–115, 500+ nodes. Subject/Market
+  nodes are folded into Article/Event props; read-time materialization
+  regenerates them for the view. Odds live on `Event.props.markets`;
+  history via `graph_log.jsonl` replay.
 - Quality gates: full suite 197 green, offline POC OK; `npm test` green,
   `npm run build` clean (last verified Nov 3–4 entries).
 - Wiring (step 6) marked done per operator: graph → kalshi → loops → view

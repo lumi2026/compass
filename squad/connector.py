@@ -1,16 +1,15 @@
-"""Connector: derive event-event links + dispatch follow-up digs.
+"""Connector: materialize event-event links + dispatch follow-up digs.
 
-Lane: ROLE_ACTIONS["connector"] == ("derive-links",). Derived edges
-are never hand-written via proposals_to_commit — run() emits a
-derive-links intent, and apply() records them via
-graph.refresh_derived_links (idempotent). followups() wraps
+Lane: ROLE_ACTIONS["connector"] == ("derive-links",). Derived edges are
+read-time only now — run() emits a derive-links intent, and apply()
+returns the materialized set without writing it. followups() wraps
 graph.followup_tasks so the topic -> news -> topics loop closes.
 """
 
 from dataclasses import dataclass
 import json
 
-from graph import followup_tasks, refresh_derived_links
+from graph import followup_tasks, materialize_derived_links
 from squad import Proposal
 
 
@@ -45,8 +44,8 @@ class Connector:
         )]
 
     def apply(self, api) -> int:
-        """Record all derived links. Returns newly recorded count."""
-        return refresh_derived_links(api)
+        """Materialize derived links. Nothing is persisted; returns count."""
+        return len(materialize_derived_links(api.store))
 
     def followups(self, store, event_id: str) -> list[dict]:
         """Investigate tasks for events sharing subjects with event_id."""

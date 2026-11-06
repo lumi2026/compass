@@ -2,7 +2,10 @@
 
 import json
 
-from graph import GraphStore, GraphUpdateAPI, Node, Edge, proposals_to_commit
+from graph import (
+    Edge, GraphStore, GraphUpdateAPI, Node, materialize_derived_links,
+    proposals_to_commit,
+)
 from squad import Orchestrator, Skeptic
 from squad.connector import Connector
 from squad.investigator import Investigator
@@ -31,8 +34,10 @@ def test_scout_offline_context_markets():
     sc = Scout()
     markets = [FakeMarket("E1-A", "A wins"), FakeMarket("E1-B", "B wins")]
     props = sc.run({"event_ticker": "E1"}, {"markets": markets})
-    assert props[0].entity_id == "kalshi:E1"
-    assert {p.entity_id for p in props} == {"kalshi:E1", "market:E1-A", "market:E1-B"}
+    (event,) = props
+    assert event.entity_id == "kalshi:E1"
+    detail = json.loads(event.detail)
+    assert set(detail["props"]["markets"]) == {"E1-A", "E1-B"}
     api = GraphUpdateAPI(GraphStore())
     _commit_all(api, props)
     assert "kalshi:E1" in api.store.nodes
@@ -41,18 +46,18 @@ def test_scout_offline_context_markets():
 def test_scout_market_nodes_carry_odds():
     sc = Scout()
     markets = [FakeMarket("E1-A", "A wins", last_price=62, volume_24h=900)]
-    (market_prop,) = [p for p in sc.run({"event_ticker": "E1"},
-                                        {"markets": markets})
-                      if p.entity_id == "market:E1-A"]
-    detail = json.loads(market_prop.detail)
-    assert detail["props"]["price_cents"] == 62
-    assert detail["props"]["volume_24h"] == 900
-    assert detail["props"]["odds_at"]
+    (event,) = sc.run({"event_ticker": "E1"}, {"markets": markets})
+    detail = json.loads(event.detail)
+    market = detail["props"]["markets"]["E1-A"]
+    assert market["price_cents"] == 62
+    assert market["volume_24h"] == 900
+    assert market["odds_at"]
     api = GraphUpdateAPI(GraphStore())
     assert proposals_to_commit(
-        api, market_prop.agent, market_prop.action,
-        market_prop.entity_id, market_prop.detail).committed
-    assert api.store.nodes["market:E1-A"].props["price_cents"] == 62
+        api, event.agent, event.action,
+        event.entity_id, event.detail).committed
+    assert api.store.nodes["kalshi:E1"].props["markets"]["E1-A"][
+        "price_cents"] == 62
 
 
 def test_scout_lane_only_add_node():
@@ -72,15 +77,14 @@ def test_investigator_hypothesis_offline():
     assert props[0].entity_id.startswith("hypothesis:e1-")
     assert any(p.action == "add-edge" for p in props[1:])
     api = GraphUpdateAPI(GraphStore())
-    api.commit(Node(id="kalshi:E1", kind="Event", title="E1"))
+    api.commit(Node(id="kalshi:E1", kind="Event", title="E1",
+                    props={"markets": {"E1-A": {"title": "Q?"}}}))
     _commit_all(api, [p for p in props if p.action == "add-node"])
     for p in props:
         if p.action == "add-edge":
             d = json.loads(p.detail)
             if d["dst"].startswith("article:"):
                 api.commit(Node(id=d["dst"], kind="Article", title="a"))
-            if d["dst"].startswith("market:"):
-                api.commit(Node(id=d["dst"], kind="Market", title="m"))
     for p in props:
         if p.action == "add-edge":
             r = proposals_to_commit(api, p.agent, p.action, p.entity_id, p.detail)
@@ -111,11 +115,10 @@ def test_connector_derive_and_followups():
     api = GraphUpdateAPI(GraphStore())
     for n in [Node(id="kalshi:E1", kind="Event", title="E1"),
               Node(id="kalshi:E2", kind="Event", title="E2"),
-              Node(id="article:a", kind="Article", title="A"),
-              Node(id="subject:s", kind="Subject", title="spacex")]:
+              Node(id="article:a", kind="Article", title="A",
+                   props={"subjects": ["spacex"]})]:
         api.commit(n)
-    for e in [Edge(src="article:a", dst="subject:s", rel="mentions", at="t"),
-              Edge(src="article:a", dst="kalshi:E1", rel="about", at="t"),
+    for e in [Edge(src="article:a", dst="kalshi:E1", rel="about", at="t"),
               Edge(src="article:a", dst="kalshi:E2", rel="about", at="t")]:
         api.record(e)
     con = Connector()
@@ -126,8 +129,13 @@ def test_connector_derive_and_followups():
     r = proposals_to_commit(api, intent.agent, intent.action,
                             intent.entity_id, intent.detail)
     assert r.committed and r.reason.startswith("derived")
-    assert proposals_to_commit(api, intent.agent, intent.action,
-                               intent.entity_id, intent.detail).reason == "derived 0"
+    assert "read-time" in r.reason
+    # Derived mesh is computed on read, not persisted.
+    assert not any(e.rel == "shares-subject-with" for e in api.store.edges)
+    mesh = [e for e in materialize_derived_links(api.store)
+            if e.rel == "shares-subject-with"]
+    assert [(e.src, e.dst) for e in mesh] == [("kalshi:E1", "kalshi:E2")]
+    assert con.apply(api) == len(materialize_derived_links(api.store))
     assert con.followups(api.store, "kalshi:E2") == [
         {"event_ticker": "E1", "terms": ["spacex"]}]
 

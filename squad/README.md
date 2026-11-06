@@ -20,26 +20,27 @@ lanes take injected data or call `sources/` + `tools/articles.py`.
 
 ## Lanes (run in this order)
 
-- `scout.py`: discovers Event + Market nodes for one Kalshi event.
-  Add-node only. Market nodes carry live odds in props; each refresh is
-  a logged batch, so the commit log holds the odds history. Offline via
-  `context["markets"]` / `markets_fn`.
+- `scout.py`: discovers one Event node with folded Market props for a
+  Kalshi event. Add-node only. `Event.props.markets[ticker]` carries
+  live odds; each refresh is a logged batch, so the commit log holds
+  the odds history. Offline via `context["markets"]` / `markets_fn`.
 - `news_agent.py`: explains a topic with news. N-gram term search over
   snapshots (`run`), history striding (`dig`), fetch + relevance
-  filter + summary, then lane-ready Article/Subject/edge proposals
-  (`graph_proposals`). `run()` itself stays a log-only digest — only
-  `graph_proposals()` output commits.
+  filter + summary, then lane-ready Article props + about proposals
+  (`graph_proposals`); subjects fold into `Article.props.subjects`.
+  `run()` itself stays a log-only digest — only `graph_proposals()`
+  output commits.
 - `investigator.py`: turns kept articles + market context into one
   Hypothesis node with `supports` edges to its evidence (and the lead
   market). Every node carries `props.type` in the closed taxonomy
-  (`co_mention`, `co_location`, `shared_context`, `co_outcome`);
-  layer-2 transitive metas inherit the unanimous type, else
-  `shared_context`. Offline-first; optional LLM refinement via
-  `context["model"]`, extractive title otherwise.
-- `connector.py`: derives event-event links (idempotent, never
-  hand-written) and dispatches follow-up digs so the
+  (`co_mention`, `co_location`, `shared_context`, `co_outcome`).
+  Layer-2 transitive metas are no longer written. Offline-first;
+  optional LLM refinement via `context["model"]`, extractive title
+  otherwise.
+- `connector.py`: materializes event-event links (read-time, never
+  persisted or hand-written) and dispatches follow-up digs so the
   topic → news → topics loop closes. `run()` emits a derive-links
-  intent; `apply()` records via `graph.refresh_derived_links`.
+  no-op intent; `apply()` counts the materialized set.
 - `auditor.py`: third reviewer. Vetoes spurious pairs pre-commit
   (explicit NO only, fail-open), judging the claimed hypothesis type
   (`co_location` needs a shared place, `co_outcome` linked outcomes,

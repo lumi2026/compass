@@ -16,14 +16,72 @@ so replay is safe. SQLite is the later migration, not step 1.
 
 import json
 import os
+from dataclasses import replace
 from datetime import datetime, timezone
 
-from .derive import sync_derived_links
+from .derive import prune_derived_links
 from .gate import GraphUpdateAPI, proposals_to_commit
+from .store import subject_id
 
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _retire_node(store, node_id: str) -> tuple[bool, int]:
+    """Retire a persisted or folded node; returns (removed, dropped_edges)."""
+    removed, dropped = store.retire_node(node_id)
+    if not removed:
+        before = len(store.edges)
+        store.edges = [e for e in store.edges
+                       if e.src != node_id and e.dst != node_id]
+        dropped += before - len(store.edges)
+    stripped = _retire_folded_props(store, node_id)
+    return removed or stripped, dropped
+
+
+def _retire_folded_props(store, node_id: str) -> bool:
+    """Drop folded props for a retired market/subject. Returns changed.
+
+    Folded nodes have no first-class record to remove, so retiring one
+    must also clean the owning props; otherwise the read path would
+    immediately resurrect it.
+    """
+    changed = False
+    if node_id.startswith("market:"):
+        ticker = node_id.removeprefix("market:")
+        for eid, n in list(store.nodes.items()):
+            if n.kind != "Event":
+                continue
+            markets = (n.props or {}).get("markets")
+            if not isinstance(markets, dict) or ticker not in markets:
+                continue
+            new_markets = dict(markets)
+            del new_markets[ticker]
+            new_props = dict(n.props)
+            if new_markets:
+                new_props["markets"] = new_markets
+            else:
+                new_props.pop("markets", None)
+            store.nodes[eid] = replace(n, props=new_props)
+            changed = True
+    elif node_id.startswith("subject:"):
+        for aid, n in list(store.nodes.items()):
+            if n.kind != "Article":
+                continue
+            subjects = (n.props or {}).get("subjects")
+            if not isinstance(subjects, list):
+                continue
+            kept = [term for term in subjects
+                    if not isinstance(term, str)
+                    or (term != node_id and subject_id(term) != node_id)]
+            if len(kept) == len(subjects):
+                continue
+            new_props = dict(n.props)
+            new_props["subjects"] = kept
+            store.nodes[aid] = replace(n, props=new_props)
+            changed = True
+    return changed
 
 
 def append_jsonl(path: str, record: dict) -> None:
@@ -78,10 +136,9 @@ def commit_batch(api: GraphUpdateAPI, proposals: list[dict],
                          "reason": result.reason,
                          "agent": agent, "action": action,
                          "entity_id": entity_id})
-    try:
-        fresh, pruned = sync_derived_links(api)
-    except Exception:
-        fresh, pruned = 0, 0
+    # Derived edges are materialized on read, so a batch writes none.
+    # Keep zeroed counters in the log for schema compatibility.
+    fresh = pruned = 0
     api.revision += 1
     record = {"revision": api.revision, "recorded_at": _utcnow(),
               "proposals": proposals, "verdicts": verdicts,
@@ -109,13 +166,16 @@ def commit_retire(api: GraphUpdateAPI, node_ids: list[str],
     """
     retired = []
     for nid in node_ids:
-        removed, dropped = api.store.retire_node(nid)
+        removed, dropped = _retire_node(api.store, nid)
         retired.append({"entity_id": nid, "removed": removed,
                         "dropped_edges": dropped})
+    # Still clean legacy derived edges made stale by the removal; no new
+    # derived edges are written.
     try:
-        fresh, pruned = sync_derived_links(api)
+        pruned = prune_derived_links(api.store)
     except Exception:
-        fresh, pruned = 0, 0
+        pruned = 0
+    fresh = 0
     api.revision += 1
     record = {"revision": api.revision, "recorded_at": _utcnow(),
               "retired": [r["entity_id"] for r in retired],
@@ -131,49 +191,55 @@ def commit_retire(api: GraphUpdateAPI, node_ids: list[str],
 
 def replay_log(api: GraphUpdateAPI, log_path: str,
                after_revision: int = 0) -> int:
-    """Re-apply committed proposals from the log. Returns max revision."""
+    """Re-apply committed proposals from the log. Returns max revision.
+
+    Legacy logs contain folded Subject/Market nodes and materialized
+    edges. Replay enables the gate's ``allow_folded_writes`` escape
+    hatch for the duration; live writes remain blocked.
+    """
     top = after_revision
     try:
         f = open(log_path)
     except OSError:
         return top
-    with f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rec = json.loads(line)
-            except ValueError:
-                continue
-            try:
-                rev = int(rec.get("revision", 0))
-            except (TypeError, ValueError):
-                continue
-            if rev <= after_revision:
-                top = max(top, rev)
-                continue
-            for p, v in zip(rec.get("proposals", []),
-                            rec.get("verdicts", [])):
-                if isinstance(v, dict) and v.get("committed"):
+    allow = api.allow_folded_writes
+    api.allow_folded_writes = True
+    try:
+        with f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except ValueError:
+                    continue
+                try:
+                    rev = int(rec.get("revision", 0))
+                except (TypeError, ValueError):
+                    continue
+                if rev <= after_revision:
+                    top = max(top, rev)
+                    continue
+                for p, v in zip(rec.get("proposals", []),
+                                rec.get("verdicts", [])):
+                    if isinstance(v, dict) and v.get("committed"):
+                        try:
+                            proposals_to_commit(
+                                api, str(p.get("agent", "")),
+                                str(p.get("action", "")),
+                                str(p.get("entity_id", "")),
+                                p.get("detail", ""))
+                        except Exception:
+                            continue
+                for nid in rec.get("retired", []):
                     try:
-                        proposals_to_commit(
-                            api, str(p.get("agent", "")),
-                            str(p.get("action", "")),
-                            str(p.get("entity_id", "")),
-                            p.get("detail", ""))
+                        _retire_node(api.store, str(nid))
                     except Exception:
                         continue
-            for nid in rec.get("retired", []):
-                try:
-                    api.store.retire_node(str(nid))
-                except Exception:
-                    continue
-            try:
-                sync_derived_links(api)
-            except Exception:
-                pass
-            top = max(top, rev)
+                top = max(top, rev)
+    finally:
+        api.allow_folded_writes = allow
     api.revision = max(api.revision, top)
     return top
 

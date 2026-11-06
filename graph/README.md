@@ -10,9 +10,9 @@ Same thing proposed twice maps to the same node.
 | Kind | Id | Derived from |
 |---|---|---|
 | Event | `kalshi:{event_ticker}` | Kalshi event ticker |
-| Market | `market:{ticker}` | Kalshi market ticker |
+| Market | `market:{ticker}` | Folded in `Event.props.markets` |
 | Article | `article:{sha1-12}` | Canonical article URL |
-| Subject | `subject:{slug}` | Watch term or entity |
+| Subject | `subject:{slug}` | Folded in `Article.props.subjects` |
 | Hypothesis | `hypothesis:{slug}-{n}` | Owning event (investigator) |
 | Hypothesis | `hypothesis:loop-{a}-{b}` | Ordered pair (news loop) |
 | Happening | `happening:{slug}` | Dated key event |
@@ -24,18 +24,25 @@ the same pair found via any mode or cycle yields one id.
 Hypothesis nodes carry `props.type` in the closed taxonomy
 (`co_mention`, `co_location`, `shared_context`, `co_outcome`) plus the
 trigger `mode`; detectors map their mode onto the type. Layer-2
-transitive metas (`hypothesis:loop-meta-*`, max 3 per cycle) inherit
-the unanimous type of their two supporting links, else
-`shared_context`, and record the pair in `props.via`.
+transitive metas are no longer written: the read path reconstructs
+shared-context structure from primitive links instead.
 
 ## Edge vocabulary
 
-`mentions` (Article → Subject), `about` (Article → Market/Event),
-`supports` (Hypothesis → Market/Article), `challenges`
-(Audit → Hypothesis), `relates-to` (fallback). `shares-subject-with`
-(Event ↔ Event) and `has-market` (Event → Market) are derived-only:
-only the Connector role may write them, via `derive-links`, and they
-are recomputed from Article/Subject evidence on demand.
+Only primitive, directly-evidenced edges are persisted:
+
+`about` (Article → Event), `supports` (Hypothesis → Market/Article),
+`challenges` (Audit → Hypothesis), `relates-to` (fallback).
+
+Subject and Market nodes are folded into props: an Article carries its
+terms in `props.subjects`, and an Event carries its odds in
+`props.markets[ticker]`. `mentions` (Article → Subject),
+`shares-subject-with` (Event ↔ Event), and `has-market`
+(Event → Market) are therefore fully recoverable and are materialized
+at read time (`materialize_derived_nodes` / `materialize_derived_links`)
+for the API/view. Writing any folded/derived node or rel through the
+gate is refused; legacy snapshots keep theirs, and replay temporarily
+allows them to reconstruct old logs.
 
 ## Write path: lanes, gate, commit
 
@@ -45,7 +52,8 @@ enforces role lanes:
 
 - `scout`: `add-node`
 - `news-agent`, `investigator`, `auditor`: `add-node`, `add-edge`
-- `connector`: `derive-links` only (never hand-writes edges)
+- `connector`: `derive-links` only (a no-op; the read path derives
+  links, so there is nothing to write)
 
 Each commit validates kind/rel/endpoints, applies the Skeptic
 confidence gate (min 0.3), then merges: same id plus identical
@@ -59,7 +67,7 @@ Follow-up digs fan out only on verdict `created`; re-created
 duplicates fan out nothing. Vetoed pairs whose hypothesis already
 committed get an `Audit` node plus a `challenges` edge, and the
 audit loop retires vetoed nodes via `POST /retire` (which also
-prunes derived mesh left stale by the removal).
+prunes legacy derived mesh left stale by the removal).
 
 ## Rerun behavior
 
@@ -81,9 +89,9 @@ prunes derived mesh left stale by the removal).
 Nodes carry bitemporal stamps: `valid_at` (world time: article
 seendate, happening date, `""` when unknown) and `recorded_at`
 (when an agent laid the trail); `created_at` is the legacy alias.
-Markets hold live odds in `props`; history is not versioned on the
-node. Every committed batch appends to `graph_log.jsonl`, which is
-the odds series the `?at=` replay reads.
+Markets hold live odds in `Event.props.markets[ticker]`; history is
+not versioned on the node. Every committed batch appends to
+`graph_log.jsonl`, which is the odds series the `?at=` replay reads.
 
 `commit_batch` gates a batch, appends the log, and checkpoints an
 atomic `graph_snapshot.json`. Boot loads the snapshot and replays

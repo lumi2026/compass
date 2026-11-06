@@ -266,12 +266,17 @@ class Service:
             return {"published": False, "reason": f"graph unreachable: {e}"}
 
     def _proposals_for(self, ticker: str, last: dict, ts_ms: int) -> list[dict]:
-        """Scout discovery nodes (idempotent, odds refreshed) + a move Happening."""
+        """Scout discovery node (idempotent, odds refreshed) + a move Happening.
+
+        Markets are folded into Event.props.markets; the read path
+        materializes Market nodes, so no separate add-node is needed.
+        """
         event = self.ticker_event.get(ticker) or event_of(ticker)
         title = last.get("title") or ticker
         event_title = self.event_titles.get(event, event)
         odds_at = _world_ts(ts_ms)
-        market_props: dict = {"odds_at": odds_at, "event_ticker": event}
+        market_props: dict = {"title": f"{title} [{ticker}]",
+                              "event_ticker": event, "odds_at": odds_at}
         now = price_cents(last)
         if now is not None:
             market_props["price_cents"] = now
@@ -282,21 +287,14 @@ class Service:
             v = as_cents(last.get(key))
             if v is not None:
                 market_props[prop] = v
-        event_detail: dict = {"kind": "Event", "title": event_title}
-        meta = self.event_meta.get(event)
-        if meta:
-            event_detail["props"] = dict(meta)
+        event_props: dict = dict(self.event_meta.get(event) or {})
+        event_props["markets"] = {ticker: market_props}
         props = [
             {"agent": "scout", "action": "add-node",
              "entity_id": f"kalshi:{event}",
-             "detail": json.dumps(event_detail),
+             "detail": json.dumps({"kind": "Event", "title": event_title,
+                                   "props": event_props}),
              "confidence": 0.85},
-            {"agent": "scout", "action": "add-node",
-             "entity_id": f"market:{ticker}",
-             "detail": json.dumps({"kind": "Market",
-                                   "title": f"{title} [{ticker}]",
-                                   "props": market_props}),
-             "confidence": 0.8},
         ]
         old = self._last_pub_price.get(ticker)
         if now is not None:
@@ -320,7 +318,7 @@ class Service:
                     {"agent": "news-agent", "action": "add-edge",
                      "entity_id": hid,
                      "detail": json.dumps(
-                         {"src": f"market:{ticker}", "dst": hid,
+                         {"src": f"kalshi:{event}", "dst": hid,
                           "rel": "relates-to",
                           "valid_at": odds_at}),
                      "confidence": 0.8})

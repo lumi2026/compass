@@ -1,14 +1,19 @@
 """Graph gate: Validate | Commit | Record so agents cannot corrupt the graph.
 
-Which proposal actions each agent role may write (role lanes). Derived
-edges are never proposed directly: only the Connector derives them
-(see graph.derive).
+Which proposal actions each agent role may write (role lanes). Only
+primitive edges and first-class nodes are persisted. Folded node kinds
+(Subject, Market) live in props, and folded/derived edges are
+materialized on read (see graph.derive), so writing them here is
+refused.
 """
 
 import json
 from dataclasses import dataclass, replace
 
-from .store import EDGE_RELS, NODE_KINDS, Edge, GraphStore, Node
+from .store import (
+    DERIVED_RELS, EDGE_RELS, FOLDED_NODE_KINDS, MATERIALIZED_RELS,
+    NODE_KINDS, Edge, GraphStore, Node, subject_id,
+)
 
 
 @dataclass(frozen=True)
@@ -17,19 +22,101 @@ class CommitResult:
     reason: str = ""
 
 
+def _as_list(value) -> list:
+    if isinstance(value, list):
+        return value
+    if value is None:
+        return []
+    return [value]
+
+
+def _merge_props(existing: dict, incoming: dict) -> dict:
+    """Merge node props, folding list/dict collections instead of replacing.
+
+    `subjects` is a set-like list (Article) and `markets` is a nested
+    ticker map (Event), so sibling updates from different producers must
+    compose rather than clobber each other.
+    """
+    merged = {**(existing or {}), **(incoming or {})}
+    if "subjects" in merged:
+        subjects: list = []
+        for term in _as_list((existing or {}).get("subjects")) + _as_list(
+                (incoming or {}).get("subjects")):
+            if term not in subjects:
+                subjects.append(term)
+        merged["subjects"] = subjects
+    if "markets" in merged:
+        markets: dict = {}
+        for source in ((existing or {}).get("markets"),
+                       (incoming or {}).get("markets")):
+            if not isinstance(source, dict):
+                continue
+            for ticker, props in source.items():
+                if isinstance(props, dict) and isinstance(markets.get(ticker),
+                                                          dict):
+                    markets[ticker] = {**markets[ticker], **props}
+                elif isinstance(props, dict):
+                    markets[ticker] = dict(props)
+                else:
+                    markets[ticker] = props
+        merged["markets"] = markets
+    return merged
+
+
+def _has_node(store: GraphStore, node_id: str) -> bool:
+    """Endpoint exists, either persisted or reconstructable from props.
+
+    Primitive edges may target a folded Market/Subject node; the read
+    path materializes it, so the edge is valid even without a stored
+    node record.
+    """
+    if node_id in store.nodes:
+        return True
+    if node_id.startswith("market:"):
+        ticker = node_id.removeprefix("market:")
+        for n in store.nodes.values():
+            if n.kind != "Event":
+                continue
+            markets = (n.props or {}).get("markets")
+            if isinstance(markets, dict) and ticker in markets:
+                return True
+        return False
+    if node_id.startswith("subject:"):
+        for n in store.nodes.values():
+            if n.kind != "Article":
+                continue
+            terms = (n.props or {}).get("subjects")
+            if isinstance(terms, str):
+                terms = [terms]
+            for term in terms or []:
+                if isinstance(term, str) and (
+                        term == node_id or subject_id(term) == node_id):
+                    return True
+    return False
+
+
 class GraphUpdateAPI:
     """Gate contract: validate, commit idempotently, record history."""
 
     def __init__(self, store: GraphStore | None = None,
-                 revision: int = 0) -> None:
+                 revision: int = 0,
+                 allow_folded_writes: bool = False) -> None:
         self.store = store or GraphStore()
         self.revision = revision
+        # Replay escape hatch: legacy logs contain Subject/Market nodes
+        # and folded/derived edges. Live writers stay blocked.
+        self.allow_folded_writes = allow_folded_writes
 
     def validate(self, node: Node) -> CommitResult:
         if not node.id or not node.kind or not node.title:
             return CommitResult(False, "invalid node: id/kind/title required")
         if node.kind not in NODE_KINDS:
             return CommitResult(False, f"invalid kind: {node.kind!r}")
+        if node.kind in FOLDED_NODE_KINDS and not self.allow_folded_writes:
+            return CommitResult(
+                False,
+                f"folded kind {node.kind!r} is stored in props; "
+                "write the owning node's props instead")
         return CommitResult(True)
 
     def commit(self, node: Node) -> CommitResult:
@@ -46,7 +133,7 @@ class GraphUpdateAPI:
         if existing is None:
             self.store.add_node(node)
             return CommitResult(True, "created")
-        merged_props = ({**existing.props, **node.props} if node.props
+        merged_props = (_merge_props(existing.props, node.props) if node.props
                         else dict(existing.props))
         if node.title == existing.title and merged_props == existing.props:
             return CommitResult(True, "duplicate: kept existing")
@@ -58,15 +145,29 @@ class GraphUpdateAPI:
     def validate_edge(self, edge: Edge) -> CommitResult:
         if edge.rel not in EDGE_RELS:
             return CommitResult(False, f"invalid rel: {edge.rel!r}")
-        if edge.src not in self.store.nodes:
+        if edge.rel in MATERIALIZED_RELS and not self.allow_folded_writes:
+            if edge.rel in DERIVED_RELS:
+                return CommitResult(
+                    False,
+                    f"derived rel {edge.rel!r} is read-time only; "
+                    "persist its primitive evidence instead")
+            return CommitResult(
+                False,
+                f"folded rel {edge.rel!r} is reconstructed from props; "
+                "write the owning node's props instead")
+        if not _has_node(self.store, edge.src):
             return CommitResult(False, f"unknown src: {edge.src!r}")
-        if edge.dst not in self.store.nodes:
+        if not _has_node(self.store, edge.dst):
             return CommitResult(False, f"unknown dst: {edge.dst!r}")
         return CommitResult(True)
 
     def record(self, edge: Edge) -> CommitResult:
-        """Idempotent on (src, dst, rel): re-laying a trail keeps
-        first-seen `at` and bumps `seen_count` (trail reinforcement)."""
+        """Persist a primitive edge, idempotent on (src, dst, rel).
+
+        Re-laying a trail keeps first-seen `at` and bumps `seen_count`
+        (trail reinforcement). Derived rels are refused: they are
+        materialized on read instead.
+        """
         verdict = self.validate_edge(edge)
         if not verdict.committed:
             return verdict
@@ -136,7 +237,7 @@ class GraphUpdateAPI:
 # -- collective authorship ----------------------------------------------
 
 # Which proposal actions each agent role may write. Derived edges are
-# never proposed directly: only the Connector derives them.
+# read-time only now; the Connector action just reports their count.
 ROLE_ACTIONS = {
     "scout": ("add-node",),
     "news-agent": ("add-node", "add-edge"),
@@ -151,18 +252,17 @@ def proposals_to_commit(api: GraphUpdateAPI, agent: str, action: str,
     """Translate one gated Proposal into a graph write.
 
     `add-node`: entity_id is the node id, detail is JSON {kind, title}.
-    `add-edge`: detail is JSON {src, dst, rel}.
-    `derive-links`: connector-only, recomputes derived edges.
+    `add-edge`: detail is JSON {src, dst, rel}; primitive rels only.
+    `derive-links`: connector-only no-op; derived links are created by
+    the read path, so there is nothing to write.
     Anything outside the role lane (or malformed JSON) is refused.
     `news_summary` is never committable: only graph_proposals() commits.
     """
-    from .derive import refresh_derived_links  # lazy: derive imports gate types
-
     if action not in ROLE_ACTIONS.get(agent, ()):
         return CommitResult(False, f"role {agent!r} may not {action!r}")
     if action == "derive-links":
-        fresh = refresh_derived_links(api)
-        return CommitResult(True, f"derived {fresh}")
+        return CommitResult(
+            True, "derived 0 read-time (nothing persisted)")
     try:
         payload = json.loads(detail) if detail else {}
     except ValueError:

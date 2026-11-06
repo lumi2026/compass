@@ -23,6 +23,7 @@ import click
 sys.path.insert(0, ".")
 
 from graph.persist import boot, commit_retire  # noqa: E402
+from graph.derive import materialize_derived_nodes  # noqa: E402
 from sources.kalshi import API_BASE  # noqa: E402
 
 
@@ -66,8 +67,10 @@ def main(data_dir, kalshi_base, apply, api_check) -> None:
     snap = f"{data_dir.rstrip('/')}/graph_snapshot.json"
     log = f"{data_dir.rstrip('/')}/graph_log.jsonl"
     api = boot(snap, log)
-    markets = sorted(i for i, n in api.store.nodes.items()
-                     if n.kind == "Market")
+    markets = {i for i, n in api.store.nodes.items() if n.kind == "Market"}
+    markets |= {n.id for n in materialize_derived_nodes(api.store)
+                if n.kind == "Market"}
+    markets = sorted(markets)
     events = sorted(i.removeprefix("kalshi:") for i in api.store.nodes
                     if i.startswith("kalshi:"))
     print(f"[prune] rev={api.revision} markets={len(markets)} "
