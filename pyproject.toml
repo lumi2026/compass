@@ -1,7 +1,7 @@
 [project]
 name = "compass"
 version = "0.1.0"
-description = "Compass: situation-aware AI consultant (Meta hackathon)"
+description = "Compass: situation-aware AI consultant"
 requires-python = ">=3.11"
 dependencies = [
     "websockets>=15",
