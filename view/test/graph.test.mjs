@@ -494,6 +494,41 @@ describe('edge strength', () => {
   })
 })
 
+describe('sibling hypothesis types', () => {
+  const els = [
+    NM('kalshi:A', 'Event', 'A'),
+    NM('kalshi:B', 'Event', 'B'),
+    NM('hypothesis:loop-a-b-co_mention', 'Hypothesis', 'mentioned together',
+      { type: 'co_mention', mode: 'co-mention', evidence: 2 }),
+    NM('hypothesis:loop-a-b-co_location', 'Hypothesis', 'shared place',
+      { type: 'co_location', mode: 'co-location', evidence: 1 }),
+    NM('article:1', 'Article', 'one'),
+    NM('article:2', 'Article', 'two'),
+    NM('article:3', 'Article', 'three'),
+    E('hypothesis:loop-a-b-co_mention', 'kalshi:A', 'asserts'),
+    E('hypothesis:loop-a-b-co_mention', 'kalshi:B', 'asserts'),
+    E('hypothesis:loop-a-b-co_mention', 'article:1', 'cites'),
+    E('hypothesis:loop-a-b-co_mention', 'article:2', 'cites'),
+    E('hypothesis:loop-a-b-co_location', 'kalshi:A', 'asserts'),
+    E('hypothesis:loop-a-b-co_location', 'kalshi:B', 'asserts'),
+    E('hypothesis:loop-a-b-co_location', 'article:3', 'cites'),
+  ]
+
+  it('collapses each type into its own link', () => {
+    const v = transformElements(els, 200)
+    const links = v.links.filter((l) => l.rel === 'hypothesizes')
+    assert.equal(links.length, 2)
+    assert.deepEqual(links.map((l) => l.hypothesis.type).sort(),
+      ['co_location', 'co_mention'])
+  })
+
+  it('counts both claims in the event summary', () => {
+    const v = transformElements(els, 200)
+    const byId = new Map(v.nodes.map((n) => [n.id, n]))
+    assert.equal(eventSummary(byId.get('kalshi:A'), byId, v.links).hypotheses, 2)
+  })
+})
+
 describe('subject link filter', () => {
   // derive emits the mesh in both directions, like the live graph
   const mesh = [

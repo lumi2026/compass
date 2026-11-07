@@ -17,6 +17,8 @@ ID scheme (stable URIs, shared by every agent):
   article:{url-sha1-12}   Article  one node per canonical URL
   subject:{slug}          Subject  folded in Article.props.subjects
   hypothesis:{slug}-{n}   Hypothesis  investigator claim, numbered per subject
+  hypothesis:loop-{a}-{b}-{type}   Hypothesis  ordered pair + closed type
+  hypothesis:odds-{a}-{b}-{type}   Hypothesis  odds pair + closed type
   happening:{slug}      Happening key dated event (market moves, etc.)
   audit:{target}        Audit      auditor flag on a bad link (reversible)
 

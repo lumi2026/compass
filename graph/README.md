@@ -14,12 +14,15 @@ Same thing proposed twice maps to the same node.
 | Article | `article:{sha1-12}` | Canonical article URL |
 | Subject | `subject:{slug}` | Folded in `Article.props.subjects` |
 | Hypothesis | `hypothesis:{slug}-{n}` | Owning event (investigator) |
-| Hypothesis | `hypothesis:loop-{a}-{b}` | Ordered pair (news loop) |
+| Hypothesis | `hypothesis:loop-{a}-{b}-{type}` | Ordered pair + closed type (news loop) |
+| Hypothesis | `hypothesis:odds-{a}-{b}-{type}` | Odds pair + closed type (news loop) |
 | Happening | `happening:{slug}` | Dated key event |
 | Audit | `audit:{target}` | Flagged hypothesis id |
 
 Loop pair ids use canonical `a < b` ordering in every pair producer, so
-the same pair found via any mode or cycle yields one id.
+the same pair found via any mode or cycle yields one id per closed
+type — a second detection mode creates a sibling claim instead of
+refreshing the first in place.
 
 Hypothesis nodes carry `props.type` in the closed taxonomy
 (`co_mention`, `co_location`, `shared_context`, `co_outcome`) plus the

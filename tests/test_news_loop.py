@@ -455,13 +455,13 @@ def test_meta_hypotheses_chain_cites_both_links():
         by_action.setdefault(pr.action, []).append(pr)
     assert len(by_action["add-node"]) == 1
     (node,) = by_action["add-node"]
-    assert node.entity_id == "hypothesis:loop-meta-a-c"
+    assert node.entity_id == "hypothesis:loop-meta-a-c-co_location"
     import json as _json
     detail = _json.loads(node.detail)
     assert detail["props"]["type"] == "co_location"  # unanimous inherits
     assert detail["props"]["layer"] == 2
-    assert detail["props"]["via"] == ["hypothesis:loop-a-b",
-                                      "hypothesis:loop-b-c"]
+    assert detail["props"]["via"] == ["hypothesis:loop-a-b-co_location",
+                                      "hypothesis:loop-b-c-co_location"]
     assert len(by_action["add-edge"]) == 4  # 2 hyp + 2 article links
 
 
@@ -663,7 +663,7 @@ def test_offline_cycle_posts_hypothesis(tmp_path, monkeypatch):
     assert summary["ok"] and summary["mode"] == "co-mention"
     assert summary["pairs"] == 1 and summary["proposals"] > 0
     assert summary["llm_calls"] == 0  # model=None: extractive fallback
-    assert "hypothesis:loop-ea-eb" in api.store.nodes
+    assert "hypothesis:loop-ea-eb-co_mention" in api.store.nodes
     from graph import article_id
 
     assert article_id("http://loop.test/shared") in api.store.nodes
@@ -715,7 +715,7 @@ def test_odds_cycle_correlated_pair_posts(monkeypatch):
     assert summary["ok"] and summary["pairs"] == 1
     assert summary["mode"] == "odds-correlation"
     assert summary["llm_calls"] == 0
-    assert "hypothesis:odds-ea-eb" in holder.api.store.nodes
+    assert "hypothesis:odds-ea-eb-co_outcome" in holder.api.store.nodes
 
 
 def test_followups_fan_out_on_new_links(tmp_path, monkeypatch):
@@ -878,7 +878,7 @@ def test_cycle_veto_skips_pair_and_challenges_existing(tmp_path,
         lambda *a, **k: AuditResult(False, "Mexico article, US markets",
                                     0.2))
     api = GraphUpdateAPI(GraphStore())
-    api.commit(Node(id="hypothesis:loop-ea-eb", kind="Hypothesis",
+    api.commit(Node(id="hypothesis:loop-ea-eb-co_mention", kind="Hypothesis",
                     title="old bad link"))
     gsrv, gt, holder = _serve_graph(api)
     ksrv, kt = _serve_kalshi()
@@ -894,10 +894,11 @@ def test_cycle_veto_skips_pair_and_challenges_existing(tmp_path,
         kt.join(timeout=10)
     assert summary["ok"] and summary["pairs"] == 0
     assert summary["vetoed"] == 1 and summary["llm_calls"] == 0
-    assert "audit:hypothesis:loop-ea-eb" in api.store.nodes
+    assert "audit:hypothesis:loop-ea-eb-co_mention" in api.store.nodes
     flagged = [e for e in api.store.edges if e.rel == "challenges"]
     assert [(e.src, e.dst) for e in flagged] == [
-        ("audit:hypothesis:loop-ea-eb", "hypothesis:loop-ea-eb")]
+        ("audit:hypothesis:loop-ea-eb-co_mention",
+         "hypothesis:loop-ea-eb-co_mention")]
     assert holder.findings and holder.findings[0]["vetoed"] == 1
 
 
@@ -1058,7 +1059,7 @@ def test_cycle_deliberate_without_model_matches_singleshot(tmp_path,
         kt.join(timeout=10)
     assert summary["ok"] and summary["pairs"] == 1
     assert summary["llm_calls"] == 0
-    assert "hypothesis:loop-ea-eb" in api.store.nodes
+    assert "hypothesis:loop-ea-eb-co_mention" in api.store.nodes
 
 
 def test_cycle_needs_two_topics(monkeypatch):

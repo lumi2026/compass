@@ -604,6 +604,13 @@ def _slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")[:40]
 
 
+def loop_hypothesis_id(a: str, b: str, htype: str,
+                       prefix: str = "loop") -> str:
+    """One node per (pair, type): a second detection mode creates a
+    sibling claim instead of refreshing the first in place."""
+    return f"hypothesis:{prefix}-{_slug(a)}-{_slug(b)}-{htype}"
+
+
 def meta_hypotheses(live: list[dict], url_kept: dict,
                     max_metas: int = 3) -> list[dict]:
     """Deprecated: transitive layer-2 proposals are no longer persisted.
@@ -621,9 +628,9 @@ def meta_hypotheses(live: list[dict], url_kept: dict,
     """
     from graph import article_id  # local: keeps import cost off module load
 
-    hid_of = { (p["a"], p["b"]):
-               f"hypothesis:loop-{_slug(p['a'])}-{_slug(p['b'])}"
-               for p in live }
+    hid_of = {(p["a"], p["b"]): loop_hypothesis_id(
+        p["a"], p["b"], MODE_HYPOTHESIS_TYPE.get(p["mode"], "co_mention"))
+        for p in live}
     by_event: dict[str, list[dict]] = {}
     for p in live:
         for end in (p["a"], p["b"]):
@@ -649,8 +656,8 @@ def meta_hypotheses(live: list[dict], url_kept: dict,
                 t1 = MODE_HYPOTHESIS_TYPE.get(p1["mode"], "co_mention")
                 t2 = MODE_HYPOTHESIS_TYPE.get(p2["mode"], "co_mention")
                 htype = t1 if t1 == t2 else "shared_context"
-                hid = (f"hypothesis:loop-meta-{_slug(outer[0])}"
-                       f"-{_slug(outer[1])}")
+                hid = loop_hypothesis_id(outer[0], outer[1], htype,
+                                           prefix="loop-meta")
                 h1, h2 = hid_of[(p1["a"], p1["b"])], hid_of[(p2["a"], p2["b"])]
                 urls = sorted(set(p1.get("urls", [])) |
                               set(p2.get("urls", [])))[:3]
@@ -1020,7 +1027,8 @@ def stage_propose(ctx: dict) -> dict:
     for p in pairs:
         ev_titles = [url_kept[u]["title"] for u in p["urls"][:3]
                      if u in url_kept]
-        hid = f"hypothesis:loop-{_slug(p['a'])}-{_slug(p['b'])}"
+        hid = loop_hypothesis_id(
+            p["a"], p["b"], MODE_HYPOTHESIS_TYPE.get(p["mode"], "co_mention"))
         if deliberate and audit_llm is not None:
             from squad.auditor import deliberate_pair  # noqa: E402
 
@@ -1074,7 +1082,8 @@ def stage_propose(ctx: dict) -> dict:
                         {"event_ticker": t["event_ticker"],
                          "terms": t["terms"]}, mine))[0]:
                     all_props.append(prop)
-        hid = f"hypothesis:loop-{_slug(p['a'])}-{_slug(p['b'])}"
+        htype = MODE_HYPOTHESIS_TYPE.get(p["mode"], "co_mention")
+        hid = loop_hypothesis_id(p["a"], p["b"], htype)
         ev_arts = [url_kept[u] for u in p["urls"][:3] if u in url_kept]
         if deliberate and dtitle:
             title, conf = dtitle, dconf
@@ -1089,9 +1098,7 @@ def stage_propose(ctx: dict) -> dict:
             agent="investigator", action="add-node", entity_id=hid,
             detail=json.dumps(
                 {"kind": "Hypothesis", "title": title,
-                 "props": {"mode": p["mode"],
-                           "type": MODE_HYPOTHESIS_TYPE.get(
-                               p["mode"], "co_mention"),
+                 "props": {"mode": p["mode"], "type": htype,
                            "evidence": len(p["urls"])}}),
             confidence=conf))
         for end in (p["a"], p["b"]):
@@ -1136,16 +1143,25 @@ def stage_commit(ctx: dict) -> dict:
                         "confidence": p.confidence} for p in approved]})
     fresh = 0  # derived edges are materialized on read, never written
     hid_to_pair = {
-        f"hypothesis:loop-{_slug(p['a'])}-{_slug(p['b'])}": p for p in pairs}
+        loop_hypothesis_id(
+            p["a"], p["b"],
+            MODE_HYPOTHESIS_TYPE.get(p["mode"], "co_mention")): p
+        for p in pairs}
     followups: list[dict] = []
+    seen_followups: set[tuple] = set()
     for v in posted.get("verdicts", []):
         # A freshly created Hypothesis is the new interconnect: the
         # other endpoint becomes a follow-up dig, same as Connector
         # dispatch. Re-created (duplicate) hypotheses fan out nothing.
+        # Sibling types for one pair share endpoints, so dedupe tasks.
         p = hid_to_pair.get(v.get("entity_id", ""))
         if p is not None and v.get("committed") and v.get("reason") == "created":
             for end in (p["a"], p["b"]):
                 other = p["b"] if end == p["a"] else p["a"]
+                key = (end, other, p["mode"])
+                if key in seen_followups:
+                    continue
+                seen_followups.add(key)
                 followups.append({"type": "followup", "event_ticker": end,
                                   "terms": [t["title"] for t in topics
                                             if t["event_ticker"] == other][:1],
@@ -1256,7 +1272,7 @@ def _odds_cycle(graph_url: str, kalshi_url: str, topics: list[dict],
         return {"ok": True, "mode": "odds-correlation", "pairs": 0}
     all_props = []
     for p in pairs:
-        hid = f"hypothesis:odds-{_slug(p['a'])}-{_slug(p['b'])}"
+        hid = loop_hypothesis_id(p["a"], p["b"], "co_outcome", prefix="odds")
         all_props.append(Proposal(
             agent="investigator", action="add-node", entity_id=hid,
             detail=json.dumps(
