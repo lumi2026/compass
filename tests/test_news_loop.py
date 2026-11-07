@@ -446,6 +446,46 @@ def test_stage_pair_colocation_dispatch():
     assert res["pairs"][0]["mode"] == "co-location"
 
 
+def test_meta_hypotheses_chain_cites_both_links():
+    live = [{"a": "A", "b": "B", "urls": ["u1"], "mode": "co-location"},
+            {"a": "B", "b": "C", "urls": ["u2"], "mode": "co-location"}]
+    props = nl.meta_hypotheses(live, {"u1": {}, "u2": {}})
+    by_action = {}
+    for pr in props:
+        by_action.setdefault(pr.action, []).append(pr)
+    assert len(by_action["add-node"]) == 1
+    (node,) = by_action["add-node"]
+    assert node.entity_id == "hypothesis:loop-meta-a-c-co_location"
+    import json as _json
+    detail = _json.loads(node.detail)
+    assert detail["props"]["type"] == "co_location"  # unanimous inherits
+    assert detail["props"]["layer"] == 2
+    assert detail["props"]["via"] == ["hypothesis:loop-a-b-co_location",
+                                      "hypothesis:loop-b-c-co_location"]
+    assert len(by_action["add-edge"]) == 4  # 2 hyp + 2 article links
+
+
+def test_meta_hypotheses_skips_direct_link_and_caps():
+    live = [{"a": "A", "b": "B", "urls": [], "mode": "co-mention"},
+            {"a": "B", "b": "C", "urls": [], "mode": "co-mention"},
+            {"a": "A", "b": "C", "urls": [], "mode": "co-mention"}]
+    assert nl.meta_hypotheses(live, {}) == []
+    star = [{"a": "HUB", "b": f"E{i}", "urls": [], "mode": "co-mention"}
+            for i in range(5)]
+    metas = [pr for pr in nl.meta_hypotheses(star, {})
+             if pr.action == "add-node"]
+    assert len(metas) == 3  # capped
+
+
+def test_meta_hypotheses_mixed_types_share_context():
+    live = [{"a": "A", "b": "B", "urls": [], "mode": "co-location"},
+            {"a": "B", "b": "C", "urls": [], "mode": "odds-correlation"}]
+    (node,) = [pr for pr in nl.meta_hypotheses(live, {})
+               if pr.action == "add-node"]
+    import json as _json
+    assert _json.loads(node.detail)["props"]["type"] == "shared_context"
+
+
 def test_burst_topics_spike_only():
     topics = _topics()
     new_m = {"alpha beta": {"count": 6, "urls": ["u1"]},

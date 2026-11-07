@@ -611,6 +611,87 @@ def loop_hypothesis_id(a: str, b: str, htype: str,
     return f"hypothesis:{prefix}-{_slug(a)}-{_slug(b)}-{htype}"
 
 
+def meta_hypotheses(live: list[dict], url_kept: dict,
+                    max_metas: int = 3) -> list[dict]:
+    """Deprecated: transitive layer-2 proposals are no longer persisted.
+
+    Retained as a pure helper for callers/tests that still want to
+    inspect the old chaining logic. The news loop no longer calls this;
+    shared-context structure is materialized from primitive links.
+
+    Transitive layer-2 proposals: two layer-1 links sharing exactly
+    one event (A x B, B x C) nominate A x C, citing BOTH links as
+    evidence via hyp -> hyp supports edges. Skips outer pairs already
+    directly linked. Deterministic and extractive (no LLM spend):
+    at most max_metas, first chains win. Returns Proposal lists ready
+    for the skeptic gate.
+    """
+    from graph import article_id  # local: keeps import cost off module load
+
+    hid_of = {(p["a"], p["b"]): loop_hypothesis_id(
+        p["a"], p["b"], MODE_HYPOTHESIS_TYPE.get(p["mode"], "co_mention"))
+        for p in live}
+    by_event: dict[str, list[dict]] = {}
+    for p in live:
+        for end in (p["a"], p["b"]):
+            by_event.setdefault(end, []).append(p)
+    direct = set(hid_of) | {(b, a) for (a, b) in hid_of}
+    out: list[dict] = []
+    seen_outer = set()
+    for mid in sorted(by_event):
+        members = by_event[mid]
+        for i in range(len(members)):
+            for j in range(i + 1, len(members)):
+                p1, p2 = members[i], members[j]
+                outer = sorted({p1["a"], p1["b"], p2["a"], p2["b"]} - {mid})
+                if len(seen_outer) >= max_metas:
+                    return out
+                if len(outer) != 2:
+                    continue
+                if tuple(outer) in seen_outer:
+                    continue
+                if (outer[0], outer[1]) in direct:
+                    continue  # already directly linked layer-1
+                seen_outer.add(tuple(outer))
+                t1 = MODE_HYPOTHESIS_TYPE.get(p1["mode"], "co_mention")
+                t2 = MODE_HYPOTHESIS_TYPE.get(p2["mode"], "co_mention")
+                htype = t1 if t1 == t2 else "shared_context"
+                hid = loop_hypothesis_id(outer[0], outer[1], htype,
+                                           prefix="loop-meta")
+                h1, h2 = hid_of[(p1["a"], p1["b"])], hid_of[(p2["a"], p2["b"])]
+                urls = sorted(set(p1.get("urls", [])) |
+                              set(p2.get("urls", [])))[:3]
+                out.append(Proposal(
+                    agent="investigator", action="add-node", entity_id=hid,
+                    detail=json.dumps(
+                        {"kind": "Hypothesis",
+                         "title": (f"transitive {htype}: {outer[0]} x "
+                                   f"{outer[1]} via {mid}"),
+                         "props": {"mode": "transitive",
+                                   "type": htype,
+                                   "evidence": len(urls),
+                                   "layer": 2,
+                                   "via": [h1, h2]}}),
+                    confidence=0.55))
+                for h in (h1, h2):
+                    out.append(Proposal(
+                        agent="investigator", action="add-edge",
+                        entity_id=hid,
+                        detail=json.dumps({"src": hid, "dst": h,
+                                           "rel": "supports"}),
+                        confidence=0.6))
+                for u in urls:
+                    if u in url_kept:
+                        out.append(Proposal(
+                            agent="investigator", action="add-edge",
+                            entity_id=hid,
+                            detail=json.dumps(
+                                {"src": hid, "dst": article_id(u),
+                                 "rel": "supports"}),
+                            confidence=0.5))
+    return out
+
+
 def hypothesis_title(a: str, b: str, urls: list[str], arts: list,
                      model=None) -> tuple[str, float]:
     """One-sentence relation for a topic pair. LLM or extractive."""
