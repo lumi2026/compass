@@ -219,9 +219,9 @@ def test_discover_gives_up_after_retry(monkeypatch):
 def test_commit_summary_carries_followup_events(monkeypatch):
     from scripts import news_loop as nl
 
-    from scripts.news_loop import _slug
+    from scripts.news_loop import loop_hypothesis_id
 
-    hid = f"hypothesis:loop-{_slug('EA')}-{_slug('EB')}"
+    hid = loop_hypothesis_id("EA", "EB", "co_mention")
     posted = {"revision": 7,
               "verdicts": [{"entity_id": hid, "committed": True,
                             "reason": "created"}],
