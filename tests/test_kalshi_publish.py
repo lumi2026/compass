@@ -254,7 +254,7 @@ def test_publish_baseline_then_move_then_small():
             "market": "T1", "old_cents": 55, "new_cents": 63,
             "move_cents": 8}
         edge = json.loads(last_two[1]["detail"])
-        assert edge["src"] == "kalshi:E1" and edge["rel"] == "relates-to"
+        assert edge["src"] == "kalshi:E1" and edge["rel"] == "experienced"
 
         svc.store.ingest_single(
             "T1", TickerState(ticker="T1",

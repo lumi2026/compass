@@ -21,13 +21,16 @@ FOLDED_NODE_KINDS = ("Subject", "Market")
 
 # Primitive edges are directly evidenced claims. `cites` is evidence
 # (Hypothesis -> Article), `asserts` is claim scope (Hypothesis ->
-# Event | Market). `supports` is the legacy single rel covering both;
+# Event | Market), `experienced` is an event unfolding (Event ->
+# Happening, e.g. a market move). `supports` is the legacy single rel
+# covering cites/asserts, `relates-to` the legacy fallback; both are
 # still accepted on read/replay but refused for new writes.
-PRIMITIVE_RELS = ("about", "cites", "asserts", "challenges", "relates-to")
+PRIMITIVE_RELS = ("about", "cites", "asserts", "challenges", "experienced")
 
 # Legacy rels: accepted by the gate only with allow_folded_writes
-# (snapshot/log replay). New proposals must use cites/asserts.
-LEGACY_RELS = ("supports",)
+# (snapshot/log replay). New proposals must use cites/asserts for
+# claims and experienced for event unfoldings.
+LEGACY_RELS = ("supports", "relates-to")
 
 # Folded edges are implied by props (mentions -> Article.props.subjects).
 FOLDED_RELS = ("mentions",)

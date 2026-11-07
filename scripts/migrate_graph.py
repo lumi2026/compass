@@ -39,7 +39,7 @@ import click
 sys.path.insert(0, ".")
 
 from graph import (  # noqa: E402
-    MATERIALIZED_RELS, PRIMITIVE_RELS, GraphStore, boot,
+    LEGACY_RELS, MATERIALIZED_RELS, PRIMITIVE_RELS, GraphStore, boot,
     materialize_derived_links, materialize_derived_nodes,
 )
 from graph.store import FOLDED_NODE_KINDS, subject_id  # noqa: E402
@@ -301,7 +301,8 @@ def validate(store: GraphStore, original: GraphStore, report: dict) -> None:
               if n.kind in FOLDED_NODE_KINDS]
     if folded:
         problems.append(f"folded nodes remain: {len(folded)}")
-    bad_rels = sorted({e.rel for e in store.edges} - set(PRIMITIVE_RELS))
+    bad_rels = sorted({e.rel for e in store.edges} - set(PRIMITIVE_RELS)
+                      - set(LEGACY_RELS))
     if bad_rels:
         problems.append(f"non-primitive rels remain: {bad_rels}")
     visible = set(store.nodes) | {n.id for n in materialize_derived_nodes(store)}

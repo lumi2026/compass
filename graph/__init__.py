@@ -8,8 +8,7 @@ Thin package surface — every name below is importable straight from
   proposals_to_commit.
 - graph.derive: derive_shared_subject_links, derive_market_links,
   materialize_derived_nodes, materialize_derived_links, followup_tasks,
-  prune_derived_links, subgraph_as_of. (refresh/sync are deprecated
-  no-ops.)
+  prune_derived_links, subgraph_as_of.
 
 ID scheme (stable URIs, shared by every agent):
   kalshi:{event_ticker}   Event    e.g. kalshi:KXSPACEXMARS-30
@@ -27,11 +26,12 @@ Edge vocabulary (only primitive rels are persisted):
   cites                Hypothesis -> Article        (evidence)
   asserts              Hypothesis -> Event | Market (claim scope)
   challenges           Audit -> Hypothesis  (auditor flags a bad link)
-  relates-to           fallback for anything unclassified
+  experienced          Event -> Happening   (the event unfolded, e.g.
+                       a market move)
 
-`supports` (Hypothesis -> Market | Article) is the legacy single rel
-covering both cites and asserts: accepted on read/replay, refused for
-new writes.
+`supports` (Hypothesis -> Market | Article) and `relates-to`
+(fallback) are legacy rels: accepted on read/replay, refused for new
+writes. Use cites/asserts for claims, experienced for unfoldings.
 
 Folded/derived rels are reconstructed on read and never stored:
   mentions             Article -> Subject   (from Article.props.subjects)
@@ -47,9 +47,7 @@ from .derive import (
     materialize_derived_links,
     materialize_derived_nodes,
     prune_derived_links,
-    refresh_derived_links,
     subgraph_as_of,
-    sync_derived_links,
 )
 from .persist import append_finding, boot, commit_batch, replay_log
 from .gate import (
@@ -111,10 +109,8 @@ __all__ = [
     "materialize_derived_nodes",
     "proposals_to_commit",
     "prune_derived_links",
-    "refresh_derived_links",
     "replay_log",
     "subgraph_as_of",
-    "sync_derived_links",
     "subject_id",
     "to_elements",
 ]

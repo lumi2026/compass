@@ -3,10 +3,9 @@
 import json
 
 from graph import (
-    Edge, GraphStore, GraphUpdateAPI, Node, materialize_derived_links,
-    proposals_to_commit,
+    Edge, GraphStore, GraphUpdateAPI, Node, proposals_to_commit,
 )
-from squad import Orchestrator, Skeptic
+from squad import Orchestrator
 from squad.connector import Connector
 from squad.investigator import Investigator
 from squad.pipeline import build_investigator_context
@@ -63,7 +62,7 @@ def test_scout_market_nodes_carry_odds():
 def test_scout_lane_only_add_node():
     api = GraphUpdateAPI(GraphStore())
     bad = proposals_to_commit(api, "scout", "add-edge", "x",
-                              json.dumps({"src": "a", "dst": "b", "rel": "relates-to"}))
+                              json.dumps({"src": "a", "dst": "b", "rel": "about"}))
     assert bad.committed is False
 
 
@@ -111,7 +110,7 @@ def test_investigator_carries_typed_relation():
     assert json.loads(props[0].detail)["props"]["type"] == "co_mention"
 
 
-def test_connector_derive_and_followups():
+def test_connector_followups_dispatch():
     api = GraphUpdateAPI(GraphStore())
     for n in [Node(id="kalshi:E1", kind="Event", title="E1"),
               Node(id="kalshi:E2", kind="Event", title="E2"),
@@ -122,32 +121,18 @@ def test_connector_derive_and_followups():
               Edge(src="article:a", dst="kalshi:E2", rel="about", at="t")]:
         api.record(e)
     con = Connector()
-    (intent,) = con.run({"event_ticker": "E1"})
-    assert intent.action == "derive-links" and intent.entity_id == "kalshi:E1"
-    approved, _ = Skeptic().review([intent])
-    assert approved == [intent]
-    r = proposals_to_commit(api, intent.agent, intent.action,
-                            intent.entity_id, intent.detail)
-    assert r.committed and r.reason.startswith("derived")
-    assert "read-time" in r.reason
-    # Derived mesh is computed on read, not persisted.
-    assert not any(e.rel == "shares-subject-with" for e in api.store.edges)
-    mesh = [e for e in materialize_derived_links(api.store)
-            if e.rel == "shares-subject-with"]
-    assert [(e.src, e.dst) for e in mesh] == [("kalshi:E1", "kalshi:E2")]
-    assert con.apply(api) == len(materialize_derived_links(api.store))
     assert con.followups(api.store, "kalshi:E2") == [
         {"event_ticker": "E1", "terms": ["spacex"]}]
 
 
-def test_orchestrator_fanout_scout_investigator_connector():
+def test_orchestrator_fanout_gates_through_skeptic():
     sc = Scout(markets_fn=lambda t: [FakeMarket("E1-A", "Q?")])
     inv = Investigator()
     con = Connector()
-    orch = Orchestrator(agents=[sc, con])
+    orch = Orchestrator(agents=[sc])
     approved = orch.investigate({"event_ticker": "E1", "terms": ["spacex"]},
                                {"markets": [FakeMarket("E1-A", "Q?")]})
-    assert {p.agent for p in approved} == {"scout", "connector"}
+    assert {p.agent for p in approved} == {"scout"}
     ctx = build_investigator_context(kept=[{"url": "https://t.test/a"}],
                                      markets=[FakeMarket("E1-A", "Q?")])
     assert Investigator().run({"event_ticker": "E1"}, ctx)

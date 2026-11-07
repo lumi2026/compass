@@ -4,7 +4,7 @@ Which proposal actions each agent role may write (role lanes). Only
 primitive edges and first-class nodes are persisted. Folded node kinds
 (Subject, Market) live in props, and folded/derived edges are
 materialized on read (see graph.derive), so writing them here is
-refused.
+refused. There is no connector lane: derivation is read-time only.
 """
 
 import json
@@ -174,11 +174,14 @@ class GraphUpdateAPI:
                 f"folded rel {edge.rel!r} is reconstructed from props; "
                 "write the owning node's props instead")
         if edge.rel in LEGACY_RELS and not self.allow_folded_writes:
+            if edge.rel == "supports":
+                hint = ("use 'cites' (Hypothesis -> Article) or 'asserts' "
+                        "(Hypothesis -> Event | Market) instead")
+            else:
+                hint = "use 'experienced' (Event -> Happening) instead"
             return CommitResult(
                 False,
-                f"legacy rel {edge.rel!r} is replay-only; "
-                "use 'cites' (Hypothesis -> Article) or "
-                "'asserts' (Hypothesis -> Event | Market) instead")
+                f"legacy rel {edge.rel!r} is replay-only; {hint}")
         if not isinstance(edge.props, dict):
             return CommitResult(False, "invalid edge: props must be an object")
         if not _has_node(self.store, edge.src):
@@ -271,7 +274,6 @@ ROLE_ACTIONS = {
     "news-agent": ("add-node", "add-edge"),
     "investigator": ("add-node", "add-edge"),
     "auditor": ("add-node", "add-edge"),
-    "connector": ("derive-links",),
 }
 
 
@@ -282,16 +284,11 @@ def proposals_to_commit(api: GraphUpdateAPI, agent: str, action: str,
     `add-node`: entity_id is the node id, detail is JSON {kind, title}.
     `add-edge`: detail is JSON {src, dst, rel, props?}; primitive rels
     only (`cites`/`asserts` carry {weight, confidence} in props).
-    `derive-links`: connector-only no-op; derived links are created by
-    the read path, so there is nothing to write.
     Anything outside the role lane (or malformed JSON) is refused.
     `news_summary` is never committable: only graph_proposals() commits.
     """
     if action not in ROLE_ACTIONS.get(agent, ()):
         return CommitResult(False, f"role {agent!r} may not {action!r}")
-    if action == "derive-links":
-        return CommitResult(
-            True, "derived 0 read-time (nothing persisted)")
     try:
         payload = json.loads(detail) if detail else {}
     except ValueError:

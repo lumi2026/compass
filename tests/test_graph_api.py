@@ -17,7 +17,6 @@ from graph import (
     Node,
     boot,
     commit_batch,
-    materialize_derived_links,
     replay_log,
 )
 from graph.persist import append_finding
@@ -33,7 +32,7 @@ def _node_prop(agent, nid, kind="Event", title=None, conf=0.9, props=None):
             "confidence": conf}
 
 
-def _edge_prop(agent, src, dst, rel="relates-to", conf=0.9):
+def _edge_prop(agent, src, dst, rel="about", conf=0.9):
     return {"agent": agent, "action": "add-edge",
             "entity_id": f"{src}->{dst}",
             "detail": json.dumps({"src": src, "dst": dst, "rel": rel}),
@@ -92,27 +91,15 @@ def test_odds_history_survives_in_log(tmp_path):
         "price_cents"] == 63
 
 
-def test_commit_batch_runs_connector_derive_without_entity(tmp_path):
-    """derive-links has no entity_id; the weak-proposal gate must allow it."""
+def test_commit_batch_vetoes_missing_entity_id(tmp_path):
+    """Every proposal needs an entity_id; there is no lane without one."""
     api = GraphUpdateAPI(GraphStore())
-    for nid, kind in (("kalshi:A", "Event"), ("kalshi:B", "Event"),
-                      ("article:x", "Article"), ("subject:s", "Subject")):
-        api.store.add_node(Node(nid, kind, nid))
-    for src, dst, rel in (("article:x", "subject:s", "mentions"),
-                          ("article:x", "kalshi:A", "about"),
-                          ("article:x", "kalshi:B", "about")):
-        api.store.add_edge(Edge(src, dst, rel, "t"))
     out = commit_batch(api, [{
-        "agent": "connector", "action": "derive-links",
-        "entity_id": "", "detail": "", "confidence": 0.9}],
+        "agent": "scout", "action": "add-node",
+        "entity_id": "", "detail": "{}", "confidence": 0.9}],
         log_path=str(tmp_path / "g.log"))
     verdict = out["verdicts"][0]
-    assert verdict["committed"] and "derived" in verdict["reason"]
-    # Nothing derived is persisted; the read path still sees the mesh.
-    assert not any(e.rel == "shares-subject-with" for e in api.store.edges)
-    links = [e for e in materialize_derived_links(api.store)
-             if e.rel == "shares-subject-with"]
-    assert {(e.src, e.dst) for e in links} == {("kalshi:A", "kalshi:B")}
+    assert not verdict["committed"] and "weak proposal" in verdict["reason"]
 
 
 def test_graph_payload_derives_links_without_storing_them(tmp_path):

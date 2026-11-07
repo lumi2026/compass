@@ -114,6 +114,84 @@ def graph_tools(base_url: str) -> dict:
             return {"ok": False, "error": f"{type(e).__name__}: {e}"}
         return {"ok": True, "posted": data.get("posted", True)}
 
+    def list_hypotheses() -> dict:
+        """Committed hypotheses with endpoints, evidence, challenges."""
+        try:
+            elements = _elements(base_url)
+        except Exception as e:
+            return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+        nodes = {}
+        for el in elements:
+            d = el.get("data", {})
+            if "source" not in d:
+                nodes[d.get("id")] = d
+        supports: dict[str, list[str]] = {}
+        challenged: set[str] = set()
+        for el in elements:
+            d = el.get("data", {})
+            if d.get("label") in ("cites", "asserts", "supports"):
+                supports.setdefault(d.get("source", ""), []).append(
+                    d.get("target", ""))
+            elif d.get("label") == "challenges":
+                challenged.add(d.get("target", ""))
+                src = nodes.get(d.get("source", ""), {})
+                if src.get("props", {}).get("target"):
+                    challenged.add(src["props"]["target"])
+        out = []
+        for hid, n in nodes.items():
+            if n.get("kind") != "Hypothesis":
+                continue
+            ends = supports.get(hid, [])
+            out.append({
+                "id": hid, "title": n.get("label", hid),
+                "events": [t for t in ends
+                           if nodes.get(t, {}).get("kind") == "Event"],
+                "articles": len([t for t in ends
+                                 if nodes.get(t, {}).get("kind") == "Article"]),
+                "challenged": hid in challenged})
+        out.sort(key=lambda h: h["id"])
+        return {"ok": True, "hypotheses": out}
+
+    def post_proposals(proposals_json: str) -> dict:
+        """Commit gated proposals (JSON list of agent/action/entity_id/
+        detail/confidence). Writes go through Skeptic + role lanes."""
+        try:
+            proposals = json.loads(proposals_json)
+            if not isinstance(proposals, list):
+                raise ValueError("top-level JSON must be a list")
+            data = _post(base_url, "/proposals", {"proposals": proposals})
+        except Exception as e:
+            return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+        verdicts = data.get("verdicts", [])
+        return {"ok": True, "revision": data.get("revision"),
+                "committed": sum(1 for v in verdicts
+                                 if v.get("committed")),
+                "rejected": sum(1 for v in verdicts
+                                if not v.get("committed"))}
+
+    def post_finding(text: str = "", extra_json: str = "{}",
+                     **aliases) -> dict:
+        """Append an ops note to the findings log.
+
+        Exact shape: post_finding(text="...", extra_json="{...}").
+        note= and finding= are accepted aliases for text; a dict
+        passed as finding= posts as the finding object itself.
+        """
+        try:
+            raw = text or aliases.get("note", "") or aliases.get(
+                "finding", "")
+            if isinstance(raw, dict):
+                finding = raw
+            else:
+                extra = json.loads(extra_json or "{}")
+                if not isinstance(extra, dict):
+                    raise ValueError("extra_json must be an object")
+                finding = {"note": str(raw), **extra}
+            data = _post(base_url, "/findings", {"finding": finding})
+        except Exception as e:
+            return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+        return {"ok": True, "posted": data.get("posted", True)}
+
     def trigger_derive() -> dict:
         """Report read-time derivations (shared-subject, has-market).
 
@@ -144,7 +222,4 @@ def graph_tools(base_url: str) -> dict:
         "graph_post_finding": {
             "description": "Append an ops note to the findings log.",
             "func": post_finding},
-        "graph_trigger_derive": {
-            "description": "Recompute Connector derivations.",
-            "func": trigger_derive},
     }
