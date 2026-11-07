@@ -1,6 +1,6 @@
 # Compass Progress
 
-## Now — current state (as of 2026-11-04, HEAD `6025e2a`)
+## Now — current state (as of 2026-11-07, `main` `a5aafd4`)
 
 - Stack: graph API `:8090` owns the store (`data_local/graph_snapshot.json`,
   `graph_log.jsonl`, `findings.jsonl` via `--data-dir`/`COMPASS_DATA_DIR`);
@@ -1082,3 +1082,32 @@ widening, `KXTOPLLMGENERAL-30` gap, feedback loop).
   in `view/README.md`).
 - Submit: tag `final_submit` at `89b9d94`, pushed to remote; tree
   clean.
+
+## 2026-11-05–11-07 — primitive-only edges, typed ids, legacy retirement, live-store migration
+
+- Merged to `main` (PRs #10–#13 on top of Day-10 submit): Subject/Market
+  folded into props (never rendered; no toggles), `uv.lock` kept with
+  `requires-python >= 3.13`, hackathon/`compass-hackathon` branding
+  removed, `User-Agent: compass/0.1` everywhere, new writes split
+  `cites`/`asserts` with persisted-only default payload
+  (`?expand=mentions,markets,mesh,all` opt-in).
+- Merged (#14, #15): `feat/typed-pair-hypotheses` (`d9033e7`) —
+  type-qualified pair ids (`hypothesis:loop-{a}-{b}-{type}`), sibling
+  claim on second detection mode; `fix/retire-legacy-rels` (`ead0aee`)
+  — `relates-to` replay-only in favor of `experienced`, audit-cascade
+  on `commit_retire`, `derive-links` lane / `meta_hypotheses` /
+  sync-refresh shims deleted (−278 lines).
+- Live store migrated with checksummed backups + MANIFESTs
+  (`data_local/backup-graph-20261107-000745-relates-to`,
+  `...-001136-supports`, prior `...-235910` hids): 108 nodes renamed
+  (97 hypotheses + 11 audits, rev 601), 21 orphan audits swept (rev
+  604), 6 `relates-to` → `experienced`, 515 `supports` → 321 `cites`
+  + 194 `asserts` (asserts weight = attached cites count, 1–9; idempotency
+  probe all `reinforced`, edge count unchanged). Live now rev 605:
+  1384 nodes / 3213 edges, rels
+  `{about: 2681, cites: 321, asserts: 194, challenges: 11,
+  experienced: 6}`, zero dangling/orphans/`supports`/`relates-to`.
+- Deferred: bitemporal `Event.valid_at` backfill. Services stopped
+  (`:8090`, `:8080` verified down); tree clean.
+- Verified on `ead0aee`: pytest 296 passed, view 42 passed,
+  `npm run build` clean.
