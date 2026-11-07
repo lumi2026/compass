@@ -253,7 +253,7 @@ def test_as_structured_keeps_names():
     reg.update(G.graph_tools("http://y"))
     reg.update(N.news_tools("http://g", "http://k"))
     tools = as_structured(reg)
-    assert len(tools) == 13
+    assert len(tools) == 12
     assert all(isinstance(t, StructuredTool) for t in tools)
     by_name = {t.name: t.description for t in tools}
     assert by_name["kalshi_discover_events"].startswith("List open")

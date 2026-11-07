@@ -282,25 +282,6 @@ def prune_derived_links(store: GraphStore,
     return pruned
 
 
-def sync_derived_links(api: "GraphUpdateAPI") -> tuple[int, int]:
-    """Deprecated write path: derived links are no longer persisted.
-
-    Kept for callers that expect the old ``(fresh, pruned)`` shape.
-    Derived links are materialized on read instead, so nothing is
-    written and the result is always ``(0, 0)``.
-    """
-    return 0, 0
-
-
-def refresh_derived_links(api: "GraphUpdateAPI") -> int:
-    """Deprecated no-op: derived links are materialized on read.
-
-    Always returns 0. Use ``materialize_derived_links(api.store)`` for
-    the current derived set without touching the store.
-    """
-    return 0
-
-
 def subgraph_as_of(store: GraphStore, ts: str) -> GraphStore:
     """Time travel: the graph as of world-time `ts` (valid_at <= ts).
 

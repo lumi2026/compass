@@ -66,10 +66,10 @@ def test_graph_update_api_idempotent_and_validating():
     assert bad.committed is False
     assert api.commit(Node(id="x", kind="Nope", title="t")).committed is False
     api.commit(Node(id="gdelt:a1", kind="Article", title="a"))
-    ok = api.record(Edge(src="kalshi:E1", dst="gdelt:a1", rel="relates-to", at="t"))
+    ok = api.record(Edge(src="kalshi:E1", dst="gdelt:a1", rel="about", at="t"))
     assert ok.committed and len(api.store.edges) == 1
     assert api.record(Edge(src="kalshi:E1", dst="missing",
-                           rel="relates-to", at="t")).committed is False
+                           rel="about", at="t")).committed is False
     assert api.record(Edge(src="kalshi:E1", dst="gdelt:a1",
                            rel="vibes", at="t")).committed is False
 
@@ -141,6 +141,23 @@ def test_edge_props_must_be_an_object():
     assert r.committed is False and "props must be an object" in r.reason
 
 
+def test_gate_refuses_legacy_rels_with_useful_hints():
+    api = GraphUpdateAPI(GraphStore())
+    api.commit(Node(id="kalshi:E", kind="Event", title="E"))
+    api.commit(Node(id="hypothesis:h", kind="Hypothesis", title="H"))
+    api.commit(Node(id="article:a", kind="Article", title="A"))
+    r = api.record(Edge(src="hypothesis:h", dst="kalshi:E", rel="supports",
+                        at="t"))
+    assert r.committed is False and "cites" in r.reason
+    assert api.record(Edge(src="hypothesis:h", dst="article:a",
+                           rel="cites", at="t")).committed
+    assert api.record(Edge(src="hypothesis:h", dst="kalshi:E",
+                           rel="asserts", at="t")).committed
+    r = api.record(Edge(src="kalshi:E", dst="kalshi:E", rel="relates-to",
+                        at="t"))
+    assert r.committed is False and "experienced" in r.reason
+
+
 def test_gate_refuses_folded_nodes_and_mentions():
     api = GraphUpdateAPI(GraphStore())
     r = api.commit(Node(id="subject:spacex", kind="Subject", title="spacex"))
@@ -197,11 +214,11 @@ def test_graph_translator_role_lanes():
     assert good.committed
     assert proposals_to_commit(api, "scout", "add-edge", "x",
                                json.dumps({"src": "a", "dst": "b",
-                                           "rel": "relates-to"})).committed is False
+                                           "rel": "about"})).committed is False
     edge = proposals_to_commit(api, "news-agent", "add-edge", "",
                                json.dumps({"src": "kalshi:E1",
                                            "dst": "kalshi:E1",
-                                           "rel": "relates-to"}))
+                                           "rel": "experienced"}))
     assert edge.committed  # self-loop passes endpoint validation
     assert proposals_to_commit(api, "news-agent", "add-edge", "",
                                "not-json").committed is False

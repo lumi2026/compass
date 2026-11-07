@@ -59,8 +59,8 @@ STANDING_GOAL = """Run one full Compass upkeep pass:
    Each news agent builds the graph internally
    (discover->scan->pair->propose->commit). A failing news agent
    is not fatal: note it, ignore it, and continue with the rest.
-4. Close out when all news agents complete: graph_trigger_derive,
-   re-check graph_summary to confirm the revision advanced, post
+4. Close out when all news agents complete: re-check graph_summary
+   to confirm the revision advanced, post
    a short ops note with graph_post_finding, then answer with new
    events added, cycles run, and revision before/after. The outer
    service waits X minutes between passes; when current news is

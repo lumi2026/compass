@@ -36,9 +36,10 @@ Only primitive, directly-evidenced edges are persisted:
 
 `about` (Article → Event), `cites` (Hypothesis → Article, evidence),
 `asserts` (Hypothesis → Event | Market, claim scope),
-`challenges` (Audit → Hypothesis), `relates-to` (fallback).
-`supports` is the legacy single rel covering both `cites` and
-`asserts`: accepted on read/replay, refused for new writes.
+`challenges` (Audit → Hypothesis),
+`experienced` (Event → Happening, the event unfolded).
+`supports` and `relates-to` are legacy: accepted on read/replay,
+refused for new writes.
 
 Subject and Market nodes are folded into props: an Article carries its
 terms in `props.subjects`, and an Event carries its odds in
@@ -58,8 +59,9 @@ enforces role lanes:
 
 - `scout`: `add-node`
 - `news-agent`, `investigator`, `auditor`: `add-node`, `add-edge`
-- `connector`: `derive-links` only (a no-op; the read path derives
-  links, so there is nothing to write)
+
+There is no connector lane: derivation is read-time only, so there is
+nothing to write.
 
 Each commit validates kind/rel/endpoints, applies the Skeptic
 confidence gate (min 0.3), then merges: same id plus identical

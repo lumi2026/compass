@@ -122,10 +122,7 @@ def commit_batch(api: GraphUpdateAPI, proposals: list[dict],
             conf = float(p.get("confidence", 0.5))
         except (TypeError, ValueError):
             conf = 0.0
-        # derive-links has no entity of its own; the Connector recomputes
-        # the whole derived set, so an empty entity_id is valid here.
-        if not action or conf < Skeptic().min_confidence or (
-                not entity_id and action != "derive-links"):
+        if not action or conf < Skeptic().min_confidence or not entity_id:
             verdicts.append({"committed": False,
                              "reason": "vetoed: weak proposal",
                              "agent": agent, "action": action,
@@ -151,6 +148,28 @@ def commit_batch(api: GraphUpdateAPI, proposals: list[dict],
             "derived_fresh": fresh, "pruned_derived": pruned}
 
 
+def _cascade_audit_targets(store, node_ids: list[str]) -> list[str]:
+    """Expand a retire list with audits flagging the retired nodes.
+
+    An Audit node points at its target via props.target; dropping the
+    target drops the incident `challenges` edge but strands the node.
+    Chase targets to a fixpoint so one POST retires the whole flag.
+    """
+    wanted = list(dict.fromkeys(node_ids))
+    seen = set(wanted)
+    changed = True
+    while changed:
+        changed = False
+        for nid, node in store.nodes.items():
+            if node.kind != "Audit" or nid in seen:
+                continue
+            if (node.props or {}).get("target") in seen:
+                seen.add(nid)
+                wanted.append(nid)
+                changed = True
+    return wanted
+
+
 def commit_retire(api: GraphUpdateAPI, node_ids: list[str],
                   log_path: str | None = None,
                   snapshot_path: str | None = None) -> dict:
@@ -158,14 +177,15 @@ def commit_retire(api: GraphUpdateAPI, node_ids: list[str],
 
     Operator maintenance, not inference: no Skeptic gate (nothing is
     claimed, only dropped). The retire record replays like any batch,
-    so pruned nodes stay pruned across snapshot+log boots. The sync
-    after retire also prunes derived edges whose evidence is gone
-    (e.g. subject mesh bridged only by the retired node). Returns
+    so pruned nodes stay pruned across snapshot+log boots. Audits
+    flagging a retired node cascade (see _cascade_audit_targets), and
+    the sync after retire also prunes derived edges whose evidence is
+    gone (e.g. subject mesh bridged only by the retired node). Returns
     {revision, retired: [{entity_id, dropped_edges}], derived_fresh,
     pruned_derived}.
     """
     retired = []
-    for nid in node_ids:
+    for nid in _cascade_audit_targets(api.store, node_ids):
         removed, dropped = _retire_node(api.store, nid)
         retired.append({"entity_id": nid, "removed": removed,
                         "dropped_edges": dropped})

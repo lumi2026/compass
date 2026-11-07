@@ -319,7 +319,7 @@ class Service:
                      "entity_id": hid,
                      "detail": json.dumps(
                          {"src": f"kalshi:{event}", "dst": hid,
-                          "rel": "relates-to",
+                          "rel": "experienced",
                           "valid_at": odds_at}),
                      "confidence": 0.8})
         return props

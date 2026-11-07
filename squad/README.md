@@ -37,10 +37,10 @@ lanes take injected data or call `sources/` + `tools/articles.py`.
   Layer-2 transitive metas are no longer written. Offline-first;
   optional LLM refinement via `context["model"]`, extractive title
   otherwise.
-- `connector.py`: materializes event-event links (read-time, never
-  persisted or hand-written) and dispatches follow-up digs so the
-  topic → news → topics loop closes. `run()` emits a derive-links
-  no-op intent; `apply()` counts the materialized set.
+- `connector.py`: dispatches follow-up digs so the topic → news →
+  topics loop closes (`followups()` wraps `graph.followup_tasks`).
+  Event-event links are read-time only, never persisted or
+  hand-written — there is no write lane.
 - `auditor.py`: third reviewer. Vetoes spurious pairs pre-commit
   (explicit NO only, fail-open), judging the claimed hypothesis type
   (`co_location` needs a shared place, `co_outcome` linked outcomes,
@@ -60,7 +60,7 @@ lanes take injected data or call `sources/` + `tools/articles.py`.
   (`news_run_cycle`) or concurrently over selected event sets
   (`news_run_batch`). `STANDING_GOAL` is the default upkeep pass:
   snapshot graph, diff Kalshi discovery, fan out news cycles, close out
-  with derive + findings note.
+  with a findings note.
 - `scripts/run_compass.py`: Compass as a service. Repeats
   `STANDING_GOAL` every `--interval-min` with `--loop`
   (`--max-cycles` bounds demo runs), once without it. Needs
@@ -103,8 +103,7 @@ operator goal
   → brain → tools/ → live services (Kalshi :8080, graph :8090)
   → news_loop STAGES per cycle:
       discover (Scout) → scan → pair → propose (NewsAgent +
-      Investigator + Auditor veto) → commit (Skeptic gate +
-      Connector derive)
+      Investigator + Auditor veto) → commit (Skeptic gate)
 ```
 
 The lanes are the vocabulary; the brain (or the deterministic stage

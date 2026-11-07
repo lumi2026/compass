@@ -38,8 +38,8 @@ def test_relay_bumps_seen_count_keeps_first_at():
     api = _api()
     for nid in ("a:1", "a:2"):
         api.commit(Node(id=nid, kind="Article", title=nid))
-    r1 = api.record(Edge(src="a:1", dst="a:2", rel="relates-to", at="T1"))
-    r2 = api.record(Edge(src="a:1", dst="a:2", rel="relates-to", at="T2"))
+    r1 = api.record(Edge(src="a:1", dst="a:2", rel="experienced", at="T1"))
+    r2 = api.record(Edge(src="a:1", dst="a:2", rel="experienced", at="T2"))
     assert r1.reason == "recorded" and r2.reason == "reinforced x2"
     (e,) = api.store.edges
     assert (e.at, e.seen_count) == ("T1", 2) and e.last_seen_at

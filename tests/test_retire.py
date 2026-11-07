@@ -29,6 +29,33 @@ def test_retire_node_drops_incident_edges():
     assert s.retire_node("market:NOPE") == (False, 0)
 
 
+def test_commit_retire_cascades_to_flagging_audits(tmp_path):
+    log = str(tmp_path / "g.log")
+    snap = str(tmp_path / "g.json")
+    api = GraphUpdateAPI(GraphStore())
+    commit_batch(api, [
+        _node("kalshi:A", "Event"), _node("kalshi:B", "Event"),
+        _node("hypothesis:h", "Hypothesis"),
+        _node("audit:h", "Audit", {"target": "hypothesis:h"}),
+    ], log_path=log, snapshot_path=snap)
+    commit_batch(api, [{
+        "agent": "auditor", "action": "add-edge",
+        "entity_id": "audit:h",
+        "detail": json.dumps({"src": "audit:h", "dst": "hypothesis:h",
+                              "rel": "challenges"}),
+        "confidence": 0.8,
+    }], log_path=log, snapshot_path=snap)
+    out = commit_retire(api, ["hypothesis:h"],
+                        log_path=log, snapshot_path=snap)
+    assert [r["entity_id"] for r in out["retired"]] == [
+        "hypothesis:h", "audit:h"]
+    assert all(r["removed"] for r in out["retired"])
+    assert "audit:h" not in api.store.nodes
+    assert not [e for e in api.store.edges if e.rel == "challenges"]
+    fresh = boot(snap, log)
+    assert "audit:h" not in fresh.store.nodes
+
+
 def test_commit_retire_logs_and_replays(tmp_path):
     log = str(tmp_path / "g.log")
     snap = str(tmp_path / "g.json")
